@@ -5,13 +5,13 @@
   "description": "JababDesk — Omnichannel AI customer automation platform. Unifies Messenger and WhatsApp with AI-powered replies, product management, and order tracking.",
   "license": "MIT",
   "author": "Rifat",
-  "homepage": "https://github.com/rifat/jababdesk",
+  "homepage": "https://github.com/donotmeetrifat/JababDesk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rifat/jababdesk.git"
+    "url": "git+https://github.com/donotmeetrifat/JababDesk.git"
   },
   "bugs": {
-    "url": "https://github.com/rifat/jababdesk/issues"
+    "url": "https://github.com/donotmeetrifat/JababDesk/issues"
   },
   "keywords": [
     "crm",

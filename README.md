@@ -11,3 +11,5 @@ JababDesk unifies Messenger and WhatsApp into one inbox, manages your product ca
 
 ## Based on
 This project is a fork of [wacrm](https://github.com/ArnasDon/wacrm) by Arnas Donauskas (MIT License). Original copyright preserved per MIT terms.
+
+**GitHub:** https://github.com/donotmeetrifat/JababDesk
