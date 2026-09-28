@@ -58,13 +58,23 @@ function LoginPageInner() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+    } catch (err: any) {
+      setError(
+        err?.message === 'Failed to fetch'
+          ? 'Unable to connect to authentication server. Please verify NEXT_PUBLIC_SUPABASE_URL environment variable.'
+          : err?.message || 'An unexpected error occurred during login.'
+      );
       setLoading(false);
       return;
     }
