@@ -22,10 +22,10 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "JababDesk",
-    template: "%s — JababDesk",
+    default: "JobabDesk",
+    template: "%s — JobabDesk",
   },
-  description: "JababDesk — AI-powered omnichannel customer automation for your business.",
+  description: "JobabDesk — AI-powered omnichannel customer automation for your business.",
   robots: {
     index: false,
     follow: false,

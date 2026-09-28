@@ -115,9 +115,9 @@ async function deliverOne(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-JababDesk-Event': event,
-        'X-JababDesk-Webhook-Id': row.id,
-        'X-JababDesk-Signature': buildSignatureHeader(payload, secret, tsSeconds),
+        'X-JobabDesk-Event': event,
+        'X-JobabDesk-Webhook-Id': row.id,
+        'X-JobabDesk-Signature': buildSignatureHeader(payload, secret, tsSeconds),
       },
       body: payload,
       // Do NOT follow redirects — a public URL could 3xx-bounce to an

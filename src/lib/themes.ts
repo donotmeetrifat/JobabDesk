@@ -25,7 +25,7 @@ export type ThemeId = (typeof THEME_IDS)[number];
 
 export const DEFAULT_THEME: ThemeId = "violet";
 
-export const STORAGE_KEY = "jababdesk.theme";
+export const STORAGE_KEY = "jobabdesk.theme";
 
 /**
  * MODE — the light/dark dimension, orthogonal to the accent theme.
@@ -45,7 +45,7 @@ export type Mode = (typeof MODES)[number];
 
 export const DEFAULT_MODE: Mode = "dark";
 
-export const MODE_STORAGE_KEY = "jababdesk.mode";
+export const MODE_STORAGE_KEY = "jobabdesk.mode";
 
 export function isMode(value: unknown): value is Mode {
   return (

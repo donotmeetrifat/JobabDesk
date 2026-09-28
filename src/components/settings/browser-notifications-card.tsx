@@ -89,7 +89,7 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
       new Notification(t('testTitle'), {
         body: t('testBody'),
         icon: '/icon',
-        tag: 'jababdesk-test-notification',
+        tag: 'jobabdesk-test-notification',
       });
     } catch {
       toast.error(t('unsupported'));

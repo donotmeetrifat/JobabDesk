@@ -12,14 +12,14 @@ import type { ContentType, SenderType } from "@/types";
  */
 
 /** localStorage key for the device-scoped opt-in. */
-export const BROWSER_NOTIFY_STORAGE_KEY = "jababdesk:browser-notifications";
+export const BROWSER_NOTIFY_STORAGE_KEY = "jobabdesk:browser-notifications";
 
 /**
  * Same-tab change signal. `storage` events only fire in *other* tabs,
  * so the settings toggle and the listener hook (both in this tab) sync
  * through this window event instead.
  */
-export const BROWSER_NOTIFY_CHANGE_EVENT = "jababdesk:browser-notifications-change";
+export const BROWSER_NOTIFY_CHANGE_EVENT = "jobabdesk:browser-notifications-change";
 
 /** A duplicate INSERT for the same message id inside this window is ignored. */
 export const DEDUPE_WINDOW_MS = 30_000;

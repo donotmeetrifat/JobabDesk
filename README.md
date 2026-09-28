@@ -1,7 +1,7 @@
-# JababDesk (জবাব Desk)
+# JobabDesk (জবাব Desk)
 > Omnichannel AI Customer Automation Platform
 
-JababDesk unifies Messenger and WhatsApp into one inbox, manages your product catalogue, handles orders, and uses AI to automatically answer customer questions — all configured per business with zero coding.
+JobabDesk unifies Messenger and WhatsApp into one inbox, manages your product catalogue, handles orders, and uses AI to automatically answer customer questions — all configured per business with zero coding.
 
 ## Stack
 - Next.js 16 + React 19 + TypeScript
@@ -12,4 +12,4 @@ JababDesk unifies Messenger and WhatsApp into one inbox, manages your product ca
 ## Based on
 This project is a fork of [wacrm](https://github.com/ArnasDon/wacrm) by Arnas Donauskas (MIT License). Original copyright preserved per MIT terms.
 
-**GitHub:** https://github.com/donotmeetrifat/JababDesk
+**GitHub:** https://github.com/donotmeetrifat/JobabDesk
