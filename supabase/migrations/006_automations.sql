@@ -8,11 +8,13 @@
 --   CREATE POLICY IF NOT EXISTS).
 -- ============================================================
 
+CREATE OR REPLACE FUNCTION public.uuid_generate_v4() RETURNS uuid LANGUAGE sql AS $$ SELECT gen_random_uuid(); $$;
+
 -- ============================================================
 -- AUTOMATIONS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS automations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
