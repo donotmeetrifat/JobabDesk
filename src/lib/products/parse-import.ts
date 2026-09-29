@@ -41,8 +41,8 @@ function toNumber(val: unknown): number | null {
 function normalizeRow(raw: Record<string, unknown>, index: number): ImportRow {
   const errors: string[] = []
 
-  // Flexible header matching — accept English and Bengali column names
-  const get = (...keys: string[]): string => {
+  // Flexible header matching — accept English and Bengali column names + position fallback
+  const get = (pos: number, ...keys: string[]): string => {
     for (const k of keys) {
       const found = Object.keys(raw).find(
         (rk) => rk.toLowerCase().trim() === k.toLowerCase()
@@ -51,34 +51,39 @@ function normalizeRow(raw: Record<string, unknown>, index: number): ImportRow {
         return String(raw[found]).trim()
       }
     }
+    // Fallback: return value at column position
+    const vals = Object.values(raw)
+    if (pos >= 0 && pos < vals.length) {
+      return String(vals[pos] ?? '').trim()
+    }
     return ''
   }
 
-  const name = get('name', 'product name', 'product', 'item', 'item name', 'title', 'পণ্যের নাম', 'নাম', 'পণ্য')
+  const name = get(0, 'name', 'product name', 'product', 'item', 'item name', 'title', 'পণ্যের নাম', 'নাম', 'পণ্য')
   if (!name) errors.push('Name is required')
 
-  const rawSku = get('sku', 'sku code', 'স্কু')
-  const brand = get('brand', 'brand name', 'manufacturer', 'made by', 'company', 'ব্র্যান্ড')
-  const category = get('category', 'cat', 'type', 'product type', 'group', 'ক্যাটাগরি')
+  const rawSku = get(-1, 'sku', 'sku code', 'স্কু')
+  const brand = get(2, 'brand', 'brand name', 'manufacturer', 'made by', 'made in', 'country', 'ব্র্যান্ড')
+  const category = get(-1, 'category', 'cat', 'type', 'group', 'ক্যাটাগরি')
   const sku = rawSku || generateSku({ name, brand, category })
 
-  const price = toNumber(get('price', 'selling price', 'sale price', 'retail price', 'mrp', 'মূল্য', 'বিক্রয় মূল্য'))
-  const cost = toNumber(get('cost', 'cost price', 'ক্রয় মূল্য'))
-  const stock_quantity = toNumber(get('stock', 'stock quantity', 'quantity', 'qty', 'inventory', 'স্টক', 'পরিমাণ'))
+  const price = toNumber(get(3, 'price', 'selling price', 'sale price', 'retail price', 'mrp', 'মূল্য'))
+  const cost = toNumber(get(-1, 'cost', 'cost price', 'ক্রয় মূল্য'))
+  const stock_quantity = toNumber(get(-1, 'stock', 'stock quantity', 'quantity', 'qty', 'স্টক'))
 
   return {
     rowIndex: index + 2, // 1-based, +1 for header
     name,
     sku,
-    description: get('description', 'desc', 'details', 'size', 'size ml', 'volume', 'বিবরণ'),
+    description: get(1, 'description', 'desc', 'size', 'size ml', 'volume', 'বিবরণ'),
     price,
     cost,
     category,
     brand,
     stock_quantity,
-    unit: get('unit', 'একক') || 'pcs',
-    barcode: get('barcode', 'বারকোড'),
-    status: normalizeStatus(get('status', 'অবস্থা')),
+    unit: get(-1, 'unit', 'একক') || 'pcs',
+    barcode: get(-1, 'barcode', 'বারকোড'),
+    status: normalizeStatus(get(-1, 'status', 'অবস্থা')),
     errors,
   }
 }
