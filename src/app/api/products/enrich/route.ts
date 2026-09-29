@@ -51,7 +51,7 @@ Return exactly ${products.length} objects with rowIndex values: ${products.map(p
 Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
     })
 
