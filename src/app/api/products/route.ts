@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount } from '@/lib/auth/account'
+import { generateSku } from '@/lib/products/generate-sku'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,7 +55,11 @@ export async function POST(req: Request) {
       .insert({
         account_id: accountId,
         name: body.name.trim(),
-        sku: body.sku ?? null,
+        sku: body.sku?.trim() || generateSku({
+          name: body.name.trim(),
+          brand: body.brand ?? null,
+          category: body.category ?? null,
+        }),
         brand: body.brand ?? null,
         category: body.category ?? null,
         price: body.price ?? 0,

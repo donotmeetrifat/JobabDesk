@@ -138,10 +138,10 @@ export function ProductDialog({ open, product, onClose, onSaved }: Props) {
                 placeholder="0" />
             </div>
             <div className="grid gap-1.5">
-              <label className="text-sm font-medium">SKU</label>
+              <label className="text-sm font-medium">SKU <span className="text-muted-foreground font-normal">(auto if blank)</span></label>
               <input value={form.sku} onChange={e => set('sku', e.target.value)}
                 className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="e.g. BTS-VC-500" />
+                placeholder="Leave blank to auto-generate" />
             </div>
           </div>
           <div className="flex items-center gap-2">
