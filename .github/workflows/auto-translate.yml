@@ -1,0 +1,43 @@
+name: Auto-Translate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'messages/en.json'
+
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run auto-translation
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/translate.mjs
+
+      - name: Commit translated files
+        run: |
+          git config --local user.email "auto-translate@jobabdesk.app"
+          git config --local user.name "JobabDesk Auto-Translate"
+          git add messages/bn.json
+          git diff --staged --quiet || git commit -m "auto: update Bengali translations [skip ci]"
+          git push
