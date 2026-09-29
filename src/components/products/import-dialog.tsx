@@ -18,17 +18,82 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
+  const [enriching, setEnriching] = useState(false)
+  const [enriched, setEnriched] = useState(false)
+
   if (!open) return null
 
   const handleFile = async (file: File) => {
     setError(null)
     setParseResult(null)
     setImportResult(null)
+    setEnriched(false)
     try {
       const result = await parseImportFile(file)
       setParseResult(result)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to parse file')
+    }
+  }
+
+  const handleEnrich = async () => {
+    if (!parseResult) return
+    setEnriching(true)
+    try {
+      // Only enrich rows that are missing category OR have suspicious brand (country name)
+      const countryNames = ['uk', 'poland', 'france', 'thailand', 'usa', 'china', 'germany', 'italy', 'spain', 'korea', 'japan', 'india', 'bangladesh']
+      const rowsToEnrich = parseResult.rows.map((r: ImportRow) => ({
+        rowIndex: r.rowIndex,
+        name: r.name,
+        brand: r.brand,
+        category: r.category,
+      })).filter((r) => 
+        r.name && (
+          !r.category || 
+          countryNames.includes(r.brand?.toLowerCase().trim() ?? '')
+        )
+      )
+
+      if (rowsToEnrich.length === 0) {
+        setEnriched(true)
+        return
+      }
+
+      const res = await fetch('/api/products/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: rowsToEnrich }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Enrichment failed')
+
+      interface EnrichedItem { rowIndex: number; brand?: string; category?: string; description?: string }
+      const enrichMap = new Map<number, EnrichedItem>(
+        (data.enriched || []).map((e: EnrichedItem) => [e.rowIndex, e])
+      )
+      const updatedRows = parseResult.rows.map((row: ImportRow) => {
+        const e = enrichMap.get(row.rowIndex)
+        if (!e) return row
+        return {
+          ...row,
+          brand: e.brand || row.brand,
+          category: e.category || row.category,
+          description: e.description || row.description,
+          errors: [], // clear errors since name was found
+        }
+      })
+
+      setParseResult({
+        ...parseResult,
+        rows: updatedRows,
+        validRows: updatedRows.filter((r: ImportRow) => r.errors.length === 0).length,
+        errorRows: updatedRows.filter((r: ImportRow) => r.errors.length > 0).length,
+      })
+      setEnriched(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI enrichment failed')
+    } finally {
+      setEnriching(false)
     }
   }
 
@@ -65,6 +130,8 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
     setParseResult(null)
     setImportResult(null)
     setError(null)
+    setEnriched(false)
+    setEnriching(false)
     onClose()
   }
 
@@ -160,6 +227,31 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
                       Change file
                     </button>
                   </div>
+
+                  {parseResult && !importResult && !enriched && (
+                    <button
+                      onClick={handleEnrich}
+                      disabled={enriching}
+                      className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm text-white font-medium hover:bg-purple-700 disabled:opacity-50 w-full justify-center"
+                    >
+                      {enriching ? (
+                        <>
+                          <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                          AI is enriching product data...
+                        </>
+                      ) : (
+                        <>✨ Auto-fill missing info with AI (category, brand, description)</>
+                      )}
+                    </button>
+                  )}
+                  {enriched && parseResult && !importResult && (
+                    <div className="flex items-center gap-2 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 px-4 py-2 text-sm text-purple-700 dark:text-purple-300">
+                      ✅ AI enrichment complete — missing fields filled in
+                    </div>
+                  )}
 
                   <div className="overflow-auto rounded-lg border max-h-64">
                     <table className="w-full text-xs">

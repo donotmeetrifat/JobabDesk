@@ -74,6 +74,9 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
   const [syncResult, setSyncResult] = useState<{ imported: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [enriching, setEnriching] = useState(false)
+  const [enriched, setEnriched] = useState(false)
+
   const source = detectSyncSource(url.trim())
   const info = SOURCE_INFO[source]
 
@@ -92,6 +95,7 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
     setError(null)
     setParseResult(null)
     setSyncResult(null)
+    setEnriched(false)
     setFetching(true)
     try {
       const result = await fetchAndParseUrl(url.trim())
@@ -100,6 +104,67 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
       setError(e instanceof Error ? e.message : 'Failed to fetch file')
     } finally {
       setFetching(false)
+    }
+  }
+
+  const handleEnrich = async () => {
+    if (!parseResult) return
+    setEnriching(true)
+    try {
+      // Only enrich rows that are missing category OR have suspicious brand (country name)
+      const countryNames = ['uk', 'poland', 'france', 'thailand', 'usa', 'china', 'germany', 'italy', 'spain', 'korea', 'japan', 'india', 'bangladesh']
+      const rowsToEnrich = parseResult.rows.map((r: ImportRow) => ({
+        rowIndex: r.rowIndex,
+        name: r.name,
+        brand: r.brand,
+        category: r.category,
+      })).filter((r) => 
+        r.name && (
+          !r.category || 
+          countryNames.includes(r.brand?.toLowerCase().trim() ?? '')
+        )
+      )
+
+      if (rowsToEnrich.length === 0) {
+        setEnriched(true)
+        return
+      }
+
+      const res = await fetch('/api/products/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: rowsToEnrich }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Enrichment failed')
+
+      interface EnrichedItem { rowIndex: number; brand?: string; category?: string; description?: string }
+      const enrichMap = new Map<number, EnrichedItem>(
+        (data.enriched || []).map((e: EnrichedItem) => [e.rowIndex, e])
+      )
+      const updatedRows = parseResult.rows.map((row: ImportRow) => {
+        const e = enrichMap.get(row.rowIndex)
+        if (!e) return row
+        return {
+          ...row,
+          brand: e.brand || row.brand,
+          category: e.category || row.category,
+          description: e.description || row.description,
+          errors: [], // clear errors since name was found
+        }
+      })
+
+      setParseResult({
+        ...parseResult,
+        rows: updatedRows,
+        validRows: updatedRows.filter((r: ImportRow) => r.errors.length === 0).length,
+        errorRows: updatedRows.filter((r: ImportRow) => r.errors.length > 0).length,
+      })
+      setEnriched(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI enrichment failed')
+    } finally {
+      setEnriching(false)
     }
   }
 
@@ -130,6 +195,8 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
     setParseResult(null)
     setSyncResult(null)
     setError(null)
+    setEnriched(false)
+    setEnriching(false)
     onClose()
   }
 
@@ -200,7 +267,7 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
                 <div className="flex gap-2">
                   <input
                     value={url}
-                    onChange={(e) => { setUrl(e.target.value); setParseResult(null); setError(null) }}
+                    onChange={(e) => { setUrl(e.target.value); setParseResult(null); setError(null); setEnriched(false) }}
                     placeholder="Paste Google Sheets, OneDrive, or .xlsx URL..."
                     className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                   />
@@ -233,6 +300,32 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
                       <span className="text-destructive">Errors: <strong>{parseResult.errorRows}</strong></span>
                     )}
                   </div>
+
+                  {parseResult && !syncResult && !enriched && (
+                    <button
+                      onClick={handleEnrich}
+                      disabled={enriching}
+                      className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm text-white font-medium hover:bg-purple-700 disabled:opacity-50 w-full justify-center"
+                    >
+                      {enriching ? (
+                        <>
+                          <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                          AI is enriching product data...
+                        </>
+                      ) : (
+                        <>✨ Auto-fill missing info with AI (category, brand, description)</>
+                      )}
+                    </button>
+                  )}
+                  {enriched && parseResult && !syncResult && (
+                    <div className="flex items-center gap-2 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 px-4 py-2 text-sm text-purple-700 dark:text-purple-300">
+                      ✅ AI enrichment complete — missing fields filled in
+                    </div>
+                  )}
+
                   <div className="overflow-auto rounded-lg border max-h-52">
                     <table className="w-full text-xs">
                       <thead className="bg-muted sticky top-0">
@@ -291,3 +384,4 @@ export function OnlineSyncDialog({ open, onClose, onSynced }: OnlineSyncDialogPr
     </div>
   )
 }
+
