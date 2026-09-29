@@ -50,12 +50,11 @@ ${products.map((p, i) => `${i + 1}. name: "${p.name}"${p.brand ? `, current_bran
 Return exactly ${products.length} objects with rowIndex values: ${products.map(p => p.rowIndex).join(', ')}
 Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
-    // Model fallback chain — ordered from newest to oldest stable
+    // Same model chain as translate.mjs (confirmed working with this API key)
     const MODEL_CHAIN = [
-      'gemini-3.7-flash',
-      'gemini-3.5-flash',
-      'gemini-3-flash-preview',
-      'gemini-2.5-flash-preview-09-2025',
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
+      'gemini-2.5-flash',
     ]
 
     let raw = ''
