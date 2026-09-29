@@ -65,11 +65,12 @@ Format: [{"rowIndex":number,"brand":"string","category":"string","description":"
       try {
         const response = await ai.models.generateContent({
           model,
-          contents: prompt,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { temperature: 0.1 },
         })
-        raw = response.text ?? ''
+        raw = response.text?.trim() ?? ''
         usedModel = model
-        break // success — stop trying
+        break
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         lastError = msg
