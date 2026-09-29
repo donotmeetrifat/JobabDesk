@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Upload, Sparkles, RefreshCw } from 'lucide-react'
+import { Plus, Search, Upload, Sparkles, RefreshCw, Sheet } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductTable } from './product-table'
 import { ProductDialog } from './product-dialog'
 import { ImportDialog } from './import-dialog'
+import { SheetsSyncDialog } from './sheets-sync-dialog'
 
 interface Product {
   id: string
@@ -33,6 +34,7 @@ export function ProductsShell() {
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [sheetsOpen, setSheetsOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
 
   const fetchProducts = useCallback(async () => {
@@ -88,6 +90,10 @@ export function ProductsShell() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setSheetsOpen(true)}
+            className="flex items-center gap-1.5 rounded-md border border-green-600/50 px-3 py-2 text-sm text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors">
+            <Sheet className="size-4" /> Google Sheets
+          </button>
           <button onClick={() => setImportOpen(true)}
             className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors">
             <Upload className="size-4" /> Import
@@ -113,7 +119,7 @@ export function ProductsShell() {
         <span>Import products from</span>
         <button onClick={() => setImportOpen(true)} className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Excel / CSV</button>
         <span>or</span>
-        <button className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Google Sheets link</button>
+        <button onClick={() => setSheetsOpen(true)} className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Google Sheets link</button>
         <span className="ml-auto flex items-center gap-1">
           <Sparkles className="size-3.5" /> AI descriptions available
         </span>
@@ -124,6 +130,11 @@ export function ProductsShell() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={() => { setImportOpen(false); fetchProducts() }}
+      />
+      <SheetsSyncDialog
+        open={sheetsOpen}
+        onClose={() => setSheetsOpen(false)}
+        onSynced={() => { setSheetsOpen(false); fetchProducts() }}
       />
     </div>
   )
