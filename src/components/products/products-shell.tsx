@@ -5,6 +5,7 @@ import { Plus, Search, Upload, Sparkles, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductTable } from './product-table'
 import { ProductDialog } from './product-dialog'
+import { ImportDialog } from './import-dialog'
 
 interface Product {
   id: string
@@ -31,6 +32,7 @@ export function ProductsShell() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
 
   const fetchProducts = useCallback(async () => {
@@ -86,6 +88,10 @@ export function ProductsShell() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setImportOpen(true)}
+            className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent transition-colors">
+            <Upload className="size-4" /> Import
+          </button>
           <button onClick={fetchProducts}
             className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm hover:bg-accent">
             <RefreshCw className="size-4" /> Refresh
@@ -105,7 +111,7 @@ export function ProductsShell() {
       <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         <Upload className="size-4 shrink-0" />
         <span>Import products from</span>
-        <button className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Excel / CSV</button>
+        <button onClick={() => setImportOpen(true)} className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Excel / CSV</button>
         <span>or</span>
         <button className="rounded px-2 py-0.5 text-primary underline-offset-2 hover:underline">Google Sheets link</button>
         <span className="ml-auto flex items-center gap-1">
@@ -114,6 +120,11 @@ export function ProductsShell() {
       </div>
       <ProductTable products={products} loading={loading} onEdit={handleEdit} onDelete={handleDelete} />
       <ProductDialog open={dialogOpen} product={editProduct} onClose={() => setDialogOpen(false)} onSaved={handleSaved} />
+      <ImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { setImportOpen(false); fetchProducts() }}
+      />
     </div>
   )
 }
