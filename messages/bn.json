@@ -1826,6 +1826,7 @@
       "reenterAccessToken": "Please re-enter the Access Token to save changes",
       "saveFailed": "Failed to save configuration",
       "savedButRegistrationFailed": "Saved, but Meta couldn't register the number: {error}",
+      "savedButRegistrationFailedMessage": "Saved, but Meta couldn't register the number: {error}",
       "savedRegistrationSkipped": "Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.",
       "liveWithName": "Live — {name} can now receive events.",
       "connectedGeneric": "WhatsApp connected. Events will start flowing within a minute.",

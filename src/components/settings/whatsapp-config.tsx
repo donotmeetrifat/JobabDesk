@@ -350,7 +350,7 @@ export function WhatsAppConfig() {
       //                         is human-readable from Meta.
       if (data.registered === false && data.registration_error) {
         setSaveFailure({
-          message: `Saved, but Meta couldn't register the number: ${data.registration_error}`,
+          message: t('savedButRegistrationFailedMessage', { error: data.registration_error }),
           meta: data.meta ?? null,
         });
         toast.error(
