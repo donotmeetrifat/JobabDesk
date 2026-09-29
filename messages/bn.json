@@ -26,32 +26,69 @@
     "system": "সিস্টেম"
   },
   "Dashboard": {
-    "title": "ড্যাশবোর্ড",
-    "subtitle": "কথোপকথন, কন্টাক্ট, ডিল, ব্রডকাস্ট এবং অটোমেশনের লাইভ বিশ্লেষণ।",
-    "activeConversations": "সক্রিয় কথোপকথন",
-    "newContactsToday": "আজকের নতুন কন্টাক্ট",
-    "openDealsValue": "খোলা ডিলের মূল্য",
-    "openDeals": "টি খোলা ডিল",
-    "messagesSentToday": "আজকে পাঠানো বার্তা",
-    "noChange": "গতকালের তুলনায় কোনো পরিবর্তন নেই",
-    "newContact": "নতুন কন্টাক্ট",
-    "newDeal": "নতুন ডিল",
-    "newBroadcast": "নতুন ব্রডকাস্ট",
-    "newAutomation": "নতুন অটোমেশন",
-    "conversationsOverTime": "সময়ের সাথে কথোপকথন",
-    "dailyMessageVolume": "দৈনিক বার্তার পরিমাণ দিক অনুযায়ী",
-    "pipelineValue": "পাইপলাইন মূল্য",
-    "openDealsByStage": "পর্যায় অনুযায়ী খোলা ডিল",
-    "noOpenDeals": "কোনো খোলা ডিল নেই",
-    "createDealsInPipelines": "পর্যায়ের বিশ্লেষণ দেখতে পাইপলাইনে ডিল তৈরি করুন।",
-    "averageFirstResponseTime": "গড় প্রথম সাড়া দেওয়ার সময়",
-    "minutesToReply": "সপ্তাহের দিন অনুযায়ী প্রথম উত্তরহীন বার্তায় সাড়া দেওয়ার মিনিট",
-    "target": "লক্ষ্য",
-    "days7": "৭ দিন",
-    "days30": "৩০ দিন",
-    "days90": "৯০ দিন",
-    "incoming": "আগত",
-    "outgoing": "বাহির"
+    "page": {
+      "title": "ড্যাশবোর্ড",
+      "description": "কথোপকথন, কন্টাক্ট, ডিল, ব্রডকাস্ট এবং অটোমেশনের লাইভ বিশ্লেষণ।",
+      "activeConversations": "সক্রিয় কথোপকথন",
+      "newContactsToday": "আজকের নতুন কন্টাক্ট",
+      "openDealsValue": "খোলা ডিলের মূল্য",
+      "openDeals": "{count} টি খোলা ডিল",
+      "messagesSentToday": "আজকে পাঠানো বার্তা",
+      "noChange": "গতকালের তুলনায় কোনো পরিবর্তন নেই - {suffix}",
+      "newTodayVsYesterday": "আজ বনাম গতকাল",
+      "vsYesterday": "গতকালের তুলনায়"
+    },
+    "quickActions": {
+      "newContact": "নতুন কন্টাক্ট",
+      "newDeal": "নতুন ডিল",
+      "newBroadcast": "নতুন ব্রডকাস্ট",
+      "newAutomation": "নতুন অটোমেশন"
+    },
+    "activityFeed": {
+      "title": "সাম্প্রতিক কার্যক্রম",
+      "viewAll": "সব দেখুন →",
+      "noActivity": "এখনো কোনো কার্যক্রম নেই",
+      "noActivityHint": "বার্তা, ডিল, ব্রডকাস্ট এবং অটোমেশনের কার্যক্রম এখানে দেখা যাবে।",
+      "showingOf": "{totalLoaded}-এর মধ্যে {visible} দেখাচ্ছে",
+      "show": "দেখান",
+      "timeS": "{sec} সেকেন্ড আগে",
+      "timeM": "{min} মিনিট আগে",
+      "timeH": "{hr} ঘণ্টা আগে",
+      "timeD": "{day} দিন আগে"
+    },
+    "conversationsChart": {
+      "title": "সময়ের সাথে কথোপকথন",
+      "description": "দিক অনুযায়ী দৈনিক বার্তার পরিমাণ",
+      "days": "{count} দিন",
+      "noActivity": "এই সময়ের মধ্যে কোনো বার্তার কার্যক্রম নেই",
+      "noActivityHint": "চার্ট পূর্ণ করতে বার্তা পাঠান বা গ্রহণ করুন।",
+      "incoming": "আগত",
+      "outgoing": "বাহির",
+      "tooltipIncoming": "{count} আগত",
+      "tooltipOutgoing": "{count} বাহির",
+      "ariaLabel": "দৈনিক কথোপকথন"
+    },
+    "pipelineDonut": {
+      "title": "পাইপলাইন মূল্য",
+      "description": "পর্যায় অনুযায়ী খোলা ডিল",
+      "noOpenDeals": "কোনো খোলা ডিল নেই",
+      "noOpenDealsHint": "পর্যায়ের বিশ্লেষণ দেখতে পাইপলাইনে ডিল তৈরি করুন।",
+      "dealCount": "{count} টি ডিল",
+      "total": "মোট",
+      "ariaLabel": "পর্যায় অনুযায়ী পাইপলাইন মূল্য"
+    },
+    "responseTimeChart": {
+      "title": "গড় প্রথম সাড়া দেওয়ার সময়",
+      "description": "সপ্তাহের দিন অনুযায়ী প্রথম উত্তরহীন বার্তায় সাড়া দেওয়ার মিনিট",
+      "target": "লক্ষ্য {minutes} মি",
+      "thisWeek": "এই সপ্তাহ:",
+      "lastWeek": "গত সপ্তাহ:",
+      "noReplies": "কোনো উত্তর রেকর্ড করা হয়নি",
+      "noRepliesHint": "গ্রাহকের বার্তার উত্তর দিলে এই চার্ট পূর্ণ হবে।"
+    },
+    "emptyState": {
+      "title": "পর্যাপ্ত তথ্য নেই"
+    }
   },
   "Inbox": {
     "title": "ইনবক্স",
