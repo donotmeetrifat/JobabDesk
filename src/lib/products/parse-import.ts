@@ -54,23 +54,23 @@ function normalizeRow(raw: Record<string, unknown>, index: number): ImportRow {
     return ''
   }
 
-  const name = get('name', 'product name', 'পণ্যের নাম', 'নাম')
+  const name = get('name', 'product name', 'product', 'item', 'item name', 'title', 'পণ্যের নাম', 'নাম', 'পণ্য')
   if (!name) errors.push('Name is required')
 
   const rawSku = get('sku', 'sku code', 'স্কু')
-  const brand = get('brand', 'ব্র্যান্ড')
-  const category = get('category', 'ক্যাটাগরি')
+  const brand = get('brand', 'brand name', 'manufacturer', 'made by', 'company', 'ব্র্যান্ড')
+  const category = get('category', 'cat', 'type', 'product type', 'group', 'ক্যাটাগরি')
   const sku = rawSku || generateSku({ name, brand, category })
 
-  const price = toNumber(get('price', 'selling price', 'মূল্য', 'বিক্রয় মূল্য'))
+  const price = toNumber(get('price', 'selling price', 'sale price', 'retail price', 'mrp', 'মূল্য', 'বিক্রয় মূল্য'))
   const cost = toNumber(get('cost', 'cost price', 'ক্রয় মূল্য'))
-  const stock_quantity = toNumber(get('stock', 'stock quantity', 'quantity', 'স্টক', 'পরিমাণ'))
+  const stock_quantity = toNumber(get('stock', 'stock quantity', 'quantity', 'qty', 'inventory', 'স্টক', 'পরিমাণ'))
 
   return {
     rowIndex: index + 2, // 1-based, +1 for header
     name,
     sku,
-    description: get('description', 'বিবরণ'),
+    description: get('description', 'desc', 'details', 'size', 'size ml', 'volume', 'বিবরণ'),
     price,
     cost,
     category,
@@ -95,6 +95,23 @@ export async function parseImportFile(file: File): Promise<ParseResult> {
       skipEmptyLines: true,
     })
     rawRows = result.data
+
+    // Skip empty leading rows and find actual header row
+    // If all values in first row are empty, remove it and re-parse with next row as header
+    if (rawRows.length > 0) {
+      const firstRowValues = Object.values(rawRows[0])
+      const allEmpty = firstRowValues.every(v => !v || String(v).trim() === '')
+      if (allEmpty && rawRows.length > 1) {
+        // The "header" row was actually empty — re-parse using row index 1 as header
+        const lines = text.split('\n').filter(l => l.trim() && l.replace(/,/g,'').trim())
+        const cleanedText = lines.join('\n')
+        const result2 = Papa.parse<Record<string, unknown>>(cleanedText, {
+          header: true,
+          skipEmptyLines: true,
+        })
+        rawRows = result2.data
+      }
+    }
   } else if (ext === 'xlsx' || ext === 'xls') {
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
