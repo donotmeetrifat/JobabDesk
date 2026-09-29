@@ -1,6 +1,14 @@
 -- Migration: 045_products
 -- Product catalogue per workspace
 
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE products (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -37,7 +45,7 @@ CREATE INDEX idx_products_active ON products(account_id, is_active);
 
 CREATE TRIGGER trg_products_updated_at
   BEFORE UPDATE ON products
-  FOR EACH ROW EXECUTE FUNCTION moddatetime(updated_at);
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 COMMENT ON TABLE products IS
   'Product catalogue per workspace. Used by AI to answer availability questions.';
