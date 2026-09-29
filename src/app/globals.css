@@ -8,6 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
+  --font-bengali: var(--font-bengali), 'Hind Siliguri', sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -230,7 +231,6 @@ html[data-theme="rose"] {
 }
 
 /* Bengali language font */
-html[lang="bn"] body,
-html[lang="bn"] body *:not(.font-mono):not([class*="font-mono"]) {
-  font-family: var(--font-bengali), sans-serif !important;
+.font-bengali {
+  font-family: var(--font-bengali), 'Hind Siliguri', sans-serif;
 }

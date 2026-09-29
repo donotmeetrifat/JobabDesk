@@ -9,15 +9,153 @@
     "automations": "অটোমেশন",
     "flows": "ফ্লো",
     "agents": "এআই এজেন্ট",
+    "aiAgents": "এআই এজেন্ট",
     "notifications": "নোটিফিকেশন",
-    "settings": "সেটিংস",
-    "aiAgents": "এআই এজেন্ট"
+    "settings": "সেটিংস"
   },
   "Header": {
     "search": "অনুসন্ধান করুন...",
     "notifications": "নোটিফিকেশন",
     "profile": "প্রোফাইল",
-    "logout": "লগআউট"
+    "logout": "লগআউট",
+    "help": "সাহায্য"
+  },
+  "ModeToggle": {
+    "light": "লাইট",
+    "dark": "ডার্ক",
+    "system": "সিস্টেম"
+  },
+  "Dashboard": {
+    "title": "ড্যাশবোর্ড",
+    "subtitle": "কথোপকথন, কন্টাক্ট, ডিল, ব্রডকাস্ট এবং অটোমেশনের লাইভ বিশ্লেষণ।",
+    "activeConversations": "সক্রিয় কথোপকথন",
+    "newContactsToday": "আজকের নতুন কন্টাক্ট",
+    "openDealsValue": "খোলা ডিলের মূল্য",
+    "openDeals": "টি খোলা ডিল",
+    "messagesSentToday": "আজকে পাঠানো বার্তা",
+    "noChange": "গতকালের তুলনায় কোনো পরিবর্তন নেই",
+    "newContact": "নতুন কন্টাক্ট",
+    "newDeal": "নতুন ডিল",
+    "newBroadcast": "নতুন ব্রডকাস্ট",
+    "newAutomation": "নতুন অটোমেশন",
+    "conversationsOverTime": "সময়ের সাথে কথোপকথন",
+    "dailyMessageVolume": "দৈনিক বার্তার পরিমাণ দিক অনুযায়ী",
+    "pipelineValue": "পাইপলাইন মূল্য",
+    "openDealsByStage": "পর্যায় অনুযায়ী খোলা ডিল",
+    "noOpenDeals": "কোনো খোলা ডিল নেই",
+    "createDealsInPipelines": "পর্যায়ের বিশ্লেষণ দেখতে পাইপলাইনে ডিল তৈরি করুন।",
+    "averageFirstResponseTime": "গড় প্রথম সাড়া দেওয়ার সময়",
+    "minutesToReply": "সপ্তাহের দিন অনুযায়ী প্রথম উত্তরহীন বার্তায় সাড়া দেওয়ার মিনিট",
+    "target": "লক্ষ্য",
+    "days7": "৭ দিন",
+    "days30": "৩০ দিন",
+    "days90": "৯০ দিন",
+    "incoming": "আগত",
+    "outgoing": "বাহির"
+  },
+  "Inbox": {
+    "title": "ইনবক্স",
+    "search": "কথোপকথন খুঁজুন...",
+    "noConversations": "কোনো কথোপকথন নেই",
+    "allConversations": "সব কথোপকথন",
+    "mine": "আমার",
+    "unassigned": "অনির্ধারিত",
+    "typeMessage": "বার্তা লিখুন...",
+    "send": "পাঠান",
+    "assign": "অ্যাসাইন করুন",
+    "resolve": "সমাধান করুন",
+    "reopen": "পুনরায় খুলুন",
+    "note": "নোট",
+    "reply": "জবাব",
+    "open": "খোলা",
+    "resolved": "সমাধান হয়েছে",
+    "snoozed": "স্নুজড",
+    "filter": "ফিল্টার",
+    "sort": "সাজান",
+    "markAsRead": "পঠিত হিসেবে চিহ্নিত করুন",
+    "deleteConversation": "কথোপকথন মুছুন",
+    "contactInfo": "কন্টাক্ট তথ্য",
+    "conversationInfo": "কথোপকথনের তথ্য"
+  },
+  "Contacts": {
+    "title": "কন্টাক্টস",
+    "search": "কন্টাক্ট খুঁজুন...",
+    "addContact": "কন্টাক্ট যোগ করুন",
+    "importContacts": "কন্টাক্ট আমদানি করুন",
+    "exportContacts": "কন্টাক্ট রপ্তানি করুন",
+    "name": "নাম",
+    "phone": "ফোন",
+    "email": "ইমেইল",
+    "noContacts": "কোনো কন্টাক্ট নেই",
+    "noContactsDescription": "কোনো কন্টাক্ট যোগ করা হয়নি।",
+    "deleteContact": "কন্টাক্ট মুছুন",
+    "editContact": "কন্টাক্ট সম্পাদনা করুন",
+    "viewContact": "কন্টাক্ট দেখুন",
+    "conversations": "কথোপকথন",
+    "deals": "ডিল",
+    "notes": "নোট",
+    "createdAt": "তৈরির তারিখ",
+    "lastSeen": "সর্বশেষ দেখা"
+  },
+  "Pipelines": {
+    "title": "পাইপলাইন",
+    "newDeal": "নতুন ডিল",
+    "noPipelines": "কোনো পাইপলাইন নেই",
+    "dealName": "ডিলের নাম",
+    "dealValue": "ডিলের মূল্য",
+    "stage": "পর্যায়",
+    "assignee": "দায়িত্বপ্রাপ্ত",
+    "closeDate": "সমাপ্তির তারিখ"
+  },
+  "Broadcasts": {
+    "title": "ব্রডকাস্ট",
+    "newBroadcast": "নতুন ব্রডকাস্ট",
+    "noBroadcasts": "কোনো ব্রডকাস্ট নেই",
+    "recipients": "প্রাপক",
+    "status": "অবস্থা",
+    "scheduled": "নির্ধারিত",
+    "sent": "পাঠানো হয়েছে",
+    "draft": "খসড়া"
+  },
+  "Automations": {
+    "title": "অটোমেশন",
+    "newAutomation": "নতুন অটোমেশন",
+    "noAutomations": "কোনো অটোমেশন নেই",
+    "active": "সক্রিয়",
+    "inactive": "নিষ্ক্রিয়",
+    "trigger": "ট্রিগার",
+    "actions": "কার্যক্রম"
+  },
+  "Settings": {
+    "title": "সেটিংস",
+    "overview": "সারসংক্ষেপ",
+    "profile": "প্রোফাইল",
+    "security": "নিরাপত্তা",
+    "appearance": "থিম",
+    "members": "সদস্য",
+    "whatsapp": "WhatsApp",
+    "templates": "টেমপ্লেট",
+    "quickReplies": "দ্রুত উত্তর",
+    "fields": "ফিল্ড",
+    "deals": "ডিল",
+    "api": "এপিআই",
+    "save": "সংরক্ষণ করুন",
+    "saving": "সংরক্ষণ হচ্ছে...",
+    "cancel": "বাতিল করুন",
+    "delete": "মুছুন",
+    "edit": "সম্পাদনা করুন",
+    "update": "আপডেট করুন",
+    "name": "নাম",
+    "email": "ইমেইল",
+    "phone": "ফোন",
+    "role": "ভূমিকা",
+    "language": "ভাষা",
+    "timezone": "টাইমজোন",
+    "avatar": "ছবি",
+    "changePassword": "পাসওয়ার্ড পরিবর্তন করুন",
+    "currentPassword": "বর্তমান পাসওয়ার্ড",
+    "newPassword": "নতুন পাসওয়ার্ড",
+    "confirmPassword": "পাসওয়ার্ড নিশ্চিত করুন"
   },
   "LoginPage": {
     "title": "আপনার অ্যাকাউন্টে লগইন করুন",
@@ -31,7 +169,7 @@
     "forgotPassword": "পাসওয়ার্ড ভুলে গেছেন?",
     "noAccount": "অ্যাকাউন্ট নেই?",
     "signUp": "সাইন আপ করুন",
-    "orContinueWith": "অথবা দিয়ে চালিয়ে যান"
+    "invalidCredentials": "ইমেইল বা পাসওয়ার্ড ভুল"
   },
   "SignupPage": {
     "title": "নতুন অ্যাকাউন্ট তৈরি করুন",
@@ -45,60 +183,69 @@
     "submit": "অ্যাকাউন্ট তৈরি করুন",
     "submitting": "তৈরি হচ্ছে...",
     "haveAccount": "ইতিমধ্যে অ্যাকাউন্ট আছে?",
-    "login": "লগইন করুন"
+    "login": "লগইন করুন",
+    "agreeToTerms": "শর্তাবলীতে সম্মত"
   },
   "ForgotPasswordPage": {
     "title": "পাসওয়ার্ড রিসেট করুন",
-    "subtitle": "আপনার ইমেইলে লিংক পাঠানো হবে",
+    "subtitle": "আপনার ইমেইলে রিসেট লিংক পাঠানো হবে",
     "email": "ইমেইল",
     "submit": "রিসেট লিংক পাঠান",
-    "backToLogin": "লগইনে ফিরে যান"
+    "submitting": "পাঠানো হচ্ছে...",
+    "backToLogin": "লগইনে ফিরে যান",
+    "checkEmail": "আপনার ইমেইল চেক করুন"
   },
-  "Dashboard": {
-    "title": "ড্যাশবোর্ড",
-    "welcome": "স্বাগতম",
-    "totalContacts": "মোট কন্টাক্ট",
-    "openConversations": "খোলা কথোপকথন",
-    "messagesSent": "বার্তা পাঠানো হয়েছে",
-    "aiReplies": "এআই জবাব"
+  "Notifications": {
+    "title": "নোটিফিকেশন",
+    "noNotifications": "কোনো নোটিফিকেশন নেই",
+    "markAllRead": "সব পঠিত হিসেবে চিহ্নিত করুন",
+    "clearAll": "সব মুছুন"
   },
-  "Inbox": {
-    "title": "ইনবক্স",
-    "search": "কথোপকথন খুঁজুন...",
-    "noConversations": "কোনো কথোপকথন নেই",
-    "typeMessage": "বার্তা লিখুন...",
-    "send": "পাঠান",
-    "assign": "অ্যাসাইন করুন",
-    "resolve": "সমাধান করুন",
-    "reopen": "পুনরায় খুলুন"
-  },
-  "Contacts": {
-    "title": "কন্টাক্টস",
-    "search": "কন্টাক্ট খুঁজুন...",
-    "addContact": "কন্টাক্ট যোগ করুন",
+  "Agents": {
+    "title": "এআই এজেন্ট",
+    "newAgent": "নতুন এজেন্ট",
+    "noAgents": "কোনো এজেন্ট নেই",
+    "active": "সক্রিয়",
+    "inactive": "নিষ্ক্রিয়",
     "name": "নাম",
-    "phone": "ফোন",
-    "email": "ইমেইল",
-    "noContacts": "কোনো কন্টাক্ট নেই"
-  },
-  "Settings": {
-    "title": "সেটিংস",
-    "profile": "প্রোফাইল",
-    "security": "নিরাপত্তা",
-    "appearance": "থিম",
-    "members": "সদস্য",
-    "whatsapp": "WhatsApp",
-    "save": "সংরক্ষণ করুন",
-    "cancel": "বাতিল করুন",
-    "saving": "সংরক্ষণ হচ্ছে..."
-  },
-  "ModeToggle": {
-    "light": "লাইট",
-    "dark": "ডার্ক",
-    "system": "সিস্টেম"
+    "description": "বিবরণ"
   },
   "DashboardShell": {
     "permissionError": "আপনার অনুমতি লোড করা যায়নি",
-    "permissionErrorDescription": "আপনার অ্যাকাউন্ট রোল লোড হয়নি, তাই সব কার্যক্রম শুধু-পড়া হিসেবে গণ্য হবে।"
+    "permissionErrorDescription": "আপনার অ্যাকাউন্ট রোল লোড হয়নি, তাই সব কার্যক্রম শুধু-পড়া হিসেবে গণ্য হবে। আপনার সংযোগ চেক করুন এবং আবার চেষ্টা করুন।"
+  },
+  "AccountAccess": {
+    "title": "অ্যাকাউন্ট অ্যাক্সেস",
+    "description": "আপনার অ্যাকাউন্টের বিবরণ পরিচালনা করুন"
+  },
+  "Interactive": {
+    "confirm": "নিশ্চিত করুন",
+    "cancel": "বাতিল করুন",
+    "delete": "মুছুন",
+    "save": "সংরক্ষণ করুন",
+    "edit": "সম্পাদনা করুন",
+    "add": "যোগ করুন",
+    "remove": "সরান",
+    "close": "বন্ধ করুন",
+    "back": "ফিরে যান",
+    "next": "পরবর্তী",
+    "previous": "পূর্ববর্তী",
+    "loading": "লোড হচ্ছে...",
+    "search": "অনুসন্ধান করুন",
+    "filter": "ফিল্টার",
+    "clear": "মুছুন",
+    "apply": "প্রয়োগ করুন",
+    "yes": "হ্যাঁ",
+    "no": "না",
+    "ok": "ঠিক আছে",
+    "error": "ত্রুটি",
+    "success": "সফল",
+    "warning": "সতর্কতা",
+    "info": "তথ্য",
+    "required": "আবশ্যক",
+    "optional": "ঐচ্ছিক",
+    "noResults": "কোনো ফলাফল নেই",
+    "noData": "কোনো তথ্য নেই",
+    "actions": "কার্যক্রম"
   }
 }
