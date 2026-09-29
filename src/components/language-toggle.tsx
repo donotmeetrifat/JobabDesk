@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
-import { Globe } from 'lucide-react'
 
 export function LanguageToggle() {
   const locale = useLocale()
@@ -26,10 +25,9 @@ export function LanguageToggle() {
       onClick={() => switchLocale(isBn ? 'en' : 'bn')}
       disabled={isPending}
       title={isBn ? 'Switch to English' : 'বাংলায় পরিবর্তন করুন'}
-      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+      className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 border"
     >
-      <Globe className="size-4 shrink-0" />
-      <span>{isBn ? '🇬🇧 English' : '🇧🇩 বাংলা'}</span>
+      {isBn ? '🇬🇧 EN' : '🇧🇩 বাং'}
     </button>
   )
 }
