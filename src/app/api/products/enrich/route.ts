@@ -50,12 +50,45 @@ ${products.map((p, i) => `${i + 1}. name: "${p.name}"${p.brand ? `, current_bran
 Return exactly ${products.length} objects with rowIndex values: ${products.map(p => p.rowIndex).join(', ')}
 Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    })
+    // Model fallback chain — if one is deprecated/unavailable, auto-try the next
+    const MODEL_CHAIN = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash-001',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-latest',
+    ]
 
-    const raw = response.text ?? ''
+    let raw = ''
+    let usedModel = ''
+    let lastError = ''
+
+    for (const model of MODEL_CHAIN) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+        })
+        raw = response.text ?? ''
+        usedModel = model
+        break // success — stop trying
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        lastError = msg
+        // Only continue fallback for model-not-found / deprecated errors
+        if (msg.includes('404') || msg.includes('no longer available') || msg.includes('NOT_FOUND') || msg.includes('deprecated')) {
+          continue // try next model
+        }
+        throw err // other errors (auth, quota) — stop immediately
+      }
+    }
+
+    if (!raw) {
+      return NextResponse.json(
+        { error: `All AI models failed. Last error: ${lastError}` },
+        { status: 500 }
+      )
+    }
+
     const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
 
     if (!cleaned) {
@@ -72,7 +105,7 @@ Format: [{"rowIndex":number,"brand":"string","category":"string","description":"
       )
     }
 
-    return NextResponse.json({ enriched })
+    return NextResponse.json({ enriched, model: usedModel })
 
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
