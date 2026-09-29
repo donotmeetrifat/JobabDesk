@@ -50,12 +50,12 @@ ${products.map((p, i) => `${i + 1}. name: "${p.name}"${p.brand ? `, current_bran
 Return exactly ${products.length} objects with rowIndex values: ${products.map(p => p.rowIndex).join(', ')}
 Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
-    // Model fallback chain — if one is deprecated/unavailable, auto-try the next
+    // Model fallback chain — ordered from newest to oldest stable
     const MODEL_CHAIN = [
-      'gemini-2.5-flash',
-      'gemini-2.0-flash-001',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-3-flash-preview',
+      'gemini-2.5-flash-preview-09-2025',
     ]
 
     let raw = ''
