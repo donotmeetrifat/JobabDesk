@@ -767,7 +767,8 @@
       "saveSuccess": "AI assistant saved.",
       "saveFailed": "Failed to save.",
       "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
+      "removeFailed": "Failed to remove.",
+      "loading": "Loading…"
     },
     "aiKnowledge": {
       "loadFailed": "Failed to load knowledge base",
@@ -797,6 +798,27 @@
       "editDoc": "Edit",
       "deleteDoc": "Delete",
       "loading": "Loading…"
+    },
+    "quickReplies": {
+      "title": "Quick replies",
+      "description": "Reusable snippets — plain text or a saved interactive message — that agents can insert from the inbox composer.",
+      "newQuickReply": "New quick reply",
+      "noQuickReplies": "No quick replies yet. Create one to reuse it across conversations.",
+      "nameRequired": "Give the quick reply a name.",
+      "saveFailed": "Couldn't save the quick reply.",
+      "saveSuccessUpdate": "Quick reply updated.",
+      "saveSuccessCreate": "Quick reply created.",
+      "confirmDelete": "Delete this quick reply?",
+      "deleteFailed": "Couldn't delete the quick reply.",
+      "editTitle": "Edit quick reply",
+      "newTitle": "New quick reply",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Business hours",
+      "tabText": "Text",
+      "tabInteractive": "Interactive",
+      "contentPlaceholder": "The message text to insert",
+      "cancel": "Cancel",
+      "save": "Save"
     }
   },
   "AccountAccess": {
