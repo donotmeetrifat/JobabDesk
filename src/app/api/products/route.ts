@@ -34,8 +34,9 @@ export async function GET(req: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ products: data ?? [], total: count ?? 0, page, limit })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (err: any) {
+    console.error('[GET /api/products]', err)
+    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 401 })
   }
 }
 
@@ -71,7 +72,8 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ product: data }, { status: 201 })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (err: any) {
+    console.error('[POST /api/products]', err)
+    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 401 })
   }
 }

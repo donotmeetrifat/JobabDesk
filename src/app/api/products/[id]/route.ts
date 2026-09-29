@@ -18,8 +18,9 @@ export async function GET(
       .single()
     if (error || !data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ product: data })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (err: any) {
+    console.error('[GET /api/products/[id]]', err)
+    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 401 })
   }
 }
 
@@ -43,8 +44,9 @@ export async function PATCH(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ product: data })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (err: any) {
+    console.error('[PATCH /api/products/[id]]', err)
+    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 401 })
   }
 }
 
@@ -64,7 +66,8 @@ export async function DELETE(
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
-  } catch {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  } catch (err: any) {
+    console.error('[DELETE /api/products/[id]]', err)
+    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 401 })
   }
 }
