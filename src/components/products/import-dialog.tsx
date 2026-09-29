@@ -232,7 +232,7 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
                     <button
                       onClick={handleEnrich}
                       disabled={enriching}
-                      className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm text-white font-medium hover:bg-purple-700 disabled:opacity-50 w-full justify-center"
+                      className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 w-full justify-center"
                     >
                       {enriching ? (
                         <>
@@ -240,15 +240,15 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                           </svg>
-                          AI is enriching product data...
+                          AI is filling in missing info...
                         </>
                       ) : (
-                        <>✨ Auto-fill missing info with AI (category, brand, description)</>
+                        <>✨ Auto-fill missing info with AI</>
                       )}
                     </button>
                   )}
                   {enriched && parseResult && !importResult && (
-                    <div className="flex items-center gap-2 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 px-4 py-2 text-sm text-purple-700 dark:text-purple-300">
+                    <div className="flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-4 py-2 text-sm text-primary">
                       ✅ AI enrichment complete — missing fields filled in
                     </div>
                   )}

@@ -6,7 +6,7 @@ const CATEGORIES = [
   'Face Wash & Scrub', 'Moisturizer', 'Serum', 'Toner', 'Sunscreen',
   'Eye Care', 'Lip Care', 'Body Lotion', 'Shampoo', 'Conditioner',
   'Hair Mask', 'Body Wash', 'Deodorant', 'Perfume', 'Makeup',
-  'Skin Care', 'Hair Care', 'Baby Care', 'Men\'s Grooming',
+  'Skin Care', 'Hair Care', 'Baby Care', "Men's Grooming",
   'Electronics', 'Clothing', 'Food & Beverage', 'Supplements',
   'Household', 'Stationery', 'Toys', 'Sports', 'Other'
 ]
@@ -14,7 +14,7 @@ const CATEGORIES = [
 export async function POST(req: Request) {
   try {
     await requireRole('agent')
-    
+
     const { products } = await req.json() as {
       products: Array<{ rowIndex: number; name: string; brand?: string; category?: string }>
     }
@@ -25,45 +25,57 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is not configured in Vercel environment variables. Go to Vercel → Settings → Environment Variables and add GEMINI_API_KEY.' },
+        { status: 500 }
+      )
     }
 
     const ai = new GoogleGenAI({ apiKey })
 
-    // Send all products in one batch for efficiency
-    const prompt = `You are a product database expert. For each product below, fill in missing information based ONLY on the product name. 
+    const prompt = `You are a product database expert. For each product below, fill in missing information based ONLY on the product name.
 
 Rules:
-- ONLY provide information you are highly confident is accurate based on the product name
-- brand: the actual manufacturer/brand name (e.g. "Nivea", "The Body Shop", "Neutrogena")
-  - If the current brand value looks like a country ("uk", "poland", "france", "thailand") — replace it with the real brand name
-  - If truly unknown, return empty string
-- category: choose ONE from this list: ${CATEGORIES.join(', ')}
-- description: 1 sentence about what the product is and its key benefit. Be factual.
-- Do NOT invent prices, stock quantities, or any other data
-- Return ONLY valid JSON array, no markdown, no explanation
+- ONLY provide information you are highly confident is accurate
+- brand: actual manufacturer/brand name (e.g. "Nivea", "The Body Shop", "Neutrogena")
+  - If current_brand looks like a country ("uk", "poland", "france", "thailand", "usa") — replace with real brand name
+  - If truly unknown, return empty string ""
+- category: choose ONE from: ${CATEGORIES.join(', ')}
+- description: 1 factual sentence about the product and its key benefit
+- Return ONLY a valid JSON array. No markdown. No explanation.
 
-Products to enrich:
+Products:
 ${products.map((p, i) => `${i + 1}. name: "${p.name}"${p.brand ? `, current_brand: "${p.brand}"` : ''}${p.category ? `, current_category: "${p.category}"` : ''}`).join('\n')}
 
-Return JSON array with exactly ${products.length} objects:
-[{"rowIndex": number, "brand": "string", "category": "string", "description": "string"}, ...]
-
-The rowIndex values must match: ${products.map(p => p.rowIndex).join(', ')}`
+Return exactly ${products.length} objects with rowIndex values: ${products.map(p => p.rowIndex).join(', ')}
+Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { temperature: 0.1 },
+      contents: prompt,
     })
 
-    let text = response.text?.trim() ?? ''
-    text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
+    const raw = response.text ?? ''
+    const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
 
-    const enriched = JSON.parse(text)
+    if (!cleaned) {
+      return NextResponse.json({ error: 'AI returned empty response. Please try again.' }, { status: 500 })
+    }
+
+    let enriched
+    try {
+      enriched = JSON.parse(cleaned)
+    } catch {
+      return NextResponse.json(
+        { error: `AI response could not be parsed. Raw: ${cleaned.slice(0, 200)}` },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({ enriched })
 
   } catch (err) {
-    return toErrorResponse(err)
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
