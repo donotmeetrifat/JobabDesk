@@ -94,34 +94,64 @@ export async function parseImportFile(file: File): Promise<ParseResult> {
   let rawRows: Record<string, unknown>[] = []
 
   if (ext === 'csv') {
-    const text = await file.text()
+    const rawText = await file.text()
+
+    // Strip empty leading rows BEFORE papaparse runs.
+    // A row is "empty" when it has only commas/whitespace — e.g. ",,,,"
+    // Without this, papaparse uses the empty row as headers (all "" keys),
+    // which collapses every column into a single key and loses all data.
+    const lines = rawText.split(/\r?\n/)
+    const firstNonEmptyIdx = lines.findIndex(
+      (l) => l.replace(/,/g, '').trim() !== ''
+    )
+    const text = firstNonEmptyIdx > 0
+      ? lines.slice(firstNonEmptyIdx).join('\n')
+      : rawText
+
     const result = Papa.parse<Record<string, unknown>>(text, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (h) => h.trim(),
     })
     rawRows = result.data
 
-    // Skip empty leading rows and find actual header row
-    // If all values in first row are empty, remove it and re-parse with next row as header
-    if (rawRows.length > 0) {
-      const firstRowValues = Object.values(rawRows[0])
-      const allEmpty = firstRowValues.every(v => !v || String(v).trim() === '')
-      if (allEmpty && rawRows.length > 1) {
-        // The "header" row was actually empty — re-parse using row index 1 as header
-        const lines = text.split('\n').filter(l => l.trim() && l.replace(/,/g,'').trim())
-        const cleanedText = lines.join('\n')
-        const result2 = Papa.parse<Record<string, unknown>>(cleanedText, {
-          header: true,
-          skipEmptyLines: true,
-        })
-        rawRows = result2.data
-      }
-    }
   } else if (ext === 'xlsx' || ext === 'xls') {
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer, { type: 'array' })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+
+    // Use raw 2D array so we can skip empty leading rows manually
+    const rawData = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: '',
+    })
+
+    // Find first non-empty row to use as column headers
+    let headerRowIndex = 0
+    for (let i = 0; i < rawData.length; i++) {
+      const row = rawData[i] as unknown[]
+      if (row.some((cell) => String(cell ?? '').trim() !== '')) {
+        headerRowIndex = i
+        break
+      }
+    }
+
+    const headers = (rawData[headerRowIndex] as unknown[]).map((h) =>
+      String(h ?? '').trim()
+    )
+
+    // Convert data rows to objects using extracted headers
+    rawRows = (rawData.slice(headerRowIndex + 1) as unknown[][])
+      .filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''))
+      .map((row) => {
+        const obj: Record<string, unknown> = {}
+        row.forEach((cell, i) => {
+          const key = headers[i] || `_col${i}`
+          obj[key] = cell
+        })
+        return obj
+      })
+
   } else {
     throw new Error('Unsupported file type. Please upload .csv, .xlsx, or .xls')
   }
