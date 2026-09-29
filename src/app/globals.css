@@ -230,6 +230,7 @@ html[data-theme="rose"] {
 }
 
 /* Bengali language font */
-.font-bengali {
-  font-family: var(--font-bengali), 'Hind Siliguri', sans-serif;
+.font-bengali,
+.font-bengali *:not(code):not(pre):not(.font-mono) {
+  font-family: var(--font-bengali), 'Hind Siliguri', sans-serif !important;
 }
