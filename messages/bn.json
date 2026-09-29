@@ -1,0 +1,104 @@
+{
+  "Sidebar": {
+    "dashboard": "ড্যাশবোর্ড",
+    "inbox": "ইনবক্স",
+    "contacts": "কন্টাক্টস",
+    "products": "পণ্যসমূহ",
+    "pipelines": "পাইপলাইন",
+    "broadcasts": "ব্রডকাস্ট",
+    "automations": "অটোমেশন",
+    "flows": "ফ্লো",
+    "agents": "এআই এজেন্ট",
+    "notifications": "নোটিফিকেশন",
+    "settings": "সেটিংস",
+    "aiAgents": "এআই এজেন্ট"
+  },
+  "Header": {
+    "search": "অনুসন্ধান করুন...",
+    "notifications": "নোটিফিকেশন",
+    "profile": "প্রোফাইল",
+    "logout": "লগআউট"
+  },
+  "LoginPage": {
+    "title": "আপনার অ্যাকাউন্টে লগইন করুন",
+    "subtitle": "JobabDesk-এ স্বাগতম",
+    "email": "ইমেইল",
+    "emailPlaceholder": "আপনার ইমেইল লিখুন",
+    "password": "পাসওয়ার্ড",
+    "passwordPlaceholder": "আপনার পাসওয়ার্ড লিখুন",
+    "submit": "লগইন করুন",
+    "submitting": "লগইন হচ্ছে...",
+    "forgotPassword": "পাসওয়ার্ড ভুলে গেছেন?",
+    "noAccount": "অ্যাকাউন্ট নেই?",
+    "signUp": "সাইন আপ করুন",
+    "orContinueWith": "অথবা দিয়ে চালিয়ে যান"
+  },
+  "SignupPage": {
+    "title": "নতুন অ্যাকাউন্ট তৈরি করুন",
+    "subtitle": "JobabDesk-এ যোগ দিন",
+    "name": "নাম",
+    "namePlaceholder": "আপনার নাম লিখুন",
+    "email": "ইমেইল",
+    "emailPlaceholder": "আপনার ইমেইল লিখুন",
+    "password": "পাসওয়ার্ড",
+    "passwordPlaceholder": "পাসওয়ার্ড তৈরি করুন",
+    "submit": "অ্যাকাউন্ট তৈরি করুন",
+    "submitting": "তৈরি হচ্ছে...",
+    "haveAccount": "ইতিমধ্যে অ্যাকাউন্ট আছে?",
+    "login": "লগইন করুন"
+  },
+  "ForgotPasswordPage": {
+    "title": "পাসওয়ার্ড রিসেট করুন",
+    "subtitle": "আপনার ইমেইলে লিংক পাঠানো হবে",
+    "email": "ইমেইল",
+    "submit": "রিসেট লিংক পাঠান",
+    "backToLogin": "লগইনে ফিরে যান"
+  },
+  "Dashboard": {
+    "title": "ড্যাশবোর্ড",
+    "welcome": "স্বাগতম",
+    "totalContacts": "মোট কন্টাক্ট",
+    "openConversations": "খোলা কথোপকথন",
+    "messagesSent": "বার্তা পাঠানো হয়েছে",
+    "aiReplies": "এআই জবাব"
+  },
+  "Inbox": {
+    "title": "ইনবক্স",
+    "search": "কথোপকথন খুঁজুন...",
+    "noConversations": "কোনো কথোপকথন নেই",
+    "typeMessage": "বার্তা লিখুন...",
+    "send": "পাঠান",
+    "assign": "অ্যাসাইন করুন",
+    "resolve": "সমাধান করুন",
+    "reopen": "পুনরায় খুলুন"
+  },
+  "Contacts": {
+    "title": "কন্টাক্টস",
+    "search": "কন্টাক্ট খুঁজুন...",
+    "addContact": "কন্টাক্ট যোগ করুন",
+    "name": "নাম",
+    "phone": "ফোন",
+    "email": "ইমেইল",
+    "noContacts": "কোনো কন্টাক্ট নেই"
+  },
+  "Settings": {
+    "title": "সেটিংস",
+    "profile": "প্রোফাইল",
+    "security": "নিরাপত্তা",
+    "appearance": "থিম",
+    "members": "সদস্য",
+    "whatsapp": "WhatsApp",
+    "save": "সংরক্ষণ করুন",
+    "cancel": "বাতিল করুন",
+    "saving": "সংরক্ষণ হচ্ছে..."
+  },
+  "ModeToggle": {
+    "light": "লাইট",
+    "dark": "ডার্ক",
+    "system": "সিস্টেম"
+  },
+  "DashboardShell": {
+    "permissionError": "আপনার অনুমতি লোড করা যায়নি",
+    "permissionErrorDescription": "আপনার অ্যাকাউন্ট রোল লোড হয়নি, তাই সব কার্যক্রম শুধু-পড়া হিসেবে গণ্য হবে।"
+  }
+}

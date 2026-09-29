@@ -228,3 +228,15 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+
+/* Bengali language font */
+html[lang="bn"] {
+  font-family: var(--font-bengali), sans-serif;
+}
+
+html[lang="bn"] input,
+html[lang="bn"] textarea,
+html[lang="bn"] button,
+html[lang="bn"] select {
+  font-family: var(--font-bengali), sans-serif;
+}

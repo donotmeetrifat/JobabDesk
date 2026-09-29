@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { LanguageToggle } from "@/components/language-toggle";
 import {
   Bell,
   Bot,
@@ -273,6 +274,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           <div className="my-4 border-t border-border" />
 
           <ul className="flex flex-col gap-1">
+            <li>
+              <LanguageToggle />
+            </li>
             {bottomNavItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (
