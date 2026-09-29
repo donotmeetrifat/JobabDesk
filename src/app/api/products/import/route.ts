@@ -29,8 +29,8 @@ export async function POST(req: Request) {
       name: r.name.trim(),
       sku: r.sku?.trim() || null,
       description: r.description?.trim() || null,
-      price: r.price,
-      cost: r.cost,
+      price: r.price ?? 0,           // default 0 if blank in spreadsheet
+      cost: r.cost ?? null,
       category: r.category?.trim() || null,
       brand: r.brand?.trim() || null,
       stock_quantity: r.stock_quantity ?? 0,
