@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       brand: r.brand?.trim() || null,
       stock_quantity: r.stock_quantity ?? 0,
       unit: r.unit?.trim() || 'pcs',
-      barcode: r.barcode?.trim() || null,
+      ...(r.barcode?.trim() ? { barcode: r.barcode.trim() } : {}),
       status: r.status || 'active',
     }))
 
@@ -48,9 +48,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    const importedCount = data?.length ?? 0
     return NextResponse.json({
       success: true,
-      imported: data?.length ?? validRows.length,
+      imported: importedCount > 0 ? importedCount : validRows.length,
       total: rows.length,
     })
   } catch (err) {
