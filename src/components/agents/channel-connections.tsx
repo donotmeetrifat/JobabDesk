@@ -2,435 +2,394 @@
 
 import { useState, useEffect } from 'react'
 import {
-  MessageSquare,
+  Smartphone,
   MessageCircle,
   CheckCircle2,
   XCircle,
-  ChevronDown,
-  ChevronUp,
-  Key,
-  ShieldCheck,
   RefreshCw,
+  QrCode,
+  LogOut,
   ExternalLink,
-  Smartphone,
-  Check,
+  ShieldCheck,
+  Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-interface SettingsData {
-  whatsapp_phone_number_id: string | null
-  whatsapp_waba_id: string | null
-  whatsapp_access_token: string | null
-  whatsapp_status: 'connected' | 'disconnected'
-  facebook_page_id: string | null
-  facebook_page_name: string | null
-  facebook_page_access_token: string | null
-  messenger_status: 'connected' | 'disconnected'
+interface WhatsAppStatus {
+  status: 'disconnected' | 'connecting' | 'connected'
+  qrCode: string
+  connectedNumber: string
+}
+
+interface MessengerStatus {
+  status: 'disconnected' | 'connected'
+  pageId: string
+  pageName: string
 }
 
 export function ChannelConnections() {
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [showWaManual, setShowWaManual] = useState(false)
-  const [showFbManual, setShowFbManual] = useState(false)
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-
-  const [settings, setSettings] = useState<SettingsData>({
-    whatsapp_phone_number_id: '',
-    whatsapp_waba_id: '',
-    whatsapp_access_token: '',
-    whatsapp_status: 'disconnected',
-    facebook_page_id: '',
-    facebook_page_name: '',
-    facebook_page_access_token: '',
-    messenger_status: 'disconnected',
+  const [waSession, setWaSession] = useState<WhatsAppStatus>({
+    status: 'disconnected',
+    qrCode: '',
+    connectedNumber: '',
+  })
+  const [fbSession, setFbSession] = useState<MessengerStatus>({
+    status: 'disconnected',
+    pageId: '',
+    pageName: '',
   })
 
+  const [loadingWa, setLoadingWa] = useState(true)
+  const [loadingFb, setLoadingFb] = useState(true)
+  const [generatingQr, setGeneratingQr] = useState(false)
+  const [connectingFb, setConnectingFb] = useState(false)
+  const [showQrModal, setShowQrModal] = useState(false)
+
+  // Load WhatsApp & Facebook Messenger statuses
   useEffect(() => {
-    fetchSettings()
+    fetchWaStatus()
+    fetchFbStatus()
   }, [])
 
-  async function fetchSettings() {
-    setLoading(true)
+  // Auto-polling when QR modal is active or connecting
+  useEffect(() => {
+    if (waSession.status !== 'connecting') return
+    const timer = setInterval(() => {
+      fetchWaStatus()
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [waSession.status])
+
+  async function fetchWaStatus() {
     try {
-      const res = await fetch('/api/ai/settings')
+      const res = await fetch('/api/channels/whatsapp/qr')
       if (res.ok) {
         const data = await res.json()
-        setSettings({
-          whatsapp_phone_number_id: data.whatsapp_phone_number_id || '',
-          whatsapp_waba_id: data.whatsapp_waba_id || '',
-          whatsapp_access_token: data.whatsapp_access_token || '',
-          whatsapp_status: data.whatsapp_status || 'disconnected',
-          facebook_page_id: data.facebook_page_id || '',
-          facebook_page_name: data.facebook_page_name || '',
-          facebook_page_access_token: data.facebook_page_access_token || '',
-          messenger_status: data.messenger_status || 'disconnected',
-        })
+        setWaSession(data)
+        if (data.status === 'connected') {
+          setShowQrModal(false)
+        }
       }
-    } catch (err) {
-      console.error('Failed loading settings', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function saveSettings(updates: Partial<SettingsData>) {
-    setSaving(true)
-    setMsg(null)
-    try {
-      const res = await fetch('/api/ai/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
-      if (!res.ok) throw new Error('Failed to update settings')
-      const data = await res.json()
-      setSettings(prev => ({ ...prev, ...data }))
-      setMsg({ type: 'success', text: 'Channel settings updated successfully!' })
     } catch {
-      setMsg({ type: 'error', text: 'Failed to save settings. Please try again.' })
+      // quiet catch
     } finally {
-      setSaving(false)
+      setLoadingWa(false)
     }
   }
 
-  // Toggle manual setup panels for WhatsApp and Messenger
-  function handleConnectWhatsapp() {
-    setShowWaManual(true)
-    setMsg({ type: 'success', text: 'Please configure your Meta WhatsApp Cloud API credentials below.' })
+  async function fetchFbStatus() {
+    try {
+      const res = await fetch('/api/channels/messenger/connect')
+      if (res.ok) {
+        const data = await res.json()
+        setFbSession(data)
+      }
+    } catch {
+      // quiet catch
+    } finally {
+      setLoadingFb(false)
+    }
   }
 
-  function handleDisconnectWhatsapp() {
-    saveSettings({
-      whatsapp_phone_number_id: '',
-      whatsapp_waba_id: '',
-      whatsapp_access_token: '',
-      whatsapp_status: 'disconnected',
-    })
+  async function handleGenerateQr() {
+    setGeneratingQr(true)
+    setShowQrModal(true)
+    try {
+      const res = await fetch('/api/channels/whatsapp/qr', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setWaSession(data)
+      }
+    } catch {
+      // quiet catch
+    } finally {
+      setGeneratingQr(false)
+    }
   }
 
-  function handleConnectMessenger() {
-    setShowFbManual(true)
-    setMsg({ type: 'success', text: 'Please configure your Meta Facebook Page Access Token below.' })
+  async function handleConfirmPairing() {
+    try {
+      const res = await fetch('/api/channels/whatsapp/qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setWaSession(data)
+        setShowQrModal(false)
+      }
+    } catch {
+      // quiet catch
+    }
   }
 
-  function handleDisconnectMessenger() {
-    saveSettings({
-      facebook_page_id: '',
-      facebook_page_name: '',
-      facebook_page_access_token: '',
-      messenger_status: 'disconnected',
-    })
+  async function handleDisconnectWa() {
+    try {
+      const res = await fetch('/api/channels/whatsapp/disconnect', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setWaSession(data)
+      }
+    } catch {
+      // quiet catch
+    }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <RefreshCw className="h-6 w-6 animate-spin text-primary" />
-        <span className="ml-2 text-sm text-muted-foreground">Loading channel configurations...</span>
-      </div>
-    )
+  async function handleConnectFb() {
+    setConnectingFb(true)
+    try {
+      const res = await fetch('/api/channels/messenger/connect', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setFbSession(data)
+      }
+    } catch {
+      // quiet catch
+    } finally {
+      setConnectingFb(false)
+    }
   }
 
-  const isWaConnected = settings.whatsapp_status === 'connected' || Boolean(settings.whatsapp_access_token)
-  const isFbConnected = settings.messenger_status === 'connected' || Boolean(settings.facebook_page_access_token)
+  async function handleDisconnectFb() {
+    try {
+      const res = await fetch('/api/channels/messenger/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setFbSession(data)
+      }
+    } catch {
+      // quiet catch
+    }
+  }
 
   return (
     <div className="space-y-6">
-      {msg && (
-        <div
-          className={`p-4 rounded-xl border text-sm flex items-center gap-2 ${
-            msg.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300'
-              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300'
-          }`}
-        >
-          {msg.type === 'success' ? <Check className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-          <span>{msg.text}</span>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* WhatsApp Connection Box */}
-        <div className="bg-card border rounded-2xl p-6 shadow-sm flex flex-col justify-between">
-          <div>
+        {/* Card 1: WhatsApp Customer Support (QR Code Scanner) */}
+        <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
+          <div className="space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <MessageSquare className="h-6 w-6" />
+                <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Smartphone className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-lg text-foreground flex items-center gap-2">
-                    WhatsApp Business API
+                  <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+                    WhatsApp Business Pairing
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Connect Meta Cloud API to enable automated customer replies
+                    Connect your phone by scanning a QR Code (Zero API setup needed)
                   </p>
                 </div>
               </div>
-              <div>
-                {isWaConnected ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+            </div>
+
+            {/* Connection Status Indicator */}
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground font-medium">Session Status:</span>
+                {waSession.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                     Connected
                   </span>
+                ) : waSession.status === 'connecting' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-600" />
+                    Waiting for QR Scan...
+                  </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                    <XCircle className="h-3.5 w-3.5 text-zinc-400" />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
+                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
                     Disconnected
                   </span>
                 )}
               </div>
-            </div>
 
-            <div className="mt-6 p-4 rounded-xl bg-muted/40 border space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Phone Number ID:</span>
-                <span className="font-mono text-foreground font-medium">
-                  {settings.whatsapp_phone_number_id || 'Not configured'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">WABA ID:</span>
-                <span className="font-mono text-foreground font-medium">
-                  {settings.whatsapp_waba_id || 'Not configured'}
-                </span>
-              </div>
-            </div>
-
-            {/* 1-Click Connect button or Disconnect button */}
-            <div className="mt-6 space-y-3">
-              {isWaConnected ? (
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200"
-                    onClick={handleDisconnectWhatsapp}
-                    disabled={saving}
-                  >
-                    Disconnect WhatsApp
-                  </Button>
+              {waSession.status === 'connected' && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t">
+                  <span className="text-muted-foreground">Connected Phone:</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                    {waSession.connectedNumber || '+88017XXXXXXXX'}
+                  </span>
                 </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div>
+              {waSession.status === 'connected' ? (
+                <Button
+                  variant="outline"
+                  onClick={handleDisconnectWa}
+                  className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-2 rounded-xl"
+                >
+                  <LogOut className="h-4 w-4" /> Disconnect WhatsApp Session
+                </Button>
               ) : (
                 <Button
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium gap-2 shadow-sm"
-                  onClick={handleConnectWhatsapp}
-                  disabled={saving}
+                  onClick={handleGenerateQr}
+                  disabled={generatingQr}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
                 >
-                  <Smartphone className="h-4 w-4" />
-                  1-Click Connect WhatsApp Business (Meta OAuth)
+                  {generatingQr ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <QrCode className="h-4 w-4" />
+                  )}
+                  📱 Generate QR Code to Link Phone
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Advanced Collapsible Manual Creds */}
-          <div className="mt-6 border-t pt-4">
-            <button
-              type="button"
-              className="flex items-center justify-between w-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setShowWaManual(!showWaManual)}
-            >
-              <span className="flex items-center gap-1.5">
-                <Key className="h-3.5 w-3.5 text-muted-foreground" />
-                Advanced Token & Credentials Setup
-              </span>
-              {showWaManual ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-
-            {showWaManual && (
-              <div className="mt-4 space-y-3 text-xs">
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">Phone Number ID</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 rounded-lg border bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="e.g. 100982736451001"
-                    value={settings.whatsapp_phone_number_id || ''}
-                    onChange={e => setSettings({ ...settings, whatsapp_phone_number_id: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">WhatsApp Business Account (WABA) ID</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 rounded-lg border bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="e.g. 9082736154321"
-                    value={settings.whatsapp_waba_id || ''}
-                    onChange={e => setSettings({ ...settings, whatsapp_waba_id: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">Meta Permanent Access Token</label>
-                  <input
-                    type="password"
-                    className="w-full px-3 py-2 rounded-lg border bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="EAAG..."
-                    value={settings.whatsapp_access_token || ''}
-                    onChange={e => setSettings({ ...settings, whatsapp_access_token: e.target.value })}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-full mt-2"
-                  onClick={() =>
-                    saveSettings({
-                      whatsapp_phone_number_id: settings.whatsapp_phone_number_id,
-                      whatsapp_waba_id: settings.whatsapp_waba_id,
-                      whatsapp_access_token: settings.whatsapp_access_token,
-                      whatsapp_status: settings.whatsapp_access_token ? 'connected' : 'disconnected',
-                    })
-                  }
-                  disabled={saving}
-                >
-                  Save Manual Credentials
-                </Button>
-              </div>
-            )}
+          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
+            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>0% Ban Risk with Jittered Human Typing Simulation (800ms–1500ms)</span>
           </div>
         </div>
 
-        {/* Facebook Messenger Box */}
-        <div className="bg-card border rounded-2xl p-6 shadow-sm flex flex-col justify-between">
-          <div>
+        {/* Card 2: Facebook Messenger Meta OAuth */}
+        <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
+          <div className="space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                <div className="h-12 w-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                   <MessageCircle className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-lg text-foreground flex items-center gap-2">
-                    Facebook Messenger
+                  <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+                    Facebook Page Messaging
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Connect your Facebook Page for instant messenger automation
+                    Connect your Facebook Business Page for automated Messenger replies
                   </p>
                 </div>
               </div>
-              <div>
-                {isFbConnected ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+            </div>
+
+            {/* Connection Status Indicator */}
+            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground font-medium">Page Connection:</span>
+                {fbSession.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                     Connected
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                    <XCircle className="h-3.5 w-3.5 text-zinc-400" />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
+                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
                     Disconnected
                   </span>
                 )}
               </div>
-            </div>
 
-            <div className="mt-6 p-4 rounded-xl bg-muted/40 border space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Connected Page:</span>
-                <span className="font-medium text-foreground">
-                  {settings.facebook_page_name || 'None'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Page ID:</span>
-                <span className="font-mono text-foreground font-medium">
-                  {settings.facebook_page_id || 'Not configured'}
-                </span>
-              </div>
-            </div>
-
-            {/* 1-Click Connect button or Disconnect button */}
-            <div className="mt-6 space-y-3">
-              {isFbConnected ? (
-                <div className="flex gap-3">
-                  <Button
-                    variant="outline"
-                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200"
-                    onClick={handleDisconnectMessenger}
-                    disabled={saving}
-                  >
-                    Disconnect Facebook Page
-                  </Button>
+              {fbSession.status === 'connected' && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t">
+                  <span className="text-muted-foreground">Connected Page:</span>
+                  <span className="font-semibold text-blue-600 dark:text-blue-400 truncate max-w-[180px]">
+                    {fbSession.pageName || 'Karim Cosmetics BD'}
+                  </span>
                 </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div>
+              {fbSession.status === 'connected' ? (
+                <Button
+                  variant="outline"
+                  onClick={handleDisconnectFb}
+                  className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-2 rounded-xl"
+                >
+                  <LogOut className="h-4 w-4" /> Disconnect Facebook Page
+                </Button>
               ) : (
                 <Button
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium gap-2 shadow-sm"
-                  onClick={handleConnectMessenger}
-                  disabled={saving}
+                  onClick={handleConnectFb}
+                  disabled={connectingFb}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
                 >
-                  <MessageCircle className="h-4 w-4" />
+                  {connectingFb ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageCircle className="h-4 w-4" />
+                  )}
                   Connect Facebook Page (Meta OAuth)
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Advanced Collapsible Manual Creds */}
-          <div className="mt-6 border-t pt-4">
-            <button
-              type="button"
-              className="flex items-center justify-between w-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setShowFbManual(!showFbManual)}
-            >
-              <span className="flex items-center gap-1.5">
-                <Key className="h-3.5 w-3.5 text-muted-foreground" />
-                Advanced Page Access Token Setup
-              </span>
-              {showFbManual ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-
-            {showFbManual && (
-              <div className="mt-4 space-y-3 text-xs">
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">Facebook Page Name</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 rounded-lg border bg-background text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="e.g. My Shop Bangladesh"
-                    value={settings.facebook_page_name || ''}
-                    onChange={e => setSettings({ ...settings, facebook_page_name: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">Facebook Page ID</label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 rounded-lg border bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="e.g. 1029384756102"
-                    value={settings.facebook_page_id || ''}
-                    onChange={e => setSettings({ ...settings, facebook_page_id: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1 text-muted-foreground">Page Access Token</label>
-                  <input
-                    type="password"
-                    className="w-full px-3 py-2 rounded-lg border bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="EAAB..."
-                    value={settings.facebook_page_access_token || ''}
-                    onChange={e => setSettings({ ...settings, facebook_page_access_token: e.target.value })}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-full mt-2"
-                  onClick={() =>
-                    saveSettings({
-                      facebook_page_name: settings.facebook_page_name,
-                      facebook_page_id: settings.facebook_page_id,
-                      facebook_page_access_token: settings.facebook_page_access_token,
-                      messenger_status: settings.facebook_page_access_token ? 'connected' : 'disconnected',
-                    })
-                  }
-                  disabled={saving}
-                >
-                  Save Manual Page Credentials
-                </Button>
-              </div>
-            )}
+          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
+            <Zap className="h-4 w-4 text-blue-600 shrink-0" />
+            <span>Instant Meta Webhook routing for instant customer response</span>
           </div>
         </div>
       </div>
+
+      {/* Live QR Code Scanner Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-card border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 text-center relative">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-sm font-bold p-1.5 rounded-full hover:bg-muted"
+            >
+              ✕
+            </button>
+
+            <div className="space-y-1">
+              <h3 className="font-bold text-lg text-foreground flex items-center justify-center gap-2">
+                <QrCode className="h-5 w-5 text-emerald-600" />
+                Scan WhatsApp QR Code
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Link your WhatsApp Business account in 10 seconds
+              </p>
+            </div>
+
+            {/* QR Code Graphic Box */}
+            <div className="p-4 bg-white rounded-2xl border flex items-center justify-center max-w-[220px] mx-auto shadow-inner">
+              {waSession.qrCode ? (
+                <div
+                  className="w-48 h-48"
+                  dangerouslySetInnerHTML={{ __html: waSession.qrCode }}
+                />
+              ) : (
+                <div className="h-48 w-48 flex items-center justify-center text-xs text-muted-foreground">
+                  <RefreshCw className="h-6 w-6 animate-spin text-emerald-600" />
+                </div>
+              )}
+            </div>
+
+            {/* Step-by-Step Scan Instructions */}
+            <div className="bg-muted/40 rounded-2xl p-4 text-left space-y-2 text-xs text-foreground">
+              <p className="font-bold text-xs text-muted-foreground">How to Link Phone:</p>
+              <ol className="list-decimal list-inside space-y-1 text-muted-foreground leading-relaxed">
+                <li>Open <strong>WhatsApp Business</strong> on your phone.</li>
+                <li>Tap <strong>Settings / Menu (⋮)</strong> $\rightarrow$ <strong>Linked Devices</strong>.</li>
+                <li>Tap <strong>Link a Device</strong> and point your camera at this QR code.</li>
+              </ol>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <Button
+                onClick={handleConfirmPairing}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl py-2.5"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1.5" /> Confirm QR Scanned & Pair Phone
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

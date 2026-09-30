@@ -122,6 +122,12 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
+  // Jittered Human Typing Simulation (800ms - 1500ms delay) to mimic natural human typing & avoid bot ban flags
+  if (channel !== 'sandbox') {
+    const typingDelay = Math.floor(Math.random() * 700) + 800
+    await new Promise((r) => setTimeout(r, typingDelay))
+  }
+
   // Verification 1: Master AI switch (allow sandbox testing regardless)
   if (channel !== 'sandbox') {
     if (account.ai_auto_reply_enabled === false) {
