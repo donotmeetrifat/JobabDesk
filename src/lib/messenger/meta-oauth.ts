@@ -20,19 +20,20 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
   try {
     const { data: account } = await db
       .from('accounts')
-      .select('messenger_connection_status, messenger_status, facebook_page_id, facebook_page_name, facebook_page_access_token')
+      .select('*')
       .eq('id', accountId)
       .maybeSingle()
 
-    const hasRealCredentials = Boolean(
-      account?.facebook_page_id?.trim() && account?.facebook_page_access_token?.trim()
-    )
-    const isConnected = hasRealCredentials
+    const pageId = (account?.facebook_page_id || account?.messenger_page_id || account?.page_id || '').trim()
+    const pageToken = (account?.facebook_page_access_token || account?.messenger_access_token || account?.page_access_token || '').trim()
+    const pageName = (account?.facebook_page_name || account?.messenger_page_name || account?.page_name || pageId).trim()
+
+    const isConnected = Boolean(pageId && pageToken)
 
     return {
       status: isConnected ? 'connected' : 'disconnected',
-      pageId: isConnected ? account.facebook_page_id : '',
-      pageName: isConnected ? account.facebook_page_name || account.facebook_page_id : '',
+      pageId: isConnected ? pageId : '',
+      pageName: isConnected ? pageName : '',
     }
   } catch {
     return { status: 'disconnected', pageId: '', pageName: '' }
@@ -80,6 +81,9 @@ export async function connectFacebookPage(
         facebook_page_id: pageId,
         facebook_page_name: pageName || pageId,
         facebook_page_access_token: token,
+        messenger_page_id: pageId,
+        messenger_page_name: pageName || pageId,
+        messenger_access_token: token,
       })
       .eq('id', accountId)
 
@@ -108,6 +112,9 @@ export async function disconnectFacebookPage(accountId: string, supabase?: any):
         facebook_page_id: '',
         facebook_page_name: '',
         facebook_page_access_token: '',
+        messenger_page_id: '',
+        messenger_page_name: '',
+        messenger_access_token: '',
       })
       .eq('id', accountId)
   } catch {
