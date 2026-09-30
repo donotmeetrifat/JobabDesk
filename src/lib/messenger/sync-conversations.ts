@@ -229,20 +229,27 @@ export async function syncFacebookMessengerConversations(
 
     // 2. Query Meta Graph API for conversations across all platform permutations
     // Meta requires platform=messenger to retrieve Messenger threads for a Facebook Page.
+    // Note: Do NOT request 'senders' on Conversation — it does not exist on Conversation node (causes error #100).
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v19.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,senders,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v19.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=id,updated_time,participants,senders,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v19.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      )
+      candidates.push(
+        `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v19.0/me/conversations?platform=messenger&fields=id,updated_time,participants,senders,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v19.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v19.0/me/conversations?fields=id,updated_time,participants,senders,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v19.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+    )
+    candidates.push(
+      `https://graph.facebook.com/v19.0/me/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
@@ -262,9 +269,20 @@ export async function syncFacebookMessengerConversations(
           }
         } else if (cData?.error) {
           lastErrorMsg = cData.error.message || lastErrorMsg
+          console.warn('[Sync conversations candidate error]:', cData.error.message)
         }
       } catch (cErr: any) {
-        console.warn('[Sync conversations candidate error]:', cErr?.message)
+        console.warn('[Sync conversations network error]:', cErr?.message)
+      }
+    }
+
+    if (rawConversations.length === 0 && lastErrorMsg) {
+      return {
+        success: false,
+        tokenMissing: lastErrorMsg.toLowerCase().includes('token'),
+        conversationsCount: 0,
+        messagesCount: 0,
+        error: lastErrorMsg,
       }
     }
 
