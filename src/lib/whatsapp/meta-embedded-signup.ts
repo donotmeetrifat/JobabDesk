@@ -53,10 +53,7 @@ export function loadFacebookSDK(appId?: string): Promise<void> {
 }
 
 /**
- * Launches Meta Embedded Signup flow using Facebook SDK postMessage & FB.login.
- * Accepts either:
- *  - Options object: launchMetaEmbeddedSignup({ appId, configId, onSuccess, onError })
- *  - Function arguments: launchMetaEmbeddedSignup(onSuccess, onError)
+ * Launches Meta Embedded Signup flow using Facebook SDK postMessage & FB.login with synchronous popup fallback.
  */
 export function launchMetaEmbeddedSignup(
   optionsOrSuccess: MetaSignupOptions | ((result: MetaSignupResult) => void),
@@ -83,7 +80,7 @@ export function launchMetaEmbeddedSignup(
   const metaConfigId = configId || process.env.NEXT_PUBLIC_META_CONFIG_ID || ''
 
   if (!metaAppId) {
-    onError('Meta App ID is missing. Please enter your Phone Number ID & Permanent Access Token manually below, or set NEXT_PUBLIC_META_APP_ID in Vercel.')
+    onError('Meta App ID is missing. Please enter your Phone Number ID & Permanent Access Token manually below.')
     return
   }
 
@@ -102,10 +99,10 @@ export function launchMetaEmbeddedSignup(
     onError(err)
   }
 
-  // Safety 30-second timeout guard to prevent infinite spinner
+  // 45-second safety timeout guard
   const timeoutId = setTimeout(() => {
-    safeError('Connection window timed out or popup was blocked by browser. Please check popups or use manual setup.')
-  }, 30000)
+    safeError('Connection window timed out or popup was blocked by browser. Please allow popups for jobabdesk.vercel.app or use manual setup.')
+  }, 45000)
 
   // Session message listener for Meta postMessage events
   const sessionHandler = (event: MessageEvent) => {
@@ -135,39 +132,59 @@ export function launchMetaEmbeddedSignup(
 
   window.addEventListener('message', sessionHandler)
 
-  const executeLogin = () => {
-    if ((window as any).FB) {
-      const loginOptions: Record<string, any> = {
-        scope: 'whatsapp_business_management,whatsapp_business_messaging',
-        extras: {
-          feature: 'whatsapp_embedded_signup',
-          ...(metaConfigId ? { setup: { config_id: metaConfigId } } : {}),
-        },
-      }
-
-      try {
-        ;(window as any).FB.login((response: any) => {
-          if (response && response.authResponse) {
-            const code = response.authResponse.code
-            const accessToken = response.authResponse.accessToken
-            safeSuccess({ code, accessToken })
-          } else {
-            safeError('Facebook Login popup was closed or cancelled.')
-          }
-        }, loginOptions)
-      } catch (err: any) {
-        safeError(err?.message || 'Failed to open Facebook Login window.')
-      }
-    } else {
-      safeError('Meta Facebook SDK failed to initialize. Please check your browser popup blocker or use manual setup below.')
-    }
-  }
-
+  // Attempt synchronous Facebook SDK login or direct window popup
   if ((window as any).FB) {
-    executeLogin()
+    const loginOptions: Record<string, any> = {
+      scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      extras: {
+        feature: 'whatsapp_embedded_signup',
+        ...(metaConfigId ? { setup: { config_id: metaConfigId } } : {}),
+      },
+    }
+
+    try {
+      ;(window as any).FB.login((response: any) => {
+        if (response && response.authResponse) {
+          const code = response.authResponse.code
+          const accessToken = response.authResponse.accessToken
+          safeSuccess({ code, accessToken })
+        } else {
+          safeError('Facebook Login popup was closed or cancelled.')
+        }
+      }, loginOptions)
+    } catch {
+      openOAuthPopupDirectly(metaAppId, metaConfigId, safeSuccess, safeError)
+    }
   } else {
-    loadFacebookSDK(metaAppId).then(() => {
-      executeLogin()
-    })
+    // If FB SDK hasn't finished loading yet, open direct synchronous Meta OAuth popup so browser doesn't block it
+    openOAuthPopupDirectly(metaAppId, metaConfigId, safeSuccess, safeError)
+    loadFacebookSDK(metaAppId)
+  }
+}
+
+function openOAuthPopupDirectly(
+  appId: string,
+  configId: string,
+  onSuccess: (res: MetaSignupResult) => void,
+  onError: (err: string) => void
+) {
+  const redirectUri = window.location.origin + '/api/channels/whatsapp/embedded-signup'
+  const extras = JSON.stringify({
+    feature: 'whatsapp_embedded_signup',
+    ...(configId ? { setup: { config_id: configId } } : {}),
+  })
+
+  const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${encodeURIComponent(
+    appId
+  )}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=whatsapp_business_management,whatsapp_business_messaging&response_type=code&extras=${encodeURIComponent(
+    extras
+  )}`
+
+  const popup = window.open(oauthUrl, 'MetaLoginPopup', 'width=600,height=750,scrollbars=yes,resizable=yes')
+
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    onError('Browser popup blocked! Please click the popup icon 🚫 in your browser address bar to allow popups, or use manual credentials setup.')
   }
 }
