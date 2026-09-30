@@ -683,32 +683,14 @@ export function ChannelConnections() {
                   </div>
                 )}
 
-                {/* 1-Click Embedded Signup Recommended Banner */}
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+                {/* Meta Official Cloud API Header */}
+                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-1">
                   <h4 className="font-bold text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                    <Zap className="h-4 w-4 text-emerald-600" /> Recommended 1-Click Setup
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" /> Meta Official Cloud API Credentials
                   </h4>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Link your Facebook & WhatsApp Business Account automatically without copying tokens.
+                    Paste your Phone Number ID and Access Token from Meta Developer Console. 100% Free & Stable.
                   </p>
-                  <Button
-                    onClick={handleMetaEmbeddedSignup}
-                    disabled={savingMeta}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl py-2.5 gap-2"
-                  >
-                    {savingMeta ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <MessageCircle className="h-4 w-4 fill-current" />
-                    )}
-                    Connect WhatsApp with Facebook
-                  </Button>
-                </div>
-
-                <div className="relative flex py-1 items-center">
-                  <div className="flex-grow border-t border-muted"></div>
-                  <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Or Manual Configuration</span>
-                  <div className="flex-grow border-t border-muted"></div>
                 </div>
 
                 <div className="space-y-3">
