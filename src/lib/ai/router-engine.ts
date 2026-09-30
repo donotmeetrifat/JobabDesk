@@ -64,17 +64,34 @@ export async function handleIncomingCustomerMessage({
   const db = getAdminClient()
 
   // 1. Fetch Account Channel & AI Settings
-  const { data: account, error: acctErr } = await db
+  let account: any = null
+  const { data: acctData, error: acctErr } = await db
     .from('accounts')
-    .select(
-      'id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language'
-    )
+    .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language')
     .eq('id', accountId)
-    .single()
+    .maybeSingle()
 
-  if (acctErr || !account) {
-    console.error('[AI Router] Account lookup failed:', acctErr?.message)
-    return null
+  if (acctErr || !acctData) {
+    // Fallback lookup if migration 053 columns not applied yet
+    const { data: fallbackAcct } = await db
+      .from('accounts')
+      .select('id, name')
+      .eq('id', accountId)
+      .maybeSingle()
+    
+    if (!fallbackAcct) {
+      console.error('[AI Router] Account lookup failed completely')
+      return null
+    }
+    account = {
+      ...fallbackAcct,
+      ai_auto_reply_enabled: true,
+      whatsapp_auto_reply_enabled: true,
+      messenger_auto_reply_enabled: true,
+      ai_primary_language: 'auto_detect',
+    }
+  } else {
+    account = acctData
   }
 
   // Verification 1: Master AI switch (allow sandbox testing regardless)
