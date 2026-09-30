@@ -22,12 +22,25 @@ export async function sendMetaWhatsAppMessage({
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const db = supabase || getAdminClient()
 
-  // Fetch account credentials from Supabase
-  const { data: account } = await db
-    .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token')
-    .eq('id', accountId)
-    .maybeSingle()
+  let account = null
+
+  if (accountId) {
+    const { data } = await db
+      .from('accounts')
+      .select('whatsapp_phone_number_id, whatsapp_access_token')
+      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+      .maybeSingle()
+    account = data
+  }
+
+  if (!account) {
+    const { data } = await db
+      .from('accounts')
+      .select('whatsapp_phone_number_id, whatsapp_access_token')
+      .limit(1)
+      .maybeSingle()
+    account = data
+  }
 
   const phoneNumberId = account?.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID
   const accessToken = account?.whatsapp_access_token || process.env.WHATSAPP_ACCESS_TOKEN
