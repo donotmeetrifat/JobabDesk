@@ -370,9 +370,29 @@ function InboxPageInner() {
           }
           setTokenMissing(false);
           setShowTokenModal(false);
-          toast.success(
-            `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
-          );
+          if (data.pageName) {
+            setMessengerPageName(data.pageName);
+          }
+          if (data.debug?.pageId) {
+            setMessengerPageId(data.debug.pageId);
+          }
+
+          if (data.conversationsCount > 0) {
+            toast.success(
+              `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
+            );
+          } else {
+            const rawCount = data.debug?.rawMetaCount ?? 0;
+            if (rawCount > 0) {
+              toast.warning(
+                `Found ${rawCount} conversation(s) on Meta, but failed to save: ${data.debug?.errors?.join("; ") || "Check database logs"}`
+              );
+            } else {
+              toast.info(
+                `Synced with Facebook (${data.pageName || "Page"}). Meta returned 0 Messenger conversations.`
+              );
+            }
+          }
           setResyncToken((prev) => prev + 1);
         } else {
           if (

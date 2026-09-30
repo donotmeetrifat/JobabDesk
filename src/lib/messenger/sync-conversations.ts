@@ -48,6 +48,12 @@ export interface SyncResult {
   pageName?: string
   error?: string
   tokenMissing?: boolean
+  debug?: {
+    pageId?: string
+    pageName?: string
+    rawMetaCount?: number
+    errors?: string[]
+  }
 }
 
 export async function syncFacebookMessengerConversations(
@@ -61,78 +67,83 @@ export async function syncFacebookMessengerConversations(
   const db = getAdminClient()
 
   try {
-    // 1. Fetch account Facebook credentials
-    let pageId = explicitPageId
-    let pageToken = explicitPageToken
-    let pageName = ''
+    // 1. Resolve guaranteed valid account ID and record from accounts table
     let actualAccountId = accountId
+    let pageId = explicitPageId?.trim() || ''
+    let pageToken = explicitPageToken?.trim() || ''
+    let pageName = ''
 
-    if (!pageId || !pageToken) {
-      let account: any = null
+    let accountRecord: any = null
+    if (accountId) {
+      const { data: acc } = await db
+        .from('accounts')
+        .select('*')
+        .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+        .maybeSingle()
+      accountRecord = acc
+    }
 
-      // Try 1: Dual lookup on id or owner_user_id
-      if (accountId) {
-        const { data } = await db
+    if (!accountRecord && accountId) {
+      const { data: prof } = await db
+        .from('profiles')
+        .select('account_id')
+        .eq('user_id', accountId)
+        .maybeSingle()
+      if (prof?.account_id) {
+        const { data: acc } = await db
           .from('accounts')
           .select('*')
-          .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+          .eq('id', prof.account_id)
           .maybeSingle()
-        account = data
+        accountRecord = acc
       }
+    }
 
-      // Try 2: Any account with facebook_page_id
-      if (!account || !account.facebook_page_id) {
-        const { data: anyAcc } = await db
-          .from('accounts')
+    if (!accountRecord) {
+      const { data: anyAcc } = await db
+        .from('accounts')
+        .select('*')
+        .not('facebook_page_access_token', 'is', null)
+        .limit(1)
+        .maybeSingle()
+      accountRecord = anyAcc
+    }
+
+    if (!accountRecord) {
+      const { data: anyFirstAcc } = await db
+        .from('accounts')
+        .select('*')
+        .limit(1)
+        .maybeSingle()
+      accountRecord = anyFirstAcc
+    }
+
+    if (accountRecord) {
+      actualAccountId = accountRecord.id
+      pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
+      pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
+      pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
+    }
+
+    // Try channel_connections table (migration 044) if token is still missing
+    if (!pageToken) {
+      try {
+        const { data: chan } = await db
+          .from('channel_connections')
           .select('*')
-          .not('facebook_page_id', 'is', null)
+          .eq('channel_type', 'messenger')
+          .eq('is_active', true)
           .limit(1)
           .maybeSingle()
-        if (anyAcc?.facebook_page_id) {
-          account = anyAcc
-        }
-      }
-
-      // Try 3: Any account with facebook_page_access_token
-      if (!account || !account.facebook_page_access_token) {
-        const { data: anyTokenAcc } = await db
-          .from('accounts')
-          .select('*')
-          .not('facebook_page_access_token', 'is', null)
-          .limit(1)
-          .maybeSingle()
-        if (anyTokenAcc?.facebook_page_access_token) {
-          account = anyTokenAcc
-        }
-      }
-
-      if (account) {
-        actualAccountId = account.id || actualAccountId
-        pageId = pageId || (account.facebook_page_id || account.fb_page_id || '').trim()
-        pageToken = pageToken || (account.facebook_page_access_token || '').trim()
-        pageName = (account.facebook_page_name || account.fb_page_name || pageId).trim()
-      }
-
-      // Try 4: Check channel_connections table (migration 044)
-      if (!pageToken) {
-        try {
-          const { data: chan } = await db
-            .from('channel_connections')
-            .select('*')
-            .eq('channel_type', 'messenger')
-            .eq('is_active', true)
-            .limit(1)
-            .maybeSingle()
-          if (chan) {
-            actualAccountId = chan.account_id || actualAccountId
-            pageId = pageId || chan.external_account_id
-            pageName = pageName || chan.display_name || pageId
-            if (chan.metadata?.access_token || chan.metadata?.accessToken) {
-              pageToken = pageToken || chan.metadata.access_token || chan.metadata.accessToken
-            }
+        if (chan) {
+          actualAccountId = chan.account_id || actualAccountId
+          pageId = pageId || chan.external_account_id
+          pageName = pageName || chan.display_name || pageId
+          if (chan.metadata?.access_token || chan.metadata?.accessToken) {
+            pageToken = pageToken || chan.metadata.access_token || chan.metadata.accessToken
           }
-        } catch {}
-      }
+        }
+      } catch {}
     }
 
     // If we have a pageToken, automatically verify and resolve the real Page ID and Page Name
@@ -140,19 +151,19 @@ export async function syncFacebookMessengerConversations(
     if (pageToken) {
       try {
         const meRes = await fetch(
-          `https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/me?fields=id,name&access_token=${encodeURIComponent(pageToken)}`
         )
         if (meRes.ok) {
           const meData = await meRes.json()
           if (meData?.id) {
-            pageId = meData.id
-            pageName = meData.name || pageName || 'Digiplus'
+            pageId = pageId || meData.id
+            pageName = pageName || meData.name || 'Digiplus'
           }
         }
 
-        // Also check /me/accounts in case a User Access Token or admin token was provided
+        // Also check /me/accounts in case a User Access Token was provided
         const accsRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
         )
         if (accsRes.ok) {
           const accsData = await accsRes.json()
@@ -191,7 +202,7 @@ export async function syncFacebookMessengerConversations(
             facebook_page_access_token: pageToken,
             messenger_status: 'connected',
           })
-          .or(`id.eq.${actualAccountId},owner_user_id.eq.${actualAccountId}`)
+          .eq('id', actualAccountId)
       } catch (saveErr) {
         console.warn('[Sync conversations persist token warning]:', saveErr)
       }
@@ -225,71 +236,86 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    const ownerUserId = await resolveOwnerUserId(db, actualAccountId, explicitUserId)
+    const ownerUserId =
+      explicitUserId ||
+      accountRecord?.owner_user_id ||
+      (await resolveOwnerUserId(db, actualAccountId, explicitUserId))
 
     // 2. Query Meta Graph API for conversations across all platform permutations
-    // Meta requires platform=messenger to retrieve Messenger threads for a Facebook Page.
-    // Note: Do NOT request 'senders' on Conversation — it does not exist on Conversation node (causes error #100).
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v19.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages.limit(25){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v19.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      )
+      candidates.push(
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v19.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages.limit(25){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v19.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v19.0/me/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
     const seenConvIds = new Set<string>()
-    let lastErrorMsg = ''
+    const errorsEncountered: string[] = []
 
     for (const url of candidates) {
       try {
         const cRes = await fetch(url)
         const cData = await cRes.json()
-        if (cRes.ok && Array.isArray(cData?.data) && cData.data.length > 0) {
+        if (cRes.ok && Array.isArray(cData?.data)) {
           for (const item of cData.data) {
             if (item.id && !seenConvIds.has(item.id)) {
               seenConvIds.add(item.id)
               rawConversations.push(item)
             }
           }
+          if (rawConversations.length > 0) {
+            break
+          }
         } else if (cData?.error) {
-          lastErrorMsg = cData.error.message || lastErrorMsg
-          console.warn('[Sync conversations candidate error]:', cData.error.message)
+          const errMsg = cData.error.message || `Error ${cData.error.code}`
+          errorsEncountered.push(errMsg)
+          console.warn('[Sync conversations candidate error]:', errMsg)
         }
       } catch (cErr: any) {
         console.warn('[Sync conversations network error]:', cErr?.message)
       }
     }
 
-    if (rawConversations.length === 0 && lastErrorMsg) {
+    if (rawConversations.length === 0 && errorsEncountered.length > 0) {
+      const topError = errorsEncountered[0]
       return {
         success: false,
-        tokenMissing: lastErrorMsg.toLowerCase().includes('token'),
+        tokenMissing: topError.toLowerCase().includes('token'),
         conversationsCount: 0,
         messagesCount: 0,
-        error: lastErrorMsg,
+        error: topError,
+        debug: {
+          pageId,
+          pageName,
+          rawMetaCount: 0,
+          errors: errorsEncountered,
+        },
       }
     }
 
     // Auto-subscribe page to webhook events so real-time messaging is guaranteed
     if (pageId) {
       try {
-        await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
+        await fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -302,14 +328,15 @@ export async function syncFacebookMessengerConversations(
 
     let totalConversations = 0
     let totalMessages = 0
+    const dbErrors: string[] = []
 
     for (const rawConv of rawConversations) {
-      // Fetch messages for this conversation if not populated inline
+      // 1. Fetch messages for this conversation if not populated inline
       let rawMessages: Array<any> = rawConv.messages?.data || []
       if (rawMessages.length === 0 && rawConv.id) {
         try {
           const msgRes = await fetch(
-            `https://graph.facebook.com/v19.0/${rawConv.id}/messages?fields=id,message,created_time,from,to&limit=30&access_token=${encodeURIComponent(pageToken)}`
+            `https://graph.facebook.com/v20.0/${rawConv.id}/messages?fields=id,message,created_time,from,to&limit=30&access_token=${encodeURIComponent(pageToken)}`
           )
           if (msgRes.ok) {
             const msgData = await msgRes.json()
@@ -318,7 +345,7 @@ export async function syncFacebookMessengerConversations(
         } catch {}
       }
 
-      // Find customer participant (the one whose id is NOT the pageId)
+      // 2. Discover customer participant (the one whose id is NOT the pageId)
       const participants: Array<{ id: string; name?: string; email?: string }> =
         rawConv.participants?.data || rawConv.senders?.data || []
 
@@ -348,7 +375,7 @@ export async function syncFacebookMessengerConversations(
       }
       const customerEmail = customer?.email || null
 
-      // 3. Find or create Contact in contacts table
+      // 3. Find or create Contact in contacts table (NO channel column exists in contacts table!)
       let contactId = ''
       const { data: existingContact } = await db
         .from('contacts')
@@ -363,7 +390,7 @@ export async function syncFacebookMessengerConversations(
         if (customer.name && existingContact.name !== customer.name) {
           await db
             .from('contacts')
-            .update({ name: customer.name, channel: 'messenger', updated_at: new Date().toISOString() })
+            .update({ name: customer.name, updated_at: new Date().toISOString() })
             .eq('id', existingContact.id)
         }
       } else {
@@ -375,19 +402,21 @@ export async function syncFacebookMessengerConversations(
             phone: customerPsid,
             name: customerName,
             email: customerEmail,
-            channel: 'messenger',
           })
           .select('id')
           .maybeSingle()
 
         if (createContactErr || !newContact) {
           console.warn('[Sync contacts insert error]:', createContactErr?.message)
-          // Raced or failed, try selecting again
+          if (createContactErr?.message) {
+            dbErrors.push(`Contact create: ${createContactErr.message}`)
+          }
+          // Raced or duplicate phone_normalized, re-query
           const { data: retryContact } = await db
             .from('contacts')
             .select('id')
             .eq('account_id', actualAccountId)
-            .eq('phone', customerPsid)
+            .or(`phone.eq.${customerPsid},phone_normalized.eq.${customerPsid.replace(/\D/g, '')}`)
             .maybeSingle()
           contactId = retryContact?.id || ''
         } else {
@@ -395,7 +424,10 @@ export async function syncFacebookMessengerConversations(
         }
       }
 
-      if (!contactId) continue
+      if (!contactId) {
+        console.error('[Sync]: Failed to resolve contact for customer PSID:', customerPsid)
+        continue
+      }
 
       // 4. Find or create Conversation in conversations table
       const latestMsg = rawMessages[0]?.message || 'Messenger conversation'
@@ -436,6 +468,9 @@ export async function syncFacebookMessengerConversations(
 
         if (createConvErr || !newConv) {
           console.warn('[Sync conversations insert error]:', createConvErr?.message)
+          if (createConvErr?.message) {
+            dbErrors.push(`Conv create: ${createConvErr.message}`)
+          }
           const { data: retryConv } = await db
             .from('conversations')
             .select('id')
@@ -491,6 +526,12 @@ export async function syncFacebookMessengerConversations(
       conversationsCount: totalConversations,
       messagesCount: totalMessages,
       pageName,
+      debug: {
+        pageId,
+        pageName,
+        rawMetaCount: rawConversations.length,
+        errors: dbErrors.length > 0 ? dbErrors : undefined,
+      },
     }
   } catch (err: any) {
     console.error('[syncFacebookMessengerConversations Exception]:', err)

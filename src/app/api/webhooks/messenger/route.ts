@@ -150,7 +150,6 @@ export async function POST(req: Request) {
           user_id: ownerUserId,
           phone: customerPsid,
           name: customerName,
-          channel: 'messenger',
         })
         .select('id')
         .maybeSingle()
@@ -162,7 +161,7 @@ export async function POST(req: Request) {
           .from('contacts')
           .select('id')
           .eq('account_id', accountId)
-          .eq('phone', customerPsid)
+          .or(`phone.eq.${customerPsid},phone_normalized.eq.${customerPsid.replace(/\D/g, '')}`)
           .maybeSingle()
         contactId = retryContact?.id || ''
       }
