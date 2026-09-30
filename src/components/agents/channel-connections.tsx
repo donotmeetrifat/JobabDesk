@@ -111,6 +111,9 @@ export function ChannelConnections() {
 
   async function fetchWaStatus() {
     try {
+      let isMetaConnected = false
+      let metaPhone = ''
+
       const metaRes = await fetch('/api/channels/whatsapp/meta')
       if (metaRes.ok) {
         const metaData = await metaRes.json()
@@ -122,12 +125,15 @@ export function ChannelConnections() {
           loadFacebookSDK(metaData.appId)
         }
         if (metaData.configId) setMetaConfigId(metaData.configId)
+
         if (metaData.status === 'connected') {
-          setWaSession((prev) => ({
-            ...prev,
+          isMetaConnected = true
+          metaPhone = metaData.phoneNumberId || 'Meta Official WABA'
+          setWaSession({
             status: 'connected',
-            connectedNumber: metaData.phoneNumberId || 'Meta Official WABA',
-          }))
+            connectedNumber: metaPhone,
+            qrCode: '',
+          })
         }
       }
 
@@ -135,14 +141,15 @@ export function ChannelConnections() {
       if (gwRes.ok) {
         const data: WhatsAppStatus = await gwRes.json()
         setWaSession((prev) => ({
-          ...data,
-          status: prev.status === 'connected' ? 'connected' : data.status,
+          status: isMetaConnected ? 'connected' : data.status,
+          connectedNumber: isMetaConnected ? metaPhone : (data.connectedNumber || prev.connectedNumber),
           qrCode: data.qrCode || prev.qrCode,
+          pairingCode: data.pairingCode || prev.pairingCode,
         }))
         if (data.qrCode) {
           setPersistentQr(data.qrCode)
         }
-        if (data.status === 'connected') {
+        if (isMetaConnected || data.status === 'connected') {
           setShowQrModal(false)
         }
       }
