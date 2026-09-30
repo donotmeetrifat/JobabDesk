@@ -73,7 +73,7 @@ export async function handleIncomingCustomerMessage({
   try {
     const { data: acctData } = await client
       .from('accounts')
-      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_store_instructions')
+      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions')
       .eq('id', accountId)
       .maybeSingle()
     account = acctData
@@ -89,6 +89,10 @@ export async function handleIncomingCustomerMessage({
       whatsapp_auto_reply_enabled: true,
       messenger_auto_reply_enabled: true,
       ai_primary_language: 'auto_detect',
+      ai_business_description: '',
+      ai_delivery_policy: '',
+      ai_return_policy: '',
+      ai_auto_reply_tone: 'friendly_bangla',
       ai_store_instructions: '',
     }
   }
@@ -166,9 +170,25 @@ export async function handleIncomingCustomerMessage({
     langGuidance = 'Respond in clear, professional English.'
   }
 
-  const systemPrompt = `You are an AI customer support router for "${account.name}".
-Language Requirement: ${langGuidance}${account.ai_store_instructions ? `\nCustom Store Policies & Instructions:\n${account.ai_store_instructions}` : ''}
+  // Build Tone Guidance
+  let toneGuidance = 'Friendly and helpful.'
+  if (account.ai_auto_reply_tone === 'professional_english') toneGuidance = 'Professional, formal, and precise.'
+  else if (account.ai_auto_reply_tone === 'short_direct') toneGuidance = 'Short, concise, and direct.'
 
+  const businessContextPrompt = [
+    account.ai_business_description ? `Business Overview & Products: ${account.ai_business_description}` : '',
+    account.ai_delivery_policy ? `Delivery Policy & Rates: ${account.ai_delivery_policy}` : '',
+    account.ai_return_policy ? `Return & Refund Policy: ${account.ai_return_policy}` : '',
+    account.ai_store_instructions ? `Additional Instructions: ${account.ai_store_instructions}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const systemPrompt = `You are an AI customer support agent for "${account.name}".
+Language Requirement: ${langGuidance}
+Response Tone: ${toneGuidance}
+
+${businessContextPrompt ? `=== BUSINESS CONTEXT & SETUP RULES ===\n${businessContextPrompt}\n` : ''}
 Instructions:
 1. Intent Classification:
    Classify customer message into EXACTLY ONE:

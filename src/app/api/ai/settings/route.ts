@@ -10,7 +10,7 @@ export async function GET() {
     const { data: account, error } = await supabase
       .from('accounts')
       .select(
-        'ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_store_instructions, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_status, facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status'
+        'name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_status, facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status'
       )
       .eq('id', accountId)
       .single()
@@ -35,6 +35,10 @@ export async function PATCH(req: Request) {
       'whatsapp_auto_reply_enabled',
       'messenger_auto_reply_enabled',
       'ai_primary_language',
+      'ai_business_description',
+      'ai_delivery_policy',
+      'ai_return_policy',
+      'ai_auto_reply_tone',
       'ai_store_instructions',
       'whatsapp_phone_number_id',
       'whatsapp_waba_id',
@@ -64,7 +68,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ settings: data })
+    return NextResponse.json({ settings: data, ...data })
   } catch (err) {
     return toErrorResponse(err)
   }

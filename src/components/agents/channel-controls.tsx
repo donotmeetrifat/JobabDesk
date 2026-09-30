@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bot, Radio, MessageSquare, Globe, CheckCircle2, AlertCircle, Save, FileText } from 'lucide-react'
+import { Bot, Radio, MessageSquare, Globe, CheckCircle2, AlertCircle, Save, Info, UserX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 
@@ -10,7 +10,6 @@ interface ChannelSettings {
   whatsapp_auto_reply_enabled: boolean
   messenger_auto_reply_enabled: boolean
   ai_primary_language: string
-  ai_store_instructions: string
   whatsapp_status: string
   messenger_status: string
 }
@@ -21,7 +20,6 @@ export function ChannelControls() {
     whatsapp_auto_reply_enabled: true,
     messenger_auto_reply_enabled: true,
     ai_primary_language: 'auto_detect',
-    ai_store_instructions: '',
     whatsapp_status: 'disconnected',
     messenger_status: 'disconnected',
   })
@@ -40,7 +38,6 @@ export function ChannelControls() {
         setSettings((prev) => ({
           ...prev,
           ...data.settings,
-          ai_store_instructions: data.settings.ai_store_instructions || '',
         }))
       }
     } catch {
@@ -77,7 +74,6 @@ export function ChannelControls() {
       whatsapp_auto_reply_enabled: settings.whatsapp_auto_reply_enabled,
       messenger_auto_reply_enabled: settings.messenger_auto_reply_enabled,
       ai_primary_language: settings.ai_primary_language,
-      ai_store_instructions: settings.ai_store_instructions,
     })
   }
 
@@ -88,9 +84,9 @@ export function ChannelControls() {
   return (
     <div className="space-y-6">
       {/* Global Master Switch */}
-      <div className="rounded-xl border bg-card p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-primary/10 p-3 text-primary">
+          <div className="rounded-2xl bg-primary/10 p-3 text-primary shrink-0">
             <Bot className="size-6" />
           </div>
           <div>
@@ -126,10 +122,10 @@ export function ChannelControls() {
       {/* Granular Channel Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* WhatsApp Auto-Reply Control */}
-        <div className="rounded-xl border bg-card p-5 space-y-4 shadow-xs">
+        <div className="rounded-2xl border bg-card p-5 space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="rounded-lg bg-green-50 dark:bg-green-950/50 p-2 text-green-600">
+              <div className="rounded-xl bg-green-50 dark:bg-green-950/50 p-2.5 text-green-600">
                 <Radio className="size-5" />
               </div>
               <div>
@@ -139,7 +135,7 @@ export function ChannelControls() {
             </div>
 
             <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
                 settings.whatsapp_status === 'connected'
                   ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-300'
                   : 'bg-muted text-muted-foreground border-border'
@@ -170,10 +166,10 @@ export function ChannelControls() {
         </div>
 
         {/* Facebook Messenger Auto-Reply Control */}
-        <div className="rounded-xl border bg-card p-5 space-y-4 shadow-xs">
+        <div className="rounded-2xl border bg-card p-5 space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/50 p-2 text-blue-600">
+              <div className="rounded-xl bg-blue-50 dark:bg-blue-950/50 p-2.5 text-blue-600">
                 <MessageSquare className="size-5" />
               </div>
               <div>
@@ -183,7 +179,7 @@ export function ChannelControls() {
             </div>
 
             <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${
                 settings.messenger_status === 'connected'
                   ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
                   : 'bg-muted text-muted-foreground border-border'
@@ -215,14 +211,14 @@ export function ChannelControls() {
       </div>
 
       {/* Language Mode Selector */}
-      <div className="rounded-xl border bg-card p-5 space-y-3 shadow-xs">
+      <div className="rounded-2xl border bg-card p-5 space-y-3 shadow-xs">
         <div className="flex items-center gap-2 border-b pb-2">
           <Globe className="size-4 text-primary" />
           <h4 className="font-semibold text-sm text-foreground">Primary Language Mode</h4>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Smart AI automatically matches the language script of incoming messages (Bangla, English, or Banglish).
+          Smart AI automatically matches the language script of incoming customer messages (Bangla, English, or Banglish).
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
@@ -249,35 +245,26 @@ export function ChannelControls() {
         </div>
       </div>
 
-      {/* Custom Store Instructions Textarea */}
-      <div className="rounded-xl border bg-card p-5 space-y-3 shadow-xs">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <FileText className="size-4 text-primary" />
-          <h4 className="font-semibold text-sm text-foreground">Custom Store Instructions & Policies</h4>
+      {/* Per-Contact Mute Guidance Info Banner */}
+      <div className="rounded-2xl border bg-amber-500/10 border-amber-500/20 p-4 text-xs text-amber-900 dark:text-amber-300 flex items-start gap-3">
+        <UserX className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+        <div>
+          <p className="font-bold">Specific Customer AI Mute Control (Manual Chat Mode)</p>
+          <p className="mt-0.5 text-amber-800/90 dark:text-amber-300/90">
+            Want to turn OFF AI auto-reply for a specific customer? Open any conversation thread in your <strong>Inbox</strong>, and toggle <strong>&ldquo;Mute AI for this Customer&rdquo;</strong> in the contact sidebar. The AI will pause and leave all incoming chats for manual agent reply.
+          </p>
         </div>
+      </div>
 
-        <p className="text-xs text-muted-foreground">
-          Provide specific instructions, delivery rules, or FAQs for the AI to include in customer replies (e.g. &ldquo;We offer free delivery inside Dhaka for orders over ৳2000&rdquo;).
-        </p>
-
-        <textarea
-          rows={3}
-          value={settings.ai_store_instructions}
-          onChange={(e) => setSettings({ ...settings, ai_store_instructions: e.target.value })}
-          placeholder="e.g. We offer free delivery inside Dhaka for orders over ৳2000. Inside Dhaka delivery takes 24 hours, outside Dhaka takes 2-3 days."
-          className="w-full rounded-xl border bg-background p-3.5 text-xs outline-none focus:ring-2 focus:ring-primary resize-none"
-        />
-
-        <div className="flex justify-end pt-2">
-          <Button
-            onClick={handleSaveAll}
-            disabled={saving}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium gap-2 text-xs rounded-xl px-5 shadow-sm"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {saving ? 'Saving...' : 'Save Settings'}
-          </Button>
-        </div>
+      <div className="flex justify-end pt-2">
+        <Button
+          onClick={handleSaveAll}
+          disabled={saving}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 py-2.5 rounded-xl gap-2 shadow-sm"
+        >
+          <Save className="h-4 w-4" />
+          {saving ? 'Saving Settings...' : 'Save Automation Controls'}
+        </Button>
       </div>
     </div>
   )
