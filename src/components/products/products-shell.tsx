@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Upload, Sparkles, RefreshCw, Link2 } from 'lucide-react'
+import { Plus, Search, Upload, Sparkles, RefreshCw, Link2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductTable } from './product-table'
 import { ProductDialog } from './product-dialog'
@@ -36,6 +36,8 @@ export function ProductsShell() {
   const [importOpen, setImportOpen] = useState(false)
   const [sheetsOpen, setSheetsOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -55,6 +57,9 @@ export function ProductsShell() {
 
   useEffect(() => { fetchProducts() }, [fetchProducts])
 
+  // Clear selection when products reload
+  useEffect(() => { setSelectedIds(new Set()) }, [products])
+
   const handleDelete = async (id: string) => {
     const res = await fetch(`/api/products/${id}`, { method: 'DELETE' })
     if (res.ok) {
@@ -62,6 +67,42 @@ export function ProductsShell() {
       fetchProducts()
     } else {
       toast.error('Failed to delete product')
+    }
+  }
+
+  const handleSelect = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) setSelectedIds(new Set(products.map(p => p.id)))
+    else setSelectedIds(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size
+    const confirmMsg = count === products.length && count === total
+      ? `Delete ALL ${count} products? This cannot be undone.`
+      : `Delete ${count} selected product${count !== 1 ? 's' : ''}? This cannot be undone.`
+
+    if (!confirm(confirmMsg)) return
+
+    setDeleting(true)
+    try {
+      const ids = Array.from(selectedIds)
+      await Promise.all(ids.map(id => fetch(`/api/products/${id}`, { method: 'DELETE' })))
+      toast.success(`Deleted ${count} product${count !== 1 ? 's' : ''}`)
+      setSelectedIds(new Set())
+      fetchProducts()
+    } catch {
+      toast.error('Some products could not be deleted')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -108,12 +149,14 @@ export function ProductsShell() {
           </button>
         </div>
       </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input type="text" placeholder="Search by name, brand, SKU..."
           value={search} onChange={e => setSearch(e.target.value)}
           className="w-full rounded-md border bg-background py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
       </div>
+
       <div className="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         <Upload className="size-4 shrink-0" />
         <span>Import products from</span>
@@ -124,7 +167,51 @@ export function ProductsShell() {
           <Sparkles className="size-3.5" /> AI descriptions available
         </span>
       </div>
-      <ProductTable products={products} loading={loading} onEdit={handleEdit} onDelete={handleDelete} />
+
+      {/* ── Bulk Action Bar ─────────────────────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-destructive">
+              {selectedIds.size} product{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            {selectedIds.size < products.length && (
+              <button
+                onClick={() => handleSelectAll(true)}
+                className="text-xs text-primary underline-offset-2 hover:underline"
+              >
+                Select all {total}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-accent"
+            >
+              <X className="size-3" /> Deselect
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs text-white hover:bg-destructive/90 disabled:opacity-50"
+            >
+              <Trash2 className="size-3.5" />
+              {deleting ? 'Deleting...' : `Delete ${selectedIds.size === total ? 'All' : selectedIds.size}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <ProductTable
+        products={products}
+        loading={loading}
+        selectedIds={selectedIds}
+        onSelect={handleSelect}
+        onSelectAll={handleSelectAll}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
       <ProductDialog open={dialogOpen} product={editProduct} onClose={() => setDialogOpen(false)} onSaved={handleSaved} />
       <ImportDialog
         open={importOpen}

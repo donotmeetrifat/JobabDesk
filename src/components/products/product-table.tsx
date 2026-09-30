@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react'
 
 interface Product {
@@ -17,11 +18,14 @@ interface Product {
 interface Props {
   products: Product[]
   loading: boolean
+  selectedIds: Set<string>
+  onSelect: (id: string, checked: boolean) => void
+  onSelectAll: (checked: boolean) => void
   onEdit: (product: any) => void
   onDelete: (id: string) => void
 }
 
-export function ProductTable({ products, loading, onEdit, onDelete }: Props) {
+export function ProductTable({ products, loading, selectedIds, onSelect, onSelectAll, onEdit, onDelete }: Props) {
   if (loading) return (
     <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
       Loading products...
@@ -35,11 +39,24 @@ export function ProductTable({ products, loading, onEdit, onDelete }: Props) {
     </div>
   )
 
+  const allSelected = products.length > 0 && products.every(p => selectedIds.has(p.id))
+  const someSelected = products.some(p => selectedIds.has(p.id))
+
   return (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full text-sm">
         <thead className="border-b bg-muted/50">
           <tr>
+            <th className="px-4 py-3 w-10">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={el => { if (el) el.indeterminate = someSelected && !allSelected }}
+                onChange={e => onSelectAll(e.target.checked)}
+                className="rounded border-gray-300 cursor-pointer accent-primary"
+                title="Select all"
+              />
+            </th>
             <th className="px-4 py-3 text-left font-medium">Name</th>
             <th className="px-4 py-3 text-left font-medium">Brand</th>
             <th className="px-4 py-3 text-left font-medium">Category</th>
@@ -52,7 +69,18 @@ export function ProductTable({ products, loading, onEdit, onDelete }: Props) {
         </thead>
         <tbody className="divide-y">
           {products.map(product => (
-            <tr key={product.id} className="hover:bg-muted/30 transition-colors">
+            <tr
+              key={product.id}
+              className={`hover:bg-muted/30 transition-colors ${selectedIds.has(product.id) ? 'bg-primary/5' : ''}`}
+            >
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(product.id)}
+                  onChange={e => onSelect(product.id, e.target.checked)}
+                  className="rounded border-gray-300 cursor-pointer accent-primary"
+                />
+              </td>
               <td className="px-4 py-3 font-medium">{product.name}</td>
               <td className="px-4 py-3 text-muted-foreground">{product.brand ?? '—'}</td>
               <td className="px-4 py-3 text-muted-foreground">{product.category ?? '—'}</td>
