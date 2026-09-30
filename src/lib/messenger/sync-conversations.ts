@@ -147,41 +147,58 @@ export async function syncFacebookMessengerConversations(
     }
 
     // If we have a pageToken, automatically verify and resolve the real Page ID and Page Name
-    // directly from Meta via /me and /me/accounts. This guarantees zero ID mismatches (fixes error #10).
+    // directly from Meta via /me and /me/accounts.
     if (pageToken) {
       try {
         const meRes = await fetch(
-          `https://graph.facebook.com/v20.0/me?fields=id,name&access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${encodeURIComponent(pageToken)}`
         )
+        let isPage = false
+        let meData: any = null
         if (meRes.ok) {
-          const meData = await meRes.json()
-          if (meData?.id) {
-            pageId = pageId || meData.id
-            pageName = pageName || meData.name || 'Digiplus'
+          meData = await meRes.json()
+          if (meData?.category) {
+            // Definitively a Facebook Page token
+            isPage = true
+            pageId = meData.id
+            pageName = meData.name || pageName || 'Digiplus'
           }
         }
 
-        // Also check /me/accounts in case a User Access Token was provided
-        const accsRes = await fetch(
-          `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
-        )
-        if (accsRes.ok) {
-          const accsData = await accsRes.json()
-          const pages: any[] = accsData.data || []
-          if (pages.length > 0) {
-            const matched =
-              pages.find(
-                (p) =>
-                  p.id === pageId ||
-                  (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
-                  p.name?.toLowerCase().includes('digiplus')
-              ) || pages[0]
+        // If not a Page token, it is a User token. Look up the user's managed pages via /me/accounts
+        if (!isPage) {
+          const accsRes = await fetch(
+            `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+          )
+          if (accsRes.ok) {
+            const accsData = await accsRes.json()
+            const pages: any[] = accsData.data || []
+            if (pages.length > 0) {
+              const matched =
+                pages.find(
+                  (p) =>
+                    p.id === pageId ||
+                    (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
+                    p.name?.toLowerCase().includes('digiplus')
+                ) || pages[0]
 
-            if (matched) {
-              pageId = matched.id
-              pageName = matched.name
-              if (matched.access_token) {
-                pageToken = matched.access_token
+              if (matched) {
+                pageId = matched.id
+                pageName = matched.name
+                if (matched.access_token) {
+                  pageToken = matched.access_token
+                  isPage = true
+                }
+              }
+            } else {
+              // The user token does not have access to any pages (missing pages_show_list or not an admin)
+              const userName = meData?.name || 'User'
+              return {
+                success: false,
+                tokenMissing: true,
+                conversationsCount: 0,
+                messagesCount: 0,
+                error: `The provided token is a User token for "${userName}", not a Page token for Digiplus. In Meta Graph API Explorer, select "@Digiplus" under User or Page and click "Generate Access Token".`,
               }
             }
           }
@@ -245,26 +262,20 @@ export async function syncFacebookMessengerConversations(
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages.limit(25){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
-      )
-      candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages.limit(25){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
-    )
-    candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
