@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
-    const { accountId } = await requireRole('agent')
+    const { accountId, supabase } = await requireRole('agent')
     const { messageText, channel } = await req.json()
 
     if (!messageText?.trim()) {
@@ -15,6 +15,7 @@ export async function POST(req: Request) {
 
     const result = await handleIncomingCustomerMessage({
       accountId,
+      supabase,
       channel: channel || 'sandbox',
       messageText: messageText.trim(),
     })

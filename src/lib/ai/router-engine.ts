@@ -16,6 +16,7 @@ export type DetectedIntent = 'product_inquiry' | 'order_status' | 'general_faq' 
 
 export interface RouterInput {
   accountId: string
+  supabase?: any
   contactId?: string | null
   customerPhone?: string | null
   channel?: SupportedChannel
@@ -56,6 +57,7 @@ export function detectLanguage(text: string, preferredSetting = 'auto_detect'): 
 
 export async function handleIncomingCustomerMessage({
   accountId,
+  supabase,
   contactId,
   customerPhone,
   channel = 'sandbox',
@@ -64,11 +66,12 @@ export async function handleIncomingCustomerMessage({
   if (!messageText?.trim()) return null
 
   const db = getAdminClient()
+  const client = supabase || db
 
   // 1. Fetch Account Channel & AI Settings
   let account: any = null
   try {
-    const { data: acctData } = await db
+    const { data: acctData } = await client
       .from('accounts')
       .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language')
       .eq('id', accountId)
@@ -112,7 +115,7 @@ export async function handleIncomingCustomerMessage({
   let recentOrders: any[] = []
 
   try {
-    const { data: pData } = await db
+    const { data: pData } = await client
       .from('products')
       .select('name, price, brand, category, stock_qty, is_in_stock, description')
       .eq('account_id', accountId)
@@ -124,7 +127,7 @@ export async function handleIncomingCustomerMessage({
 
   if (contactId || customerPhone) {
     try {
-      const { data: oData } = await db
+      const { data: oData } = await client
         .from('orders')
         .select('order_number, status, payment_status, total, created_at')
         .eq('account_id', accountId)
