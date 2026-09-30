@@ -24,7 +24,7 @@ export async function GET() {
     if (targetId) {
       const { data } = await db
         .from('accounts')
-        .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_status')
+        .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_status, whatsapp_session_status')
         .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
         .maybeSingle()
       account = data
@@ -33,14 +33,16 @@ export async function GET() {
     if (!account) {
       const { data } = await db
         .from('accounts')
-        .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_status')
+        .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_status, whatsapp_session_status')
         .limit(1)
         .maybeSingle()
       account = data
     }
 
     const hasCredentials = Boolean(
-      account?.whatsapp_phone_number_id?.trim() && account?.whatsapp_access_token?.trim()
+      (account?.whatsapp_phone_number_id?.trim() && account?.whatsapp_access_token?.trim()) ||
+      account?.whatsapp_status === 'connected' ||
+      account?.whatsapp_session_status === 'connected'
     )
 
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || '1789555715522515'
@@ -86,25 +88,23 @@ export async function POST(req: Request) {
       whatsapp_connection_type: 'meta_cloud',
     }
 
-    let updated = false
-
+    let targetAccountId = ''
     if (targetId) {
       const { data } = await db
         .from('accounts')
-        .update(updates)
+        .select('id')
         .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
-        .select()
-
-      if (data && data.length > 0) {
-        updated = true
-      }
+        .maybeSingle()
+      targetAccountId = data?.id || ''
     }
 
-    if (!updated) {
-      const { data: allAccounts } = await db.from('accounts').select('id').limit(1)
-      if (allAccounts && allAccounts.length > 0) {
-        await db.from('accounts').update(updates).eq('id', allAccounts[0].id)
-      }
+    if (!targetAccountId) {
+      const { data: first } = await db.from('accounts').select('id').limit(1).maybeSingle()
+      targetAccountId = first?.id || ''
+    }
+
+    if (targetAccountId) {
+      await db.from('accounts').update(updates).eq('id', targetAccountId)
     }
 
     return NextResponse.json({
@@ -113,6 +113,45 @@ export async function POST(req: Request) {
       accessToken,
       wabaId,
     })
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+}
+
+export async function DELETE() {
+  try {
+    const { accountId, userId } = await requireRole('agent')
+    const targetId = accountId || userId
+    const db = getAdminClient()
+
+    const updates = {
+      whatsapp_phone_number_id: '',
+      whatsapp_access_token: '',
+      whatsapp_waba_id: '',
+      whatsapp_session_status: 'disconnected',
+      whatsapp_status: 'disconnected',
+    }
+
+    let targetAccountId = ''
+    if (targetId) {
+      const { data } = await db
+        .from('accounts')
+        .select('id')
+        .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+        .maybeSingle()
+      targetAccountId = data?.id || ''
+    }
+
+    if (!targetAccountId) {
+      const { data: first } = await db.from('accounts').select('id').limit(1).maybeSingle()
+      targetAccountId = first?.id || ''
+    }
+
+    if (targetAccountId) {
+      await db.from('accounts').update(updates).eq('id', targetAccountId)
+    }
+
+    return NextResponse.json({ status: 'disconnected' })
   } catch (err) {
     return toErrorResponse(err)
   }

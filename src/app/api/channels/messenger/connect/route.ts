@@ -38,3 +38,14 @@ export async function POST(req: Request) {
     return toErrorResponse(err)
   }
 }
+
+export async function DELETE() {
+  try {
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
+    const session = await disconnectFacebookPage(targetId, supabase)
+    return NextResponse.json(session)
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+}

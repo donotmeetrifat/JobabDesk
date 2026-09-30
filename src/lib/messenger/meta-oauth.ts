@@ -24,7 +24,7 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
     if (targetId) {
       const { data } = await db
         .from('accounts')
-        .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status')
+        .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status, messenger_connection_status')
         .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
         .maybeSingle()
       account = data
@@ -33,7 +33,7 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
     if (!account) {
       const { data } = await db
         .from('accounts')
-        .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status')
+        .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status, messenger_connection_status')
         .limit(1)
         .maybeSingle()
       account = data
@@ -43,7 +43,11 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
     const pageToken = (account?.facebook_page_access_token || '').trim()
     const pageName = (account?.facebook_page_name || pageId).trim()
 
-    const isConnected = Boolean(pageId && pageToken)
+    const isConnected = Boolean(
+      (pageId && pageToken) ||
+      account?.messenger_status === 'connected' ||
+      account?.messenger_connection_status === 'connected'
+    )
 
     return {
       status: isConnected ? 'connected' : 'disconnected',
@@ -66,7 +70,7 @@ export async function connectFacebookPage(
   const pageName = pageData?.pageName?.trim() || ''
   const token = pageData?.accessToken?.trim() || ''
 
-  if (!pageId || !token) {
+  if (!pageId) {
     return {
       status: 'disconnected',
       pageId: '',
@@ -74,49 +78,50 @@ export async function connectFacebookPage(
     }
   }
 
-  // Auto-subscribe page to Webhooks via Meta Graph API
-  try {
-    await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscribed_fields: ['messages', 'messaging_postbacks'],
-        access_token: token,
-      }),
-    })
-  } catch (subErr) {
-    console.error('[FB Subscribed Apps Error]:', subErr)
+  // Auto-subscribe page to Webhooks via Meta Graph API if token available
+  if (token) {
+    try {
+      await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscribed_fields: ['messages', 'messaging_postbacks'],
+          access_token: token,
+        }),
+      })
+    } catch (subErr) {
+      console.error('[FB Subscribed Apps Error]:', subErr)
+    }
   }
 
-  const updates = {
+  const updates: Record<string, any> = {
     facebook_page_id: pageId,
     facebook_page_name: pageName || pageId,
-    facebook_page_access_token: token,
     messenger_status: 'connected',
     messenger_connection_status: 'connected',
   }
+  if (token) {
+    updates.facebook_page_access_token = token
+  }
 
   try {
-    let updated = false
-
+    let targetAccountId = ''
     if (targetId) {
       const { data } = await db
         .from('accounts')
-        .update(updates)
+        .select('id')
         .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
-        .select()
-
-      if (data && data.length > 0) {
-        updated = true
-      }
+        .maybeSingle()
+      targetAccountId = data?.id || ''
     }
 
-    if (!updated) {
-      // Fallback: update first account in table
-      const { data: allAccounts } = await db.from('accounts').select('id').limit(1)
-      if (allAccounts && allAccounts.length > 0) {
-        await db.from('accounts').update(updates).eq('id', allAccounts[0].id)
-      }
+    if (!targetAccountId) {
+      const { data: first } = await db.from('accounts').select('id').limit(1).maybeSingle()
+      targetAccountId = first?.id || ''
+    }
+
+    if (targetAccountId) {
+      await db.from('accounts').update(updates).eq('id', targetAccountId)
     }
 
     return {
@@ -145,15 +150,23 @@ export async function disconnectFacebookPage(targetId: string, supabase?: any): 
   }
 
   try {
+    let targetAccountId = ''
     if (targetId) {
-      await db
+      const { data } = await db
         .from('accounts')
-        .update(updates)
+        .select('id')
         .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+        .maybeSingle()
+      targetAccountId = data?.id || ''
     }
-    const { data: allAccounts } = await db.from('accounts').select('id').limit(1)
-    if (allAccounts && allAccounts.length > 0) {
-      await db.from('accounts').update(updates).eq('id', allAccounts[0].id)
+
+    if (!targetAccountId) {
+      const { data: first } = await db.from('accounts').select('id').limit(1).maybeSingle()
+      targetAccountId = first?.id || ''
+    }
+
+    if (targetAccountId) {
+      await db.from('accounts').update(updates).eq('id', targetAccountId)
     }
   } catch (err) {
     console.error('[disconnectFacebookPage Exception]:', err)

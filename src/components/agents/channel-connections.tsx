@@ -36,19 +36,27 @@ interface MessengerStatus {
 }
 
 export function ChannelConnections() {
-  const [waSession, setWaSession] = useState<WhatsAppStatus>({
-    status: 'disconnected',
-    qrCode: '',
-    connectedNumber: '',
+  const [waSession, setWaSession] = useState<WhatsAppStatus>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('jobabdesk_wa_session')
+        if (cached) return JSON.parse(cached)
+      } catch {}
+    }
+    return { status: 'disconnected', qrCode: '', connectedNumber: '' }
   })
-  const [fbSession, setFbSession] = useState<MessengerStatus>({
-    status: 'disconnected',
-    pageId: '',
-    pageName: '',
+  const [fbSession, setFbSession] = useState<MessengerStatus>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('jobabdesk_fb_session')
+        if (cached) return JSON.parse(cached)
+      } catch {}
+    }
+    return { status: 'disconnected', pageId: '', pageName: '' }
   })
 
-  const [loadingWa, setLoadingWa] = useState(true)
-  const [loadingFb, setLoadingFb] = useState(true)
+  const [loadingWa, setLoadingWa] = useState(false)
+  const [loadingFb, setLoadingFb] = useState(false)
   const [generatingQr, setGeneratingQr] = useState(false)
   const [connectingFb, setConnectingFb] = useState(false)
   const [showQrModal, setShowQrModal] = useState(false)
@@ -111,9 +119,6 @@ export function ChannelConnections() {
 
   async function fetchWaStatus() {
     try {
-      let isMetaConnected = false
-      let metaPhone = ''
-
       const metaRes = await fetch('/api/channels/whatsapp/meta')
       if (metaRes.ok) {
         const metaData = await metaRes.json()
@@ -127,30 +132,44 @@ export function ChannelConnections() {
         if (metaData.configId) setMetaConfigId(metaData.configId)
 
         if (metaData.status === 'connected') {
-          isMetaConnected = true
-          metaPhone = metaData.phoneNumberId || 'Meta Official WABA'
-          setWaSession({
+          const newSession: WhatsAppStatus = {
             status: 'connected',
-            connectedNumber: metaPhone,
+            connectedNumber: metaData.phoneNumberId || 'Meta Official WABA',
             qrCode: '',
-          })
+          }
+          setWaSession(newSession)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
+          }
+          setLoadingWa(false)
+          return
         }
       }
 
       const gwRes = await fetch('/api/channels/whatsapp/gateway')
       if (gwRes.ok) {
         const data: WhatsAppStatus = await gwRes.json()
-        setWaSession((prev) => ({
-          status: isMetaConnected ? 'connected' : data.status,
-          connectedNumber: isMetaConnected ? metaPhone : (data.connectedNumber || prev.connectedNumber),
-          qrCode: data.qrCode || prev.qrCode,
-          pairingCode: data.pairingCode || prev.pairingCode,
-        }))
+        if (data.status === 'connected') {
+          setWaSession(data)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(data))
+          }
+          setShowQrModal(false)
+        } else {
+          setWaSession((prev) => {
+            const updated = {
+              ...data,
+              status: prev.status === 'connected' ? 'connected' : data.status,
+              connectedNumber: prev.status === 'connected' ? prev.connectedNumber : data.connectedNumber,
+            }
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('jobabdesk_wa_session', JSON.stringify(updated))
+            }
+            return updated
+          })
+        }
         if (data.qrCode) {
           setPersistentQr(data.qrCode)
-        }
-        if (isMetaConnected || data.status === 'connected') {
-          setShowQrModal(false)
         }
       }
     } catch {
@@ -168,6 +187,9 @@ export function ChannelConnections() {
         setFbSession(data)
         if (data.pageId) setFbPageId(data.pageId)
         if (data.pageName) setFbPageName(data.pageName)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('jobabdesk_fb_session', JSON.stringify(data))
+        }
       }
     } catch {
       // quiet catch
@@ -197,11 +219,15 @@ export function ChannelConnections() {
           })
           const data = await res.json()
           if (res.ok && data.success) {
-            setWaSession((prev) => ({
-              ...prev,
+            const newSession: WhatsAppStatus = {
               status: 'connected',
               connectedNumber: result.phoneNumberId || 'Meta Official WABA',
-            }))
+              qrCode: '',
+            }
+            setWaSession(newSession)
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
+            }
             if (result.phoneNumberId) setWaPhoneNumberId(result.phoneNumberId)
             if (result.wabaId) setWaWabaId(result.wabaId)
             setMetaSuccessMsg('Successfully connected WhatsApp with Facebook Meta WABA!')
@@ -253,11 +279,15 @@ export function ChannelConnections() {
       if (res.ok) {
         const data = await res.json()
         if (data.status === 'connected') {
-          setWaSession((prev) => ({
-            ...prev,
+          const newSession: WhatsAppStatus = {
             status: 'connected',
             connectedNumber: waPhoneNumberId.trim(),
-          }))
+            qrCode: '',
+          }
+          setWaSession(newSession)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
+          }
           setMetaSuccessMsg('Meta WhatsApp Cloud API credentials saved successfully!')
           setTimeout(() => setMetaSuccessMsg(''), 4000)
           setShowQrModal(false)
@@ -340,6 +370,9 @@ export function ChannelConnections() {
         const data: WhatsAppStatus = await res.json()
         setWaSession(data)
         if (data.status === 'connected') {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(data))
+          }
           setShowQrModal(false)
         }
       }
@@ -350,12 +383,17 @@ export function ChannelConnections() {
 
   async function handleDisconnectWa() {
     try {
+      await fetch('/api/channels/whatsapp/meta', { method: 'DELETE' })
       await fetch('/api/channels/whatsapp/gateway', { method: 'DELETE' })
-      setWaSession({ status: 'disconnected', qrCode: '', connectedNumber: '' })
+      const disconnectedState: WhatsAppStatus = { status: 'disconnected', qrCode: '', connectedNumber: '' }
+      setWaSession(disconnectedState)
       setPersistentQr('')
       setWaPhoneNumberId('')
       setWaAccessToken('')
       setWaWabaId('')
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('jobabdesk_wa_session')
+      }
     } catch {
       // quiet catch
     }
@@ -449,11 +487,15 @@ export function ChannelConnections() {
       })
 
       if (res.ok) {
-        setFbSession({
+        const newSession: MessengerStatus = {
           status: 'connected',
           pageId: page.id,
           pageName: page.name,
-        })
+        }
+        setFbSession(newSession)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
+        }
         setShowFbModal(false)
       } else {
         const errData = await res.json().catch(() => ({}))
@@ -487,11 +529,15 @@ export function ChannelConnections() {
 
       if (res.ok) {
         const data = await res.json()
-        setFbSession({
+        const newSession: MessengerStatus = {
           status: 'connected',
           pageId: data.settings?.messenger_page_id || fbPageId.trim(),
           pageName: data.settings?.messenger_page_name || fbPageName.trim() || 'Connected Page',
-        })
+        }
+        setFbSession(newSession)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
+        }
         setShowFbModal(false)
       } else {
         const errData = await res.json().catch(() => ({}))
@@ -507,10 +553,14 @@ export function ChannelConnections() {
   async function handleDisconnectFb() {
     try {
       await fetch('/api/channels/messenger/connect', { method: 'DELETE' })
-      setFbSession({ status: 'disconnected', pageId: '', pageName: '' })
+      const disconnectedState: MessengerStatus = { status: 'disconnected', pageId: '', pageName: '' }
+      setFbSession(disconnectedState)
       setFbPageId('')
       setFbAccessToken('')
       setFbPageName('')
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('jobabdesk_fb_session')
+      }
     } catch {
       // quiet catch
     }
