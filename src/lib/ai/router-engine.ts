@@ -73,7 +73,7 @@ export async function handleIncomingCustomerMessage({
   try {
     const { data: acctData } = await client
       .from('accounts')
-      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, delivery_policy, return_policy, special_instructions, ai_persona')
+      .select('id, name, business_tagline, product_categories_sold, target_audience, customer_relation_style, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, delivery_policy, return_policy, special_instructions, ai_persona')
       .eq('id', accountId)
       .maybeSingle()
     account = acctData
@@ -85,6 +85,10 @@ export async function handleIncomingCustomerMessage({
     account = {
       id: accountId,
       name: 'JobabDesk Store',
+      business_tagline: '',
+      product_categories_sold: '',
+      target_audience: '',
+      customer_relation_style: 'bhaiya_apu',
       ai_auto_reply_enabled: true,
       whatsapp_auto_reply_enabled: true,
       messenger_auto_reply_enabled: true,
@@ -177,15 +181,26 @@ export async function handleIncomingCustomerMessage({
   // Build Tone Guidance
   const effectivePersona = account.ai_persona || account.ai_auto_reply_tone || 'friendly_bangla'
   let toneGuidance = 'Friendly and helpful.'
-  if (effectivePersona === 'professional_english') toneGuidance = 'Professional, formal, and precise.'
-  else if (effectivePersona === 'short_direct') toneGuidance = 'Short, concise, and direct.'
+  if (effectivePersona === 'professional_en') toneGuidance = 'Professional, formal, and precise.'
+  else if (effectivePersona === 'conversational_banglish') toneGuidance = 'Conversational, warm, and concise.'
+
+  // Build Communication & Greeting Guidance
+  const communicationGuidance = account.customer_relation_style === 'bhaiya_apu'
+    ? 'Address the customer respectfully as "Bhaiya" or "Apu" (ভাইয়া/আপু) when appropriate in Bengali/Banglish.'
+    : account.customer_relation_style === 'sir_madam'
+    ? 'Address the customer formally as "Sir" or "Madam".'
+    : 'Maintain a warm, casual, and polite conversation.'
 
   const businessContext = `
 Store Name: ${account.name}
-Business Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
+Tagline: ${account.business_tagline || 'N/A'}
+Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
+Categories Sold: ${account.product_categories_sold || 'N/A'}
+Target Customer Profile: ${account.target_audience || 'Customers in Bangladesh'}
+Customer Communication Style: ${communicationGuidance}
 Delivery Rates & Policy: ${account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150'}
-Return & Exchange Policy: ${account.return_policy || account.ai_return_policy || 'Standard exchange policy applies'}
-Payment Methods & Instructions: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
+Return Policy: ${account.return_policy || account.ai_return_policy || 'Standard exchange policy'}
+Payment Info: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
 `.trim()
 
   const systemPrompt = `You are an AI customer support agent for "${account.name}".
