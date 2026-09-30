@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X, RefreshCw } from "lucide-react";
+import { Search, ChevronDown, X, RefreshCw, KeyRound } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,8 @@ interface ConversationListProps {
   onSyncMessenger?: () => void;
   isSyncingMessenger?: boolean;
   messengerConnected?: boolean;
+  tokenMissing?: boolean;
+  onOpenTokenModal?: () => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -58,6 +60,8 @@ export function ConversationList({
   onSyncMessenger,
   isSyncingMessenger = false,
   messengerConnected = false,
+  tokenMissing = false,
+  onOpenTokenModal,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -422,15 +426,27 @@ export function ConversationList({
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
-            {onSyncMessenger && (
-              <button
-                onClick={onSyncMessenger}
-                disabled={isSyncingMessenger}
-                className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
-                {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
-              </button>
+            {messengerConnected && (
+              <div className="mt-3 flex flex-col items-center gap-2">
+                {tokenMissing ? (
+                  <button
+                    onClick={onOpenTokenModal || onSyncMessenger}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3.5 py-1.5 text-xs font-semibold text-amber-500 hover:bg-amber-500/20 transition-colors shadow-xs"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    Enter Page Token to Sync
+                  </button>
+                ) : (
+                  <button
+                    onClick={onSyncMessenger}
+                    disabled={isSyncingMessenger}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
+                    {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         ) : (

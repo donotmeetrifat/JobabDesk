@@ -13,6 +13,7 @@ export interface MessengerSession {
   status: 'disconnected' | 'connected'
   pageId: string
   pageName: string
+  hasToken?: boolean
 }
 
 export async function getMessengerStatus(targetId: string, supabase?: any): Promise<MessengerSession> {
@@ -25,7 +26,7 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
       const { data } = await supabase
         .from('accounts')
         .select('*')
-        .eq('id', targetId)
+        .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
         .maybeSingle()
       account = data
     }
@@ -87,16 +88,17 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
       status: isConnected ? 'connected' : 'disconnected',
       pageId: isConnected ? pageId : '',
       pageName: isConnected ? pageName : '',
+      hasToken: Boolean(pageToken),
     }
   } catch (err) {
     console.error('[getMessengerStatus Exception]:', err)
-    return { status: 'disconnected', pageId: '', pageName: '' }
+    return { status: 'disconnected', pageId: '', pageName: '', hasToken: false }
   }
 }
 
 export async function connectFacebookPage(
   targetId: string,
-  pageData?: { pageId?: string; pageName?: string; accessToken?: string },
+  pageData: { pageId: string; pageName?: string; accessToken?: string },
   supabase?: any
 ): Promise<MessengerSession> {
   const pageId = pageData?.pageId?.trim() || ''
@@ -108,6 +110,7 @@ export async function connectFacebookPage(
       status: 'disconnected',
       pageId: '',
       pageName: '',
+      hasToken: false,
     }
   }
 
@@ -138,37 +141,49 @@ export async function connectFacebookPage(
   }
 
   try {
-    // 1. Update accounts table via authenticated user supabase client
+    // 1. Resolve real account ID
+    let realAccountId = targetId
     if (supabase && targetId) {
-      const { error: coreErr } = await supabase.from('accounts').update(coreUpdates).eq('id', targetId)
+      const { data: matchedAcc } = await supabase
+        .from('accounts')
+        .select('id')
+        .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+        .maybeSingle()
+      if (matchedAcc?.id) {
+        realAccountId = matchedAcc.id
+      }
+    }
+
+    // 2. Update accounts table via authenticated user supabase client
+    if (supabase && realAccountId) {
+      const { error: coreErr } = await supabase.from('accounts').update(coreUpdates).or(`id.eq.${realAccountId},owner_user_id.eq.${targetId}`)
       if (coreErr) {
         console.warn('[connectFacebookPage core update error, retrying field-by-field]:', coreErr.message)
         for (const [k, v] of Object.entries(coreUpdates)) {
-          await supabase.from('accounts').update({ [k]: v }).eq('id', targetId)
+          await supabase.from('accounts').update({ [k]: v }).or(`id.eq.${realAccountId},owner_user_id.eq.${targetId}`)
         }
       }
 
-      // Try auxiliary columns optionally (won't fail if column is not yet migrated)
       try {
-        await supabase.from('accounts').update({ messenger_connection_status: 'connected' }).eq('id', targetId)
+        await supabase.from('accounts').update({ messenger_connection_status: 'connected' }).or(`id.eq.${realAccountId},owner_user_id.eq.${targetId}`)
       } catch {}
     }
 
-    // 2. Also update via admin client if service role key is present
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    // 3. Also update via admin client
+    try {
       const db = getAdminClient()
-      await db.from('accounts').update(coreUpdates).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+      await db.from('accounts').update(coreUpdates).or(`id.eq.${realAccountId},owner_user_id.eq.${targetId}`)
       try {
-        await db.from('accounts').update({ messenger_connection_status: 'connected' }).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+        await db.from('accounts').update({ messenger_connection_status: 'connected' }).or(`id.eq.${realAccountId},owner_user_id.eq.${targetId}`)
       } catch {}
-    }
+    } catch {}
 
-    // 3. Multi-table redundancy: Upsert into channel_connections table (migration 044)
-    if (supabase && targetId) {
+    // 4. Multi-table redundancy: Upsert into channel_connections table (migration 044)
+    if (supabase && realAccountId) {
       try {
         await supabase.from('channel_connections').upsert(
           {
-            account_id: targetId,
+            account_id: realAccountId,
             channel_type: 'messenger',
             external_account_id: pageId,
             display_name: pageName || pageId,

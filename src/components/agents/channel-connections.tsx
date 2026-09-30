@@ -33,6 +33,7 @@ interface MessengerStatus {
   status: 'disconnected' | 'connected'
   pageId: string
   pageName: string
+  accessToken?: string
 }
 
 export function ChannelConnections() {
@@ -600,6 +601,7 @@ export function ChannelConnections() {
           status: 'connected',
           pageId: page.id,
           pageName: page.name,
+          accessToken: page.accessToken,
         }
         setFbSession(newSession)
         if (typeof window !== 'undefined') {
@@ -655,6 +657,7 @@ export function ChannelConnections() {
           status: 'connected',
           pageId: data.pageId || data.settings?.messenger_page_id || fbPageId.trim(),
           pageName: data.pageName || data.settings?.messenger_page_name || fbPageName.trim() || 'Connected Page',
+          accessToken: fbAccessToken.trim(),
         }
         setFbSession(newSession)
         if (typeof window !== 'undefined') {

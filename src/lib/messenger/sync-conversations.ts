@@ -9,7 +9,9 @@ function getAdminClient() {
   return createClient(url, key)
 }
 
-async function resolveOwnerUserId(db: any, accountId: string): Promise<string> {
+async function resolveOwnerUserId(db: any, accountId: string, explicitUserId?: string): Promise<string> {
+  if (explicitUserId) return explicitUserId
+
   // 1. Try owner_user_id from accounts
   const { data: acc } = await db
     .from('accounts')
@@ -45,13 +47,15 @@ export interface SyncResult {
   messagesCount: number
   pageName?: string
   error?: string
+  tokenMissing?: boolean
 }
 
 export async function syncFacebookMessengerConversations(
   accountId: string,
   explicitPageId?: string,
   explicitPageToken?: string,
-  supabase?: any
+  supabase?: any,
+  explicitUserId?: string
 ): Promise<SyncResult> {
   // Always use admin client to bypass RLS and guarantee full write/read access
   const db = getAdminClient()
@@ -108,19 +112,74 @@ export async function syncFacebookMessengerConversations(
         pageToken = pageToken || (account.facebook_page_access_token || '').trim()
         pageName = (account.facebook_page_name || account.fb_page_name || pageId).trim()
       }
+
+      // Try 4: Check channel_connections table (migration 044)
+      if (!pageToken) {
+        try {
+          const { data: chan } = await db
+            .from('channel_connections')
+            .select('*')
+            .eq('channel_type', 'messenger')
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle()
+          if (chan) {
+            actualAccountId = chan.account_id || actualAccountId
+            pageId = pageId || chan.external_account_id
+            pageName = pageName || chan.display_name || pageId
+            if (chan.metadata?.access_token || chan.metadata?.accessToken) {
+              pageToken = pageToken || chan.metadata.access_token || chan.metadata.accessToken
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // If explicit token was passed in from client, persist it to accounts and channel_connections tables
+    if (explicitPageToken && actualAccountId) {
+      pageToken = explicitPageToken.trim()
+      pageId = pageId || explicitPageId || ''
+      try {
+        await db
+          .from('accounts')
+          .update({
+            facebook_page_id: pageId,
+            facebook_page_access_token: pageToken,
+            messenger_status: 'connected',
+          })
+          .or(`id.eq.${actualAccountId},owner_user_id.eq.${actualAccountId}`)
+      } catch (saveErr) {
+        console.warn('[Sync conversations persist token warning]:', saveErr)
+      }
+
+      try {
+        await db.from('channel_connections').upsert(
+          {
+            account_id: actualAccountId,
+            channel_type: 'messenger',
+            external_account_id: pageId,
+            display_name: pageName || pageId,
+            is_active: true,
+            metadata: { access_token: pageToken },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'account_id,channel_type,external_account_id' }
+        )
+      } catch {}
     }
 
     if (!pageId || !pageToken) {
       console.warn('[Sync Facebook Messenger]: No page credentials found for accountId:', accountId)
       return {
         success: false,
+        tokenMissing: true,
         conversationsCount: 0,
         messagesCount: 0,
-        error: 'Facebook Page ID or Page Access Token is missing. Please connect Facebook Messenger first.',
+        error: 'Facebook Page ID or Page Access Token is missing. Please enter your Page Access Token to sync.',
       }
     }
 
-    const ownerUserId = await resolveOwnerUserId(db, actualAccountId)
+    const ownerUserId = await resolveOwnerUserId(db, actualAccountId, explicitUserId)
 
     // 2. Query Meta Graph API for conversations
     // fields: id, updated_time, participants, senders, messages

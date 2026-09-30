@@ -14,7 +14,7 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
-import { WifiOff, RefreshCw } from "lucide-react";
+import { WifiOff, RefreshCw, KeyRound, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
@@ -55,6 +55,11 @@ function InboxPageInner() {
     null
   );
   const [messengerPageName, setMessengerPageName] = useState<string>("");
+  const [messengerPageId, setMessengerPageId] = useState<string>("");
+  const [tokenMissing, setTokenMissing] = useState<boolean>(false);
+  const [showTokenModal, setShowTokenModal] = useState<boolean>(false);
+  const [inputToken, setInputToken] = useState<string>("");
+  const [savingToken, setSavingToken] = useState<boolean>(false);
   const [isSyncingMessenger, setIsSyncingMessenger] = useState(false);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
@@ -190,6 +195,14 @@ function InboxPageInner() {
             if (parsed.pageName || parsed.pageId) {
               setMessengerPageName(parsed.pageName || parsed.pageId);
             }
+            if (parsed.pageId) {
+              setMessengerPageId(parsed.pageId);
+            }
+            if (parsed.accessToken) {
+              setInputToken(parsed.accessToken);
+            } else {
+              setTokenMissing(true);
+            }
           }
         }
       } catch {}
@@ -198,6 +211,14 @@ function InboxPageInner() {
     const checkConnection = async () => {
       // 2. Fetch server-verified Facebook Messenger status from API route
       let isFb = false;
+      let cachedToken = "";
+      try {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("jobabdesk_fb_session") : null;
+        if (stored) {
+          cachedToken = JSON.parse(stored)?.accessToken || "";
+        }
+      } catch {}
+
       try {
         const fbRes = await fetch("/api/channels/messenger/connect");
         if (fbRes.ok) {
@@ -205,8 +226,14 @@ function InboxPageInner() {
           isFb = fbData?.status === "connected" || Boolean(fbData?.pageId);
           if (isFb) {
             setMessengerConnected(true);
+            if (fbData.pageId) setMessengerPageId(fbData.pageId);
             if (fbData.pageName || fbData.pageId) {
               setMessengerPageName(fbData.pageName || fbData.pageId);
+            }
+            if (fbData.hasToken === false && !cachedToken) {
+              setTokenMissing(true);
+            } else if (fbData.hasToken) {
+              setTokenMissing(false);
             }
           }
         }
@@ -224,7 +251,14 @@ function InboxPageInner() {
             if (settings?.facebook_page_id || settings?.messenger_status === "connected") {
               isFb = true;
               setMessengerConnected(true);
+              if (settings.facebook_page_id) setMessengerPageId(settings.facebook_page_id);
               setMessengerPageName(settings.facebook_page_name || settings.facebook_page_id || "");
+              if (settings.facebook_page_access_token) {
+                cachedToken = settings.facebook_page_access_token;
+                setTokenMissing(false);
+              } else if (!cachedToken) {
+                setTokenMissing(true);
+              }
             }
           }
         } catch {}
@@ -232,7 +266,14 @@ function InboxPageInner() {
 
       // 4. If Facebook is connected, trigger background sync
       if (isFb) {
-        fetch("/api/channels/messenger/sync", { method: "POST" })
+        fetch("/api/channels/messenger/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageId: messengerPageId || undefined,
+            accessToken: cachedToken || undefined,
+          }),
+        })
           .then((res) => res.json())
           .then((syncRes) => {
             if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
@@ -272,27 +313,87 @@ function InboxPageInner() {
     };
 
     checkConnection();
-  }, []);
+  }, [messengerPageId]);
 
-  const handleSyncMessenger = useCallback(async () => {
-    setIsSyncingMessenger(true);
-    try {
-      const res = await fetch("/api/channels/messenger/sync", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(
-          `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
-        );
-        setResyncToken((prev) => prev + 1);
-      } else {
-        toast.error(data.error || "Failed to sync Messenger conversations");
+  const handleSyncMessenger = useCallback(
+    async (customToken?: string) => {
+      let tokenToSend = (typeof customToken === "string" ? customToken : "").trim();
+      let pageIdToSend = messengerPageId;
+
+      if (!tokenToSend && typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem("jobabdesk_fb_session");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.accessToken) tokenToSend = parsed.accessToken.trim();
+            if (!pageIdToSend && parsed.pageId) pageIdToSend = parsed.pageId;
+          }
+        } catch {}
       }
-    } catch (err: any) {
-      toast.error(err.message || "Network error syncing Messenger");
-    } finally {
-      setIsSyncingMessenger(false);
-    }
-  }, []);
+
+      // If token is missing and not provided, prompt user with modal
+      if (!tokenToSend && tokenMissing) {
+        setShowTokenModal(true);
+        return;
+      }
+
+      setIsSyncingMessenger(true);
+      setSavingToken(true);
+
+      try {
+        const res = await fetch("/api/channels/messenger/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageId: pageIdToSend || undefined,
+            accessToken: tokenToSend || undefined,
+          }),
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          if (tokenToSend && typeof window !== "undefined") {
+            try {
+              const stored = localStorage.getItem("jobabdesk_fb_session");
+              const existing = stored ? JSON.parse(stored) : {};
+              localStorage.setItem(
+                "jobabdesk_fb_session",
+                JSON.stringify({
+                  ...existing,
+                  status: "connected",
+                  pageId: pageIdToSend || existing.pageId,
+                  pageName: messengerPageName || existing.pageName,
+                  accessToken: tokenToSend,
+                })
+              );
+            } catch {}
+          }
+          setTokenMissing(false);
+          setShowTokenModal(false);
+          toast.success(
+            `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
+          );
+          setResyncToken((prev) => prev + 1);
+        } else {
+          if (
+            data.tokenMissing ||
+            data.error?.toLowerCase().includes("token") ||
+            data.error?.toLowerCase().includes("missing")
+          ) {
+            setTokenMissing(true);
+            setShowTokenModal(true);
+          }
+          toast.error(data.error || "Failed to sync Messenger conversations");
+        }
+      } catch (err: any) {
+        toast.error(err.message || "Network error syncing Messenger");
+      } finally {
+        setIsSyncingMessenger(false);
+        setSavingToken(false);
+      }
+    },
+    [messengerPageId, messengerPageName, tokenMissing]
+  );
 
   // Handle realtime message events
   const handleMessageEvent = useCallback(
@@ -656,15 +757,31 @@ function InboxPageInner() {
             <span className="text-foreground font-medium">
               {messengerPageName || "Facebook Page"}
             </span>
+            {tokenMissing && (
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-500">
+                Token Required
+              </span>
+            )}
           </div>
-          <button
-            onClick={handleSyncMessenger}
-            disabled={isSyncingMessenger}
-            className="flex items-center gap-1.5 rounded bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
-            {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
-          </button>
+          <div className="flex items-center gap-2">
+            {tokenMissing && (
+              <button
+                onClick={() => setShowTokenModal(true)}
+                className="flex items-center gap-1.5 rounded bg-amber-600 hover:bg-amber-700 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors shadow-xs"
+              >
+                <KeyRound className="h-3 w-3" />
+                Enter Page Token
+              </button>
+            )}
+            <button
+              onClick={() => handleSyncMessenger()}
+              disabled={isSyncingMessenger}
+              className="flex items-center gap-1.5 rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
+              {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -694,9 +811,11 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
-            onSyncMessenger={handleSyncMessenger}
+            onSyncMessenger={() => handleSyncMessenger()}
             isSyncingMessenger={isSyncingMessenger}
             messengerConnected={Boolean(messengerConnected)}
+            tokenMissing={tokenMissing}
+            onOpenTokenModal={() => setShowTokenModal(true)}
           />
         </div>
 
@@ -743,6 +862,90 @@ function InboxPageInner() {
           </div>
         )}
       </div>
+
+      {/* Facebook Page Token Input Modal */}
+      {showTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">
+                    Connect Page Access Token
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {messengerPageName || "Facebook Page"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTokenModal(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              To fetch and sync customer conversations for <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span>, enter your Facebook Page Access Token below.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-foreground">
+                Page Access Token (EAAG...)
+              </label>
+              <textarea
+                rows={3}
+                value={inputToken}
+                onChange={(e) => setInputToken(e.target.value)}
+                placeholder="Paste Page Access Token (EAAG...) here..."
+                className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
+            <div className="rounded-xl border bg-muted/40 p-3 text-[11px] space-y-1.5 text-muted-foreground">
+              <span className="font-semibold text-foreground flex items-center gap-1">
+                <ExternalLink className="h-3 w-3 text-blue-500" />
+                Where to get this token?
+              </span>
+              <p>1. Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a></p>
+              <p>2. Under User or Page, select Page: <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span></p>
+              <p>3. Generate Access Token &gt; Paste it here &gt; Click Save &amp; Sync.</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowTokenModal(false)}
+                className="rounded-lg border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!inputToken.trim() || savingToken}
+                onClick={() => handleSyncMessenger(inputToken)}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50"
+              >
+                {savingToken ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Saving &amp; Syncing...
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="h-3.5 w-3.5" />
+                    Save &amp; Sync Chats
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
