@@ -1,154 +1,99 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
-import { engineSendText } from '@/lib/flows/meta-send'
+import { sendWhapiMessage } from '@/lib/whatsapp/whapi-gateway'
+import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  return createClient(url, key)
 }
 
-// Meta Webhook Verification GET
+export const dynamic = 'force-dynamic'
+
+// Webhook Verification (GET)
 export async function GET(req: Request) {
-  const url = new URL(req.url)
-  const mode = url.searchParams.get('hub.mode')
-  const token = url.searchParams.get('hub.verify_token')
-  const challenge = url.searchParams.get('hub.challenge')
+  const { searchParams } = new URL(req.url)
+  const mode = searchParams.get('hub.mode')
+  const token = searchParams.get('hub.verify_token')
+  const challenge = searchParams.get('hub.challenge')
 
-  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || process.env.META_VERIFY_TOKEN || 'jobabdesk_webhook'
-
-  if (mode === 'subscribe' && token === verifyToken) {
+  if (mode === 'subscribe' && token === 'jobabdesk_verify_token') {
     return new Response(challenge, { status: 200 })
   }
-  return new Response('Forbidden', { status: 403 })
+
+  return NextResponse.json({ status: 'ok', service: 'JobabDesk Whapi Gateway Webhook' })
 }
 
-// Meta WhatsApp Webhook Inbound POST
+// Incoming Webhook Events (POST)
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    const body = await req.json().catch(() => ({}))
+    const { searchParams } = new URL(req.url)
+    const queryAccountId = searchParams.get('account_id')
+
+    // Find first active account if account_id not provided in URL
     const db = getAdminClient()
+    let accountId = queryAccountId
 
-    // Parse Meta WhatsApp Webhook payload
-    const entry = body?.entry?.[0]
-    const changes = entry?.changes?.[0]
-    const value = changes?.value
-    const messages = value?.messages
-
-    if (!messages || messages.length === 0) {
-      return NextResponse.json({ status: 'ignored' }, { status: 200 })
-    }
-
-    const msg = messages[0]
-    const fromPhone = msg.from // e.g. "8801700000000"
-    const messageText = msg.text?.body?.trim()
-
-    if (!fromPhone || !messageText) {
-      return NextResponse.json({ status: 'non_text_or_empty' }, { status: 200 })
-    }
-
-    // Resolve Account (find first active account or from metadata)
-    const { data: accounts } = await db.from('accounts').select('id, owner_user_id, ai_auto_reply_enabled').limit(1)
-    const account = accounts?.[0]
-    if (!account) {
-      return NextResponse.json({ status: 'no_account' }, { status: 200 })
-    }
-
-    const accountId = account.id
-
-    // Find or create Contact
-    let contactId: string | null = null
-    const { data: existingContact } = await db
-      .from('contacts')
-      .select('id')
-      .eq('account_id', accountId)
-      .ilike('phone', `%${fromPhone}%`)
-      .maybeSingle()
-
-    if (existingContact) {
-      contactId = existingContact.id
-    } else {
-      const { data: newContact } = await db
-        .from('contacts')
-        .insert({
-          account_id: accountId,
-          phone: fromPhone,
-          name: value.contacts?.[0]?.profile?.name || `Customer (${fromPhone})`,
-        })
+    if (!accountId) {
+      const { data: firstAccount } = await db
+        .from('accounts')
         .select('id')
-        .single()
-
-      contactId = newContact?.id || null
-    }
-
-    // Find or create Conversation
-    let conversationId: string | null = null
-    if (contactId) {
-      const { data: existingConv } = await db
-        .from('conversations')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
+        .limit(1)
         .maybeSingle()
+      accountId = firstAccount?.id || ''
+    }
 
-      if (existingConv) {
-        conversationId = existingConv.id
-      } else {
-        const { data: newConv } = await db
-          .from('conversations')
-          .insert({
-            account_id: accountId,
-            contact_id: contactId,
-            status: 'open',
-          })
-          .select('id')
-          .single()
-        conversationId = newConv?.id || null
+    if (!accountId) {
+      return NextResponse.json({ status: 'ignored', reason: 'No account configured' })
+    }
+
+    // Extract message & sender phone number from Whapi / Meta payload
+    let customerPhone = ''
+    let messageText = ''
+
+    if (Array.isArray(body.messages) && body.messages.length > 0) {
+      const msg = body.messages[0]
+      if (!msg.from_me) {
+        customerPhone = msg.from || msg.chat_id || ''
+        messageText = msg.text?.body || msg.body || msg.payload?.text || ''
+      }
+    } else if (body.data) {
+      const d = body.data
+      if (!d.from_me) {
+        customerPhone = d.from || d.chat_id || ''
+        messageText = d.text?.body || d.body || ''
       }
     }
 
-    // Save Customer Message
-    if (conversationId) {
-      await db.from('messages').insert({
-        account_id: accountId,
-        conversation_id: conversationId,
-        sender_type: 'customer',
-        content_text: messageText,
-        meta_id: msg.id,
-      })
-    }
+    // Clean phone number (strip @s.whatsapp.net)
+    customerPhone = customerPhone.replace(/@.*$/, '').trim()
 
-    // Check AI Auto Reply setting
-    if (account.ai_auto_reply_enabled !== false) {
-      const aiResponse = await handleIncomingCustomerMessage({
+    if (customerPhone && messageText) {
+      // Execute AI router engine with anti-ban human typing delay & per-contact mute verification
+      const result = await handleIncomingCustomerMessage({
         accountId,
-        contactId,
-        customerPhone: fromPhone,
+        customerPhone,
+        channel: 'whatsapp',
         messageText,
       })
 
-      if (aiResponse?.aiReply && conversationId && contactId) {
-        // Automatically send reply via WhatsApp API
-        try {
-          await engineSendText({
-            accountId,
-            userId: account.owner_user_id || accountId,
-            conversationId,
-            contactId,
-            text: aiResponse.aiReply,
-            aiGenerated: true,
-          })
-        } catch (sendErr) {
-          console.error('[WhatsApp Webhook] Outbound send failed:', sendErr)
-        }
+      if (result?.aiReply) {
+        // Send AI response back via Whapi Gateway
+        await sendWhapiMessage({
+          accountId,
+          to: customerPhone,
+          text: result.aiReply,
+        })
       }
     }
 
-    return NextResponse.json({ status: 'success' }, { status: 200 })
-  } catch (err: unknown) {
-    console.error('[WhatsApp Webhook Error]:', err)
-    return NextResponse.json({ error: (err as Error)?.message ?? 'Internal error' }, { status: 500 })
+    return NextResponse.json({ status: 'success' })
+  } catch (err) {
+    return NextResponse.json({ status: 'error', message: String(err) }, { status: 500 })
   }
 }

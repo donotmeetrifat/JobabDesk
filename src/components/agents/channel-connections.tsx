@@ -58,6 +58,11 @@ export function ChannelConnections() {
   const [loadingCode, setLoadingCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
 
+  // Whapi Gateway State
+  const [whapiApiKey, setWhapiApiKey] = useState('')
+  const [whapiInstanceId, setWhapiInstanceId] = useState('')
+  const [whapiProvider, setWhapiProvider] = useState<'whapi' | 'evolution'>('whapi')
+
   // Facebook Messenger Setup Modal state
   const [showFbModal, setShowFbModal] = useState(false)
   const [fbPageName, setFbPageName] = useState('')
@@ -87,7 +92,7 @@ export function ChannelConnections() {
 
   async function fetchWaStatus() {
     try {
-      const res = await fetch('/api/channels/whatsapp/qr')
+      const res = await fetch('/api/channels/whatsapp/gateway')
       if (res.ok) {
         const data: WhatsAppStatus = await res.json()
         setWaSession((prev) => ({
@@ -129,7 +134,15 @@ export function ChannelConnections() {
     setShowQrModal(true)
     setWaTab('qr')
     try {
-      const res = await fetch('/api/channels/whatsapp/qr', { method: 'POST' })
+      const res = await fetch('/api/channels/whatsapp/gateway', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: whapiApiKey.trim(),
+          instanceId: whapiInstanceId.trim(),
+          provider: whapiProvider,
+        }),
+      })
       if (res.ok) {
         const data: WhatsAppStatus = await res.json()
         setWaSession(data)
@@ -332,6 +345,36 @@ export function ChannelConnections() {
               )}
             </div>
 
+            {/* Whapi Gateway Credentials inputs */}
+            {waSession.status !== 'connected' && (
+              <div className="space-y-3 pt-1 border-t">
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                    Whapi API Key / Token (Optional Gateway Instance)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Paste Whapi API Key"
+                    value={whapiApiKey}
+                    onChange={(e) => setWhapiApiKey(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                    Instance ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. instance10492"
+                    value={whapiInstanceId}
+                    onChange={(e) => setWhapiInstanceId(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div>
               {waSession.status === 'connected' ? (
@@ -353,7 +396,7 @@ export function ChannelConnections() {
                   ) : (
                     <QrCode className="h-4 w-4" />
                   )}
-                  📱 Link Phone (QR Code or 8-Digit Code)
+                  📱 Generate & Scan Real WhatsApp QR Code
                 </Button>
               )}
             </div>
