@@ -26,7 +26,15 @@ export async function POST(req: Request) {
       )
     }
 
-    return NextResponse.json({ result })
+    return NextResponse.json({
+      result: {
+        ai_reply: result.aiReply,
+        detected_language: result.language,
+        intent_detected: result.intent,
+        provider_used: result.providerUsed,
+        model_used: result.modelUsed,
+      },
+    })
   } catch (err: any) {
     console.error('[AI Simulate Error]:', err)
     return NextResponse.json(
