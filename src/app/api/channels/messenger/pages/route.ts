@@ -60,7 +60,14 @@ export async function POST(req: Request) {
     const appSecret = process.env.META_APP_SECRET || ''
 
     // If OAuth authorization code provided, exchange for user access token
-    if (code && appId && appSecret) {
+    if (code && !token) {
+      if (!appSecret) {
+        return NextResponse.json(
+          { error: 'META_APP_SECRET is not configured in Vercel environment variables yet. Please add META_APP_SECRET in Vercel Settings or use manual setup below.' },
+          { status: 400 }
+        )
+      }
+
       try {
         const tokenRes = await fetch(
           `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&code=${code}&redirect_uri=${encodeURIComponent('https://jobabdesk.vercel.app/api/channels/messenger/pages')}`
@@ -68,9 +75,11 @@ export async function POST(req: Request) {
         const tokenData = await tokenRes.json()
         if (tokenData.access_token) {
           token = tokenData.access_token
+        } else if (tokenData.error) {
+          return NextResponse.json({ error: tokenData.error.message || 'Failed to exchange Meta OAuth code' }, { status: 400 })
         }
-      } catch {
-        // fallback
+      } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'Network error during Meta OAuth code exchange' }, { status: 500 })
       }
     }
 
