@@ -1,0 +1,42 @@
+Run it from the **project folder** using any of these methods:
+
+---
+
+## Option 1 — Antigravity IDE Terminal (Easiest)
+
+In Antigravity IDE, click the **Terminal** tab at the bottom and run:
+```
+node scripts/translate.mjs
+```
+
+---
+
+## Option 2 — Windows Command Prompt (cmd.exe)
+
+Press `Win + R` → type `cmd` → Enter, then:
+```cmd
+cd /d "H:\Antigravity Own\JababDesk"
+node scripts/translate.mjs
+```
+
+---
+
+## Option 3 — File Explorer (Quick Way)
+
+1. Open `H:\Antigravity Own\JababDesk` in File Explorer
+2. Click the address bar → type `cmd` → press Enter
+3. A terminal opens already in that folder → type:
+```
+node scripts/translate.mjs
+```
+
+---
+
+## Option 4 — GitHub Action (Fully Automatic — No Running Needed!)
+
+Once you add `GEMINI_API_KEY` to GitHub Secrets → **it runs automatically** every time you push changes to `en.json`. You never need to run it manually!
+
+👉 **[github.com/donotmeetrifat/JobabDesk/settings/secrets/actions](https://github.com/donotmeetrifat/JobabDesk/settings/secrets/actions)**
+- New secret → Name: `GEMINI_API_KEY` → Value: your key → Save
+
+**After that → just push code → Bengali auto-updates in 2 minutes!** 🚀

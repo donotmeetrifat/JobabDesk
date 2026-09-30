@@ -20,6 +20,7 @@ import {
   EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { loadFacebookSDK, launchMetaEmbeddedSignup } from '@/lib/whatsapp/meta-embedded-signup'
 
 interface WhatsAppStatus {
   status: 'disconnected' | 'connecting' | 'connected'
@@ -88,8 +89,9 @@ export function ChannelConnections() {
   const messengerWebhookUrl = 'https://jobabdesk.vercel.app/api/webhooks/messenger'
   const verifyToken = 'jobabdesk_verify_token'
 
-  // Load WhatsApp & Facebook Messenger statuses
+  // Load SDK and statuses
   useEffect(() => {
+    loadFacebookSDK(process.env.NEXT_PUBLIC_META_APP_ID || '')
     fetchWaStatus()
     fetchFbStatus()
   }, [])
@@ -115,7 +117,7 @@ export function ChannelConnections() {
           setWaSession((prev) => ({
             ...prev,
             status: 'connected',
-            connectedNumber: metaData.phoneNumberId,
+            connectedNumber: metaData.phoneNumberId || 'Meta Official WABA',
           }))
         }
       }
@@ -156,6 +158,49 @@ export function ChannelConnections() {
     } finally {
       setLoadingFb(false)
     }
+  }
+
+  async function handleMetaEmbeddedSignup() {
+    setMetaErrorMsg('')
+    setMetaSuccessMsg('')
+    setSavingMeta(true)
+
+    launchMetaEmbeddedSignup({
+      appId: process.env.NEXT_PUBLIC_META_APP_ID || '',
+      configId: process.env.NEXT_PUBLIC_META_CONFIG_ID || '',
+      onSuccess: async (result: { phoneNumberId?: string; wabaId?: string; code?: string; accessToken?: string }) => {
+        try {
+          const res = await fetch('/api/channels/whatsapp/embedded-signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result),
+          })
+          const data = await res.json()
+          if (res.ok && data.success) {
+            setWaSession((prev) => ({
+              ...prev,
+              status: 'connected',
+              connectedNumber: result.phoneNumberId || 'Meta Official WABA',
+            }))
+            if (result.phoneNumberId) setWaPhoneNumberId(result.phoneNumberId)
+            if (result.wabaId) setWaWabaId(result.wabaId)
+            setMetaSuccessMsg('Successfully connected WhatsApp with Facebook Meta WABA!')
+            setTimeout(() => setMetaSuccessMsg(''), 5000)
+            setShowQrModal(false)
+          } else {
+            setMetaErrorMsg(data.error || 'Failed to complete Meta Embedded Signup.')
+          }
+        } catch (err: any) {
+          setMetaErrorMsg(err?.message || 'Error exchanging Meta credentials.')
+        } finally {
+          setSavingMeta(false)
+        }
+      },
+      onError: (err: string) => {
+        setMetaErrorMsg(err)
+        setSavingMeta(false)
+      },
+    })
   }
 
   async function handleSaveMetaCredentials() {
@@ -263,15 +308,14 @@ export function ChannelConnections() {
       const res = await fetch('/api/channels/whatsapp/qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'confirm',
-          phoneNumber: waPhoneInput.trim() || undefined,
-        }),
+        body: JSON.stringify({ action: 'confirm_pairing' }),
       })
       if (res.ok) {
-        const data = await res.json()
+        const data: WhatsAppStatus = await res.json()
         setWaSession(data)
-        setShowQrModal(false)
+        if (data.status === 'connected') {
+          setShowQrModal(false)
+        }
       }
     } catch {
       // quiet catch
@@ -280,15 +324,12 @@ export function ChannelConnections() {
 
   async function handleDisconnectWa() {
     try {
-      const res = await fetch('/api/channels/whatsapp/disconnect', { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setWaSession(data)
-        setPersistentQr('')
-        setWaPairingCode('')
-        setWaPhoneNumberId('')
-        setWaAccessToken('')
-      }
+      await fetch('/api/channels/whatsapp/gateway', { method: 'DELETE' })
+      setWaSession({ status: 'disconnected', qrCode: '', connectedNumber: '' })
+      setPersistentQr('')
+      setWaPhoneNumberId('')
+      setWaAccessToken('')
+      setWaWabaId('')
     } catch {
       // quiet catch
     }
@@ -297,7 +338,7 @@ export function ChannelConnections() {
   async function handleSaveFbCredentials() {
     setFbError('')
     if (!fbPageId.trim() || !fbAccessToken.trim()) {
-      setFbError('Facebook Page ID and Page Access Token are required.')
+      setFbError('Page ID and Page Access Token are required.')
       return
     }
 
@@ -307,24 +348,23 @@ export function ChannelConnections() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pageData: {
-            pageId: fbPageId.trim(),
-            pageName: fbPageName.trim(),
-            accessToken: fbAccessToken.trim(),
-          },
+          pageId: fbPageId.trim(),
+          accessToken: fbAccessToken.trim(),
+          pageName: fbPageName.trim(),
         }),
       })
 
       if (res.ok) {
         const data = await res.json()
-        setFbSession(data)
-        if (data.status === 'connected') {
-          setShowFbModal(false)
-        } else {
-          setFbError('Failed to save credentials. Please check your inputs.')
-        }
+        setFbSession({
+          status: 'connected',
+          pageId: data.settings?.messenger_page_id || fbPageId.trim(),
+          pageName: data.settings?.messenger_page_name || fbPageName.trim() || 'Connected Page',
+        })
+        setShowFbModal(false)
       } else {
-        setFbError('Failed to connect Facebook Page. Check server logs.')
+        const errData = await res.json().catch(() => ({}))
+        setFbError(errData.error || 'Failed to save Facebook credentials.')
       }
     } catch {
       setFbError('Network error while saving Facebook credentials.')
@@ -335,18 +375,11 @@ export function ChannelConnections() {
 
   async function handleDisconnectFb() {
     try {
-      const res = await fetch('/api/channels/messenger/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'disconnect' }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setFbSession(data)
-        setFbPageId('')
-        setFbPageName('')
-        setFbAccessToken('')
-      }
+      await fetch('/api/channels/messenger/connect', { method: 'DELETE' })
+      setFbSession({ status: 'disconnected', pageId: '', pageName: '' })
+      setFbPageId('')
+      setFbAccessToken('')
+      setFbPageName('')
     } catch {
       // quiet catch
     }
@@ -403,7 +436,7 @@ export function ChannelConnections() {
                 {waSession.status === 'connected' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Connected
+                    Connected (Meta Official WABA)
                   </span>
                 ) : waSession.status === 'connecting' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
@@ -436,16 +469,34 @@ export function ChannelConnections() {
                   onClick={handleDisconnectWa}
                   className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-2 rounded-xl"
                 >
-                  <LogOut className="h-4 w-4" /> Disconnect WhatsApp Session
+                  <LogOut className="h-4 w-4" /> Disconnect WhatsApp
                 </Button>
               ) : (
-                <Button
-                  onClick={() => setShowQrModal(true)}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
-                >
-                  <Smartphone className="h-4 w-4" />
-                  Configure WhatsApp Channel
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    onClick={handleMetaEmbeddedSignup}
+                    disabled={savingMeta}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 rounded-xl shadow-sm py-3.5 text-sm"
+                  >
+                    {savingMeta ? (
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <MessageCircle className="h-5 w-5 fill-current" />
+                    )}
+                    Connect WhatsApp with Facebook
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Takes 10 seconds. Each shop gets 1,000 free monthly conversations directly from Meta.
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowQrModal(true)}
+                    className="w-full text-xs text-muted-foreground hover:text-foreground pt-1"
+                  >
+                    Or configure manually / QR Code / 8-Digit Code
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -612,6 +663,34 @@ export function ChannelConnections() {
                   </div>
                 )}
 
+                {/* 1-Click Embedded Signup Recommended Banner */}
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+                  <h4 className="font-bold text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                    <Zap className="h-4 w-4 text-emerald-600" /> Recommended 1-Click Setup
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Link your Facebook & WhatsApp Business Account automatically without copying tokens.
+                  </p>
+                  <Button
+                    onClick={handleMetaEmbeddedSignup}
+                    disabled={savingMeta}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl py-2.5 gap-2"
+                  >
+                    {savingMeta ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <MessageCircle className="h-4 w-4 fill-current" />
+                    )}
+                    Connect WhatsApp with Facebook
+                  </Button>
+                </div>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-muted"></div>
+                  <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Or Manual Configuration</span>
+                  <div className="flex-grow border-t border-muted"></div>
+                </div>
+
                 <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-foreground mb-1">
@@ -668,7 +747,7 @@ export function ChannelConnections() {
                       Meta Webhook Configuration
                     </div>
                     <p className="text-muted-foreground text-[11px] leading-relaxed">
-                      Set these values in Meta Developer Console &rarr; WhatsApp &rarr; Configuration:
+                      Set these values in Meta Developer Console &rr; WhatsApp &rr; Configuration:
                     </p>
 
                     <div className="space-y-2">
@@ -758,8 +837,8 @@ export function ChannelConnections() {
                   <p className="font-bold text-xs text-muted-foreground">How to Link via QR:</p>
                   <ol className="list-decimal list-inside space-y-1 text-muted-foreground leading-relaxed">
                     <li>Open <strong>WhatsApp Business</strong> on your phone.</li>
-                    <li>Tap <strong>Settings / Menu (⋮)</strong> &rarr; <strong>Linked Devices</strong>.</li>
-                    <li>Tap <strong>Link a Device</strong> and scan this 29x29 matrix QR code.</li>
+                    <li>Tap <strong>Settings / Menu (⋮)</strong> &rr; <strong>Linked Devices</strong>.</li>
+                    <li>Tap <strong>Link a Device</strong> and scan this QR code.</li>
                   </ol>
                 </div>
 
@@ -824,8 +903,8 @@ export function ChannelConnections() {
                   <p className="font-bold text-xs text-muted-foreground">How to Link with Phone Code:</p>
                   <ol className="list-decimal list-inside space-y-1 text-muted-foreground leading-relaxed text-[11px]">
                     <li>Open <strong>WhatsApp Business</strong> on your phone.</li>
-                    <li>Tap <strong>Settings / Menu (⋮)</strong> &rarr; <strong>Linked Devices</strong>.</li>
-                    <li>Tap <strong>Link a Device</strong> &rarr; Select <strong>Link with Phone Number instead</strong>.</li>
+                    <li>Tap <strong>Settings / Menu (⋮)</strong> &rr; <strong>Linked Devices</strong>.</li>
+                    <li>Tap <strong>Link a Device</strong> &rr; Select <strong>Link with Phone Number instead</strong>.</li>
                     <li>Enter the 8-digit pairing code generated above.</li>
                   </ol>
                 </div>
@@ -916,7 +995,7 @@ export function ChannelConnections() {
                   Meta Webhook Configuration
                 </div>
                 <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  Set these credentials in your Meta Developer App &rarr; Messenger &rarr; Webhooks settings:
+                  Set these credentials in your Meta Developer App &rr; Messenger &rr; Webhooks settings:
                 </p>
 
                 <div className="space-y-2">
@@ -988,4 +1067,3 @@ export function ChannelConnections() {
     </div>
   )
 }
-
