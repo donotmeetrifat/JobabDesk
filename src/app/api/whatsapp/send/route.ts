@@ -148,6 +148,82 @@ export async function POST(request: Request) {
       )
     }
 
+    // Check if target conversation is a Facebook Messenger contact
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('*, contact:contacts(*)')
+      .eq('id', conversationId)
+      .eq('account_id', accountId)
+      .maybeSingle()
+
+    const contact = (convData as any)?.contact
+    const isMessenger =
+      contact?.channel === 'messenger' ||
+      (contact?.phone && !contact.phone.startsWith('+') && !isNaN(Number(contact.phone)) && contact.phone.length > 10)
+
+    if (isMessenger && content_text) {
+      const { data: accountRow } = await supabase
+        .from('accounts')
+        .select('facebook_page_access_token')
+        .eq('id', accountId)
+        .maybeSingle()
+
+      const fbToken = accountRow?.facebook_page_access_token
+      if (fbToken) {
+        const psid = contact.phone
+        const fbRes = await fetch(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${encodeURIComponent(fbToken)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipient: { id: psid },
+              message: { text: content_text },
+            }),
+          }
+        )
+        const fbJson = await fbRes.json()
+        if (!fbRes.ok || fbJson.error) {
+          return NextResponse.json(
+            { error: fbJson.error?.message || 'Failed to send message via Messenger' },
+            { status: 400 }
+          )
+        }
+
+        const fbMid = fbJson.message_id || null
+        const nowIso = new Date().toISOString()
+
+        const { data: insertedMsg } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_type: 'agent',
+            content_type: 'text',
+            content_text,
+            message_id: fbMid,
+            status: 'sent',
+            created_at: nowIso,
+          })
+          .select('id')
+          .single()
+
+        await supabase
+          .from('conversations')
+          .update({
+            last_message_text: content_text,
+            last_message_at: nowIso,
+            updated_at: nowIso,
+          })
+          .eq('id', conversationId)
+
+        return NextResponse.json({
+          success: true,
+          message_id: insertedMsg?.id || fbMid,
+          whatsapp_message_id: fbMid,
+        })
+      }
+    }
+
     // Delegate to the shared send core (validates, sends to Meta with
     // phone-variant retry, persists, pauses active flow runs). Its
     // `SendMessageError` carries a machine code + HTTP status; the

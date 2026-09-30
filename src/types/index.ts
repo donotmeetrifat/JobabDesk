@@ -119,6 +119,7 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  channel?: string;
   ai_auto_reply_muted?: boolean;
   created_at: string;
   updated_at: string;

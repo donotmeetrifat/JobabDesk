@@ -14,7 +14,7 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
-import { WifiOff } from "lucide-react";
+import { WifiOff, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
@@ -51,6 +51,11 @@ function InboxPageInner() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  const [messengerConnected, setMessengerConnected] = useState<boolean | null>(
+    null
+  );
+  const [messengerPageName, setMessengerPageName] = useState<string>("");
+  const [isSyncingMessenger, setIsSyncingMessenger] = useState(false);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -172,7 +177,7 @@ function InboxPageInner() {
     }
   }, []);
 
-  // Check WhatsApp connection status on mount
+  // Check WhatsApp & Facebook Messenger connection status on mount
   useEffect(() => {
     const checkConnection = async () => {
       const supabase = createClient();
@@ -183,12 +188,6 @@ function InboxPageInner() {
 
       if (!user) return;
 
-      // whatsapp_config is one-row-per-account post-multi-user, so
-      // the previous `.eq('user_id', user.id)` would miss the row
-      // for any teammate who didn't personally save the config —
-      // the "WhatsApp not connected" banner would show in the
-      // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
       const { data: profile } = await supabase
         .from("profiles")
         .select("account_id")
@@ -197,19 +196,68 @@ function InboxPageInner() {
       const accountId = profile?.account_id as string | undefined;
       if (!accountId) {
         setWhatsappConnected(false);
+        setMessengerConnected(false);
         return;
       }
 
-      const { data } = await supabase
+      // 1. WhatsApp status
+      const { data: waData } = await supabase
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
         .maybeSingle();
 
-      setWhatsappConnected(data?.status === "connected");
+      const isWaConnected = waData?.status === "connected";
+      setWhatsappConnected(isWaConnected);
+
+      // 2. Facebook Messenger status
+      const { data: accData } = await supabase
+        .from("accounts")
+        .select("facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status")
+        .eq("id", accountId)
+        .maybeSingle();
+
+      const isFbConnected = Boolean(
+        accData?.facebook_page_id &&
+        (accData?.messenger_status === "connected" || accData?.facebook_page_access_token)
+      );
+      setMessengerConnected(isFbConnected);
+      setMessengerPageName(accData?.facebook_page_name || accData?.facebook_page_id || "");
+
+      // 3. Auto-sync Messenger conversations in background on mount if Messenger is connected
+      if (isFbConnected) {
+        fetch("/api/channels/messenger/sync", { method: "POST" })
+          .then((res) => res.json())
+          .then((syncRes) => {
+            if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
+              setResyncToken((prev) => prev + 1);
+            }
+          })
+          .catch(() => {});
+      }
     };
 
     checkConnection();
+  }, []);
+
+  const handleSyncMessenger = useCallback(async () => {
+    setIsSyncingMessenger(true);
+    try {
+      const res = await fetch("/api/channels/messenger/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(
+          `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
+        );
+        setResyncToken((prev) => prev + 1);
+      } else {
+        toast.error(data.error || "Failed to sync Messenger conversations");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Network error syncing Messenger");
+    } finally {
+      setIsSyncingMessenger(false);
+    }
   }, []);
 
   // Handle realtime message events
@@ -563,9 +611,31 @@ function InboxPageInner() {
 
   return (
     <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
-      {/* WhatsApp connection banner — in the flex column, not absolute,
-          so it pushes the panels down instead of overlapping them. */}
-      {whatsappConnected === false && (
+      {/* Facebook Messenger connected banner with 1-click sync */}
+      {messengerConnected && (
+        <div className="flex shrink-0 items-center justify-between border-b border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="font-semibold text-blue-500 dark:text-blue-400">
+              Facebook Messenger Connected:
+            </span>
+            <span className="text-foreground font-medium">
+              {messengerPageName || "Facebook Page"}
+            </span>
+          </div>
+          <button
+            onClick={handleSyncMessenger}
+            disabled={isSyncingMessenger}
+            className="flex items-center gap-1.5 rounded bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
+            {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+          </button>
+        </div>
+      )}
+
+      {/* WhatsApp connection banner — shown only if NEITHER WhatsApp NOR Messenger is connected */}
+      {whatsappConnected === false && !messengerConnected && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
           <WifiOff className="h-4 w-4 text-amber-400" />
           <p className="text-xs text-amber-400">
@@ -590,6 +660,9 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onSyncMessenger={messengerConnected ? handleSyncMessenger : undefined}
+            isSyncingMessenger={isSyncingMessenger}
+            messengerConnected={Boolean(messengerConnected)}
           />
         </div>
 

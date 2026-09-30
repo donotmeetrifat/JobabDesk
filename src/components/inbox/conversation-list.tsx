@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,9 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  onSyncMessenger?: () => void;
+  isSyncingMessenger?: boolean;
+  messengerConnected?: boolean;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +55,9 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  onSyncMessenger,
+  isSyncingMessenger = false,
+  messengerConnected = false,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -350,6 +356,18 @@ export function ConversationList({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          {onSyncMessenger && (
+            <button
+              onClick={onSyncMessenger}
+              disabled={isSyncingMessenger}
+              title="Sync Facebook Messenger Chats"
+              className="ml-auto inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
+              <span className="hidden sm:inline">Sync</span>
+            </button>
+          )}
         </div>
 
         {hasContactFilters && (
@@ -402,8 +420,18 @@ export function ConversationList({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-4 py-12 text-center">
+          <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+            {onSyncMessenger && (
+              <button
+                onClick={onSyncMessenger}
+                disabled={isSyncingMessenger}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
+                {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col">
@@ -474,9 +502,16 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
-          </span>
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {contact?.channel === "messenger" && (
+              <span className="shrink-0 rounded bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-blue-500">
+                Messenger
+              </span>
+            )}
+          </div>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">

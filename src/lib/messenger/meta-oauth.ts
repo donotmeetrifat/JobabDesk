@@ -182,6 +182,17 @@ export async function connectFacebookPage(
       }
     }
 
+    // Auto-trigger background conversation sync so Inbox has chats right away
+    if (token) {
+      import('./sync-conversations')
+        .then(({ syncFacebookMessengerConversations }) => {
+          syncFacebookMessengerConversations(targetId, pageId, token, supabase).catch((syncErr) => {
+            console.error('[Background Messenger Sync Error]:', syncErr)
+          })
+        })
+        .catch(() => {})
+    }
+
     return {
       status: 'connected',
       pageId,
