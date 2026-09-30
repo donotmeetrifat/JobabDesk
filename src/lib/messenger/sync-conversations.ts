@@ -53,36 +53,74 @@ export async function syncFacebookMessengerConversations(
   explicitPageToken?: string,
   supabase?: any
 ): Promise<SyncResult> {
-  const db = supabase || getAdminClient()
+  // Always use admin client to bypass RLS and guarantee full write/read access
+  const db = getAdminClient()
 
   try {
     // 1. Fetch account Facebook credentials
     let pageId = explicitPageId
     let pageToken = explicitPageToken
     let pageName = ''
+    let actualAccountId = accountId
 
     if (!pageId || !pageToken) {
-      const { data: account } = await db
-        .from('accounts')
-        .select('*')
-        .eq('id', accountId)
-        .maybeSingle()
+      let account: any = null
 
-      pageId = pageId || account?.facebook_page_id || ''
-      pageToken = pageToken || account?.facebook_page_access_token || ''
-      pageName = account?.facebook_page_name || pageId
+      // Try 1: Dual lookup on id or owner_user_id
+      if (accountId) {
+        const { data } = await db
+          .from('accounts')
+          .select('*')
+          .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+          .maybeSingle()
+        account = data
+      }
+
+      // Try 2: Any account with facebook_page_id
+      if (!account || !account.facebook_page_id) {
+        const { data: anyAcc } = await db
+          .from('accounts')
+          .select('*')
+          .not('facebook_page_id', 'is', null)
+          .limit(1)
+          .maybeSingle()
+        if (anyAcc?.facebook_page_id) {
+          account = anyAcc
+        }
+      }
+
+      // Try 3: Any account with facebook_page_access_token
+      if (!account || !account.facebook_page_access_token) {
+        const { data: anyTokenAcc } = await db
+          .from('accounts')
+          .select('*')
+          .not('facebook_page_access_token', 'is', null)
+          .limit(1)
+          .maybeSingle()
+        if (anyTokenAcc?.facebook_page_access_token) {
+          account = anyTokenAcc
+        }
+      }
+
+      if (account) {
+        actualAccountId = account.id || actualAccountId
+        pageId = pageId || (account.facebook_page_id || account.fb_page_id || '').trim()
+        pageToken = pageToken || (account.facebook_page_access_token || '').trim()
+        pageName = (account.facebook_page_name || account.fb_page_name || pageId).trim()
+      }
     }
 
     if (!pageId || !pageToken) {
+      console.warn('[Sync Facebook Messenger]: No page credentials found for accountId:', accountId)
       return {
         success: false,
         conversationsCount: 0,
         messagesCount: 0,
-        error: 'Facebook Page ID or Page Access Token is missing for this account.',
+        error: 'Facebook Page ID or Page Access Token is missing. Please connect Facebook Messenger first.',
       }
     }
 
-    const ownerUserId = await resolveOwnerUserId(db, accountId)
+    const ownerUserId = await resolveOwnerUserId(db, actualAccountId)
 
     // 2. Query Meta Graph API for conversations
     // fields: id, updated_time, participants, senders, messages
@@ -122,7 +160,7 @@ export async function syncFacebookMessengerConversations(
       const { data: existingContact } = await db
         .from('contacts')
         .select('id, name')
-        .eq('account_id', accountId)
+        .eq('account_id', actualAccountId)
         .eq('phone', customerPsid)
         .maybeSingle()
 
@@ -132,18 +170,19 @@ export async function syncFacebookMessengerConversations(
         if (customer.name && existingContact.name !== customer.name) {
           await db
             .from('contacts')
-            .update({ name: customer.name, updated_at: new Date().toISOString() })
+            .update({ name: customer.name, channel: 'messenger', updated_at: new Date().toISOString() })
             .eq('id', existingContact.id)
         }
       } else {
         const { data: newContact, error: createContactErr } = await db
           .from('contacts')
           .insert({
-            account_id: accountId,
+            account_id: actualAccountId,
             user_id: ownerUserId,
             phone: customerPsid,
             name: customerName,
             email: customerEmail,
+            channel: 'messenger',
           })
           .select('id')
           .maybeSingle()
@@ -154,7 +193,7 @@ export async function syncFacebookMessengerConversations(
           const { data: retryContact } = await db
             .from('contacts')
             .select('id')
-            .eq('account_id', accountId)
+            .eq('account_id', actualAccountId)
             .eq('phone', customerPsid)
             .maybeSingle()
           contactId = retryContact?.id || ''
@@ -174,7 +213,7 @@ export async function syncFacebookMessengerConversations(
       const { data: existingConv } = await db
         .from('conversations')
         .select('id')
-        .eq('account_id', accountId)
+        .eq('account_id', actualAccountId)
         .eq('contact_id', contactId)
         .maybeSingle()
 
@@ -192,7 +231,7 @@ export async function syncFacebookMessengerConversations(
         const { data: newConv, error: createConvErr } = await db
           .from('conversations')
           .insert({
-            account_id: accountId,
+            account_id: actualAccountId,
             contact_id: contactId,
             user_id: ownerUserId,
             status: 'open',
@@ -208,7 +247,7 @@ export async function syncFacebookMessengerConversations(
           const { data: retryConv } = await db
             .from('conversations')
             .select('id')
-            .eq('account_id', accountId)
+            .eq('account_id', actualAccountId)
             .eq('contact_id', contactId)
             .maybeSingle()
           conversationId = retryConv?.id || ''

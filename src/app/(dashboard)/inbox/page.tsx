@@ -179,53 +179,59 @@ function InboxPageInner() {
 
   // Check WhatsApp & Facebook Messenger connection status on mount
   useEffect(() => {
+    // 1. Instant check from localStorage for instant, zero-flicker UI
+    if (typeof window !== "undefined") {
+      try {
+        const storedFb = localStorage.getItem("jobabdesk_fb_session");
+        if (storedFb) {
+          const parsed = JSON.parse(storedFb);
+          if (parsed?.status === "connected" || parsed?.pageId) {
+            setMessengerConnected(true);
+            if (parsed.pageName || parsed.pageId) {
+              setMessengerPageName(parsed.pageName || parsed.pageId);
+            }
+          }
+        }
+      } catch {}
+    }
+
     const checkConnection = async () => {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("account_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const accountId = profile?.account_id as string | undefined;
-      if (!accountId) {
-        setWhatsappConnected(false);
-        setMessengerConnected(false);
-        return;
+      // 2. Fetch server-verified Facebook Messenger status from API route
+      let isFb = false;
+      try {
+        const fbRes = await fetch("/api/channels/messenger/connect");
+        if (fbRes.ok) {
+          const fbData = await fbRes.json();
+          isFb = fbData?.status === "connected" || Boolean(fbData?.pageId);
+          if (isFb) {
+            setMessengerConnected(true);
+            if (fbData.pageName || fbData.pageId) {
+              setMessengerPageName(fbData.pageName || fbData.pageId);
+            }
+          }
+        }
+      } catch (fbErr) {
+        console.warn("[Messenger status check error]:", fbErr);
       }
 
-      // 1. WhatsApp status
-      const { data: waData } = await supabase
-        .from("whatsapp_config")
-        .select("status")
-        .eq("account_id", accountId)
-        .maybeSingle();
+      // 3. Fallback: Check /api/ai/settings for facebook_page_id
+      if (!isFb) {
+        try {
+          const aiRes = await fetch("/api/ai/settings");
+          if (aiRes.ok) {
+            const aiData = await aiRes.json();
+            const settings = aiData.settings || aiData;
+            if (settings?.facebook_page_id || settings?.messenger_status === "connected") {
+              isFb = true;
+              setMessengerConnected(true);
+              setMessengerPageName(settings.facebook_page_name || settings.facebook_page_id || "");
+            }
+          }
+        } catch {}
+      }
 
-      const isWaConnected = waData?.status === "connected";
-      setWhatsappConnected(isWaConnected);
-
-      // 2. Facebook Messenger status
-      const { data: accData } = await supabase
-        .from("accounts")
-        .select("facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status")
-        .eq("id", accountId)
-        .maybeSingle();
-
-      const isFbConnected = Boolean(
-        accData?.facebook_page_id &&
-        (accData?.messenger_status === "connected" || accData?.facebook_page_access_token)
-      );
-      setMessengerConnected(isFbConnected);
-      setMessengerPageName(accData?.facebook_page_name || accData?.facebook_page_id || "");
-
-      // 3. Auto-sync Messenger conversations in background on mount if Messenger is connected
-      if (isFbConnected) {
+      // 4. If Facebook is connected, trigger background sync
+      if (isFb) {
         fetch("/api/channels/messenger/sync", { method: "POST" })
           .then((res) => res.json())
           .then((syncRes) => {
@@ -234,6 +240,34 @@ function InboxPageInner() {
             }
           })
           .catch(() => {});
+      }
+
+      // 5. WhatsApp status check
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const user = session?.user;
+
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("account_id")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          const accountId = profile?.account_id || user.id;
+
+          const { data: waData } = await supabase
+            .from("whatsapp_config")
+            .select("status")
+            .eq("account_id", accountId)
+            .maybeSingle();
+
+          setWhatsappConnected(waData?.status === "connected");
+        }
+      } catch {
+        setWhatsappConnected(false);
       }
     };
 
@@ -660,7 +694,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
-            onSyncMessenger={messengerConnected ? handleSyncMessenger : undefined}
+            onSyncMessenger={handleSyncMessenger}
             isSyncingMessenger={isSyncingMessenger}
             messengerConnected={Boolean(messengerConnected)}
           />

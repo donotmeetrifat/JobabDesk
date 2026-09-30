@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST() {
   try {
-    const { accountId, supabase } = await requireRole('agent')
-    const result = await syncFacebookMessengerConversations(accountId, undefined, undefined, supabase)
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
+    const result = await syncFacebookMessengerConversations(targetId, undefined, undefined, supabase)
     return NextResponse.json(result)
   } catch (err) {
     return toErrorResponse(err)
@@ -16,8 +17,9 @@ export async function POST() {
 
 export async function GET() {
   try {
-    const { accountId, supabase } = await requireRole('agent')
-    const result = await syncFacebookMessengerConversations(accountId, undefined, undefined, supabase)
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
+    const result = await syncFacebookMessengerConversations(targetId, undefined, undefined, supabase)
     return NextResponse.json(result)
   } catch (err) {
     return toErrorResponse(err)
