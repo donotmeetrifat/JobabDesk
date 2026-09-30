@@ -20,18 +20,21 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
   try {
     const { data: account } = await db
       .from('accounts')
-      .select('messenger_connection_status, messenger_status, facebook_page_id, facebook_page_name')
+      .select('messenger_connection_status, messenger_status, facebook_page_id, facebook_page_name, facebook_page_access_token')
       .eq('id', accountId)
       .maybeSingle()
 
-    const status =
-      account?.messenger_connection_status ||
-      (account?.messenger_status === 'connected' || Boolean(account?.facebook_page_id) ? 'connected' : 'disconnected')
+    const hasRealCredentials = Boolean(
+      account?.facebook_page_id?.trim() && account?.facebook_page_access_token?.trim()
+    )
+    const isConnected =
+      hasRealCredentials &&
+      (account?.messenger_connection_status === 'connected' || account?.messenger_status === 'connected')
 
     return {
-      status,
-      pageId: account?.facebook_page_id || '',
-      pageName: account?.facebook_page_name || '',
+      status: isConnected ? 'connected' : 'disconnected',
+      pageId: isConnected ? account.facebook_page_id : '',
+      pageName: isConnected ? account.facebook_page_name || account.facebook_page_id : '',
     }
   } catch {
     return { status: 'disconnected', pageId: '', pageName: '' }
@@ -44,9 +47,17 @@ export async function connectFacebookPage(
   supabase?: any
 ): Promise<MessengerSession> {
   const db = supabase || getAdminClient()
-  const pageId = pageData?.pageId || '1029384756102'
-  const pageName = pageData?.pageName || 'Karim Cosmetics BD (Official Page)'
-  const token = pageData?.accessToken || 'EAAB' + Math.random().toString(36).substring(2, 18)
+  const pageId = pageData?.pageId?.trim() || ''
+  const pageName = pageData?.pageName?.trim() || ''
+  const token = pageData?.accessToken?.trim() || ''
+
+  if (!pageId || !token) {
+    return {
+      status: 'disconnected',
+      pageId: '',
+      pageName: '',
+    }
+  }
 
   try {
     await db
@@ -55,7 +66,7 @@ export async function connectFacebookPage(
         messenger_connection_status: 'connected',
         messenger_status: 'connected',
         facebook_page_id: pageId,
-        facebook_page_name: pageName,
+        facebook_page_name: pageName || pageId,
         facebook_page_access_token: token,
       })
       .eq('id', accountId)
@@ -63,13 +74,13 @@ export async function connectFacebookPage(
     return {
       status: 'connected',
       pageId,
-      pageName,
+      pageName: pageName || pageId,
     }
   } catch {
     return {
-      status: 'connected',
-      pageId,
-      pageName,
+      status: 'disconnected',
+      pageId: '',
+      pageName: '',
     }
   }
 }

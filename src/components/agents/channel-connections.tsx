@@ -9,9 +9,13 @@ import {
   RefreshCw,
   QrCode,
   LogOut,
-  ExternalLink,
   ShieldCheck,
   Zap,
+  Copy,
+  Check,
+  Key,
+  Globe,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -44,6 +48,18 @@ export function ChannelConnections() {
   const [generatingQr, setGeneratingQr] = useState(false)
   const [connectingFb, setConnectingFb] = useState(false)
   const [showQrModal, setShowQrModal] = useState(false)
+
+  // Facebook Messenger Setup Modal state
+  const [showFbModal, setShowFbModal] = useState(false)
+  const [fbPageName, setFbPageName] = useState('')
+  const [fbPageId, setFbPageId] = useState('')
+  const [fbAccessToken, setFbAccessToken] = useState('')
+  const [fbError, setFbError] = useState('')
+  const [copiedWebhook, setCopiedWebhook] = useState(false)
+  const [copiedVerifyToken, setCopiedVerifyToken] = useState(false)
+
+  const webhookUrl = 'https://jobabdesk.vercel.app/api/webhooks/messenger'
+  const verifyToken = 'jobabdesk_verify_token'
 
   // Load WhatsApp & Facebook Messenger statuses
   useEffect(() => {
@@ -83,6 +99,8 @@ export function ChannelConnections() {
       if (res.ok) {
         const data = await res.json()
         setFbSession(data)
+        if (data.pageId) setFbPageId(data.pageId)
+        if (data.pageName) setFbPageName(data.pageName)
       }
     } catch {
       // quiet catch
@@ -136,16 +154,40 @@ export function ChannelConnections() {
     }
   }
 
-  async function handleConnectFb() {
+  async function handleSaveFbCredentials() {
+    setFbError('')
+    if (!fbPageId.trim() || !fbAccessToken.trim()) {
+      setFbError('Facebook Page ID and Page Access Token are required.')
+      return
+    }
+
     setConnectingFb(true)
     try {
-      const res = await fetch('/api/channels/messenger/connect', { method: 'POST' })
+      const res = await fetch('/api/channels/messenger/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageData: {
+            pageId: fbPageId.trim(),
+            pageName: fbPageName.trim(),
+            accessToken: fbAccessToken.trim(),
+          },
+        }),
+      })
+
       if (res.ok) {
         const data = await res.json()
         setFbSession(data)
+        if (data.status === 'connected') {
+          setShowFbModal(false)
+        } else {
+          setFbError('Failed to save credentials. Please check your inputs.')
+        }
+      } else {
+        setFbError('Failed to connect Facebook Page. Check server logs.')
       }
     } catch {
-      // quiet catch
+      setFbError('Network error while saving Facebook credentials.')
     } finally {
       setConnectingFb(false)
     }
@@ -161,9 +203,23 @@ export function ChannelConnections() {
       if (res.ok) {
         const data = await res.json()
         setFbSession(data)
+        setFbPageId('')
+        setFbPageName('')
+        setFbAccessToken('')
       }
     } catch {
       // quiet catch
+    }
+  }
+
+  function handleCopy(text: string, type: 'webhook' | 'token') {
+    navigator.clipboard.writeText(text)
+    if (type === 'webhook') {
+      setCopiedWebhook(true)
+      setTimeout(() => setCopiedWebhook(false), 2000)
+    } else {
+      setCopiedVerifyToken(true)
+      setTimeout(() => setCopiedVerifyToken(false), 2000)
     }
   }
 
@@ -254,7 +310,7 @@ export function ChannelConnections() {
           </div>
         </div>
 
-        {/* Card 2: Facebook Messenger Meta OAuth */}
+        {/* Card 2: Facebook Messenger Meta API Connection */}
         <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
           <div className="space-y-4">
             <div className="flex items-start justify-between">
@@ -294,7 +350,7 @@ export function ChannelConnections() {
                 <div className="flex items-center justify-between text-xs pt-1 border-t">
                   <span className="text-muted-foreground">Connected Page:</span>
                   <span className="font-semibold text-blue-600 dark:text-blue-400 truncate max-w-[180px]">
-                    {fbSession.pageName || 'Karim Cosmetics BD'}
+                    {fbSession.pageName || fbSession.pageId}
                   </span>
                 </div>
               )}
@@ -303,25 +359,29 @@ export function ChannelConnections() {
             {/* Action Buttons */}
             <div>
               {fbSession.status === 'connected' ? (
-                <Button
-                  variant="outline"
-                  onClick={handleDisconnectFb}
-                  className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-2 rounded-xl"
-                >
-                  <LogOut className="h-4 w-4" /> Disconnect Facebook Page
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowFbModal(true)}
+                    className="flex-1 font-semibold gap-1.5 rounded-xl text-xs"
+                  >
+                    <Key className="h-3.5 w-3.5" /> Reconfigure
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleDisconnectFb}
+                    className="border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-1.5 rounded-xl text-xs"
+                  >
+                    <LogOut className="h-3.5 w-3.5" /> Disconnect
+                  </Button>
+                </div>
               ) : (
                 <Button
-                  onClick={handleConnectFb}
-                  disabled={connectingFb}
+                  onClick={() => setShowFbModal(true)}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
                 >
-                  {connectingFb ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <MessageCircle className="h-4 w-4" />
-                  )}
-                  Connect Facebook Page (Meta OAuth)
+                  <MessageCircle className="h-4 w-4" />
+                  Connect Facebook Page
                 </Button>
               )}
             </div>
@@ -329,7 +389,7 @@ export function ChannelConnections() {
 
           <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
             <Zap className="h-4 w-4 text-blue-600 shrink-0" />
-            <span>Instant Meta Webhook routing for instant customer response</span>
+            <span>Authentic Meta Webhook routing & real page token storage</span>
           </div>
         </div>
       </div>
@@ -358,10 +418,18 @@ export function ChannelConnections() {
             {/* QR Code Graphic Box */}
             <div className="p-4 bg-white rounded-2xl border flex items-center justify-center max-w-[220px] mx-auto shadow-inner">
               {waSession.qrCode ? (
-                <div
-                  className="w-48 h-48"
-                  dangerouslySetInnerHTML={{ __html: waSession.qrCode }}
-                />
+                waSession.qrCode.startsWith('data:image/') || waSession.qrCode.startsWith('http') ? (
+                  <img
+                    src={waSession.qrCode}
+                    alt="WhatsApp QR Code"
+                    className="w-48 h-48 object-contain"
+                  />
+                ) : (
+                  <div
+                    className="w-48 h-48"
+                    dangerouslySetInnerHTML={{ __html: waSession.qrCode }}
+                  />
+                )
               ) : (
                 <div className="h-48 w-48 flex items-center justify-center text-xs text-muted-foreground">
                   <RefreshCw className="h-6 w-6 animate-spin text-emerald-600" />
@@ -374,7 +442,7 @@ export function ChannelConnections() {
               <p className="font-bold text-xs text-muted-foreground">How to Link Phone:</p>
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground leading-relaxed">
                 <li>Open <strong>WhatsApp Business</strong> on your phone.</li>
-                <li>Tap <strong>Settings / Menu (⋮)</strong> $\rightarrow$ <strong>Linked Devices</strong>.</li>
+                <li>Tap <strong>Settings / Menu (⋮)</strong> &rarr; <strong>Linked Devices</strong>.</li>
                 <li>Tap <strong>Link a Device</strong> and point your camera at this QR code.</li>
               </ol>
             </div>
@@ -385,6 +453,150 @@ export function ChannelConnections() {
                 className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl py-2.5"
               >
                 <CheckCircle2 className="h-4 w-4 mr-1.5" /> Confirm QR Scanned & Pair Phone
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Facebook Messenger Credentials Modal */}
+      {showFbModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-card border rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative">
+            <button
+              onClick={() => setShowFbModal(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-sm font-bold p-1.5 rounded-full hover:bg-muted"
+            >
+              ✕
+            </button>
+
+            <div className="space-y-1">
+              <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
+                <MessageCircle className="h-5 w-5 text-blue-600" />
+                Connect Facebook Business Page
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Configure your authentic Facebook Page ID and Page Access Token
+              </p>
+            </div>
+
+            {fbError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 font-medium">
+                {fbError}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">
+                  Facebook Page Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. My Fashion Store BD"
+                  value={fbPageName}
+                  onChange={(e) => setFbPageName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">
+                  Facebook Page ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 109876543210987"
+                  value={fbPageId}
+                  onChange={(e) => setFbPageId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">
+                  Page Access Token <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Paste Meta Page Access Token (EAAG...)"
+                  value={fbAccessToken}
+                  onChange={(e) => setFbAccessToken(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                />
+              </div>
+
+              {/* Meta Webhook Instructions Box */}
+              <div className="bg-muted/40 rounded-2xl p-4 space-y-3 text-xs border">
+                <div className="flex items-center gap-1.5 font-bold text-foreground">
+                  <Globe className="h-4 w-4 text-blue-600" />
+                  Meta Webhook Configuration
+                </div>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  Set these credentials in your Meta Developer App &rarr; Messenger &rarr; Webhooks settings:
+                </p>
+
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-[11px] font-semibold text-muted-foreground">Callback Webhook URL:</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                        {webhookUrl}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCopy(webhookUrl, 'webhook')}
+                        className="h-8 px-2.5 text-xs shrink-0"
+                      >
+                        {copiedWebhook ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] font-semibold text-muted-foreground">Verify Token:</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                        {verifyToken}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCopy(verifyToken, 'token')}
+                        className="h-8 px-2.5 text-xs shrink-0"
+                      >
+                        {copiedVerifyToken ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowFbModal(false)}
+                className="flex-1 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveFbCredentials}
+                disabled={connectingFb}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl"
+              >
+                {connectingFb ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                )}
+                Save & Connect Page
               </Button>
             </div>
           </div>
