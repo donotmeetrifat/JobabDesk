@@ -79,14 +79,14 @@ export function SandboxAndLogs() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: inputMessage,
+          messageText: inputMessage,
           channel: selectedChannel,
         }),
       })
 
       if (res.ok) {
         const data = await res.json()
-        setSimResult(data)
+        setSimResult(data.result || data)
         // Refresh logs after simulation
         fetchLogs()
       } else {
