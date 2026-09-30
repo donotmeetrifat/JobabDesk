@@ -54,6 +54,9 @@ export function ChannelConnections() {
   const [showQrModal, setShowQrModal] = useState(false)
   const [persistentQr, setPersistentQr] = useState('')
 
+  const [metaAppId, setMetaAppId] = useState('1789555715522515')
+  const [metaConfigId, setMetaConfigId] = useState('')
+
   // WhatsApp Linking 3-Tab state
   const [waTab, setWaTab] = useState<'meta' | 'qr' | 'phone'>('meta')
   const [waPhoneNumberId, setWaPhoneNumberId] = useState('')
@@ -91,7 +94,8 @@ export function ChannelConnections() {
 
   // Load SDK and statuses
   useEffect(() => {
-    loadFacebookSDK(process.env.NEXT_PUBLIC_META_APP_ID || '')
+    const initialAppId = process.env.NEXT_PUBLIC_META_APP_ID || '1789555715522515'
+    loadFacebookSDK(initialAppId)
     fetchWaStatus()
     fetchFbStatus()
   }, [])
@@ -113,6 +117,11 @@ export function ChannelConnections() {
         if (metaData.phoneNumberId) setWaPhoneNumberId(metaData.phoneNumberId)
         if (metaData.accessToken) setWaAccessToken(metaData.accessToken)
         if (metaData.wabaId) setWaWabaId(metaData.wabaId)
+        if (metaData.appId) {
+          setMetaAppId(metaData.appId)
+          loadFacebookSDK(metaData.appId)
+        }
+        if (metaData.configId) setMetaConfigId(metaData.configId)
         if (metaData.status === 'connected') {
           setWaSession((prev) => ({
             ...prev,
@@ -164,19 +173,14 @@ export function ChannelConnections() {
     setMetaErrorMsg('')
     setMetaSuccessMsg('')
 
-    const appId = process.env.NEXT_PUBLIC_META_APP_ID || ''
-    if (!appId) {
-      setShowQrModal(true)
-      setWaTab('meta')
-      setMetaErrorMsg('Meta App ID is not configured in Vercel environment variables yet. Please enter your Phone Number ID & Permanent Access Token manually below.')
-      return
-    }
+    const activeAppId = metaAppId || process.env.NEXT_PUBLIC_META_APP_ID || '1789555715522515'
+    const activeConfigId = metaConfigId || process.env.NEXT_PUBLIC_META_CONFIG_ID || ''
 
     setSavingMeta(true)
 
     launchMetaEmbeddedSignup({
-      appId,
-      configId: process.env.NEXT_PUBLIC_META_CONFIG_ID || '',
+      appId: activeAppId,
+      configId: activeConfigId,
       onSuccess: async (result: { phoneNumberId?: string; wabaId?: string; code?: string; accessToken?: string }) => {
         try {
           const res = await fetch('/api/channels/whatsapp/embedded-signup', {

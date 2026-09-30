@@ -17,11 +17,16 @@ export async function GET() {
       account?.whatsapp_phone_number_id?.trim() && account?.whatsapp_access_token?.trim()
     )
 
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || '1789555715522515'
+    const configId = process.env.NEXT_PUBLIC_META_CONFIG_ID || process.env.META_CONFIG_ID || ''
+
     return NextResponse.json({
       status: hasCredentials ? 'connected' : 'disconnected',
       phoneNumberId: account?.whatsapp_phone_number_id || '',
       accessToken: account?.whatsapp_access_token || '',
       wabaId: account?.whatsapp_waba_id || '',
+      appId,
+      configId,
     })
   } catch (err) {
     return toErrorResponse(err)
