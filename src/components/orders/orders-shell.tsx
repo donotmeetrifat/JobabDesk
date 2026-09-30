@@ -1,0 +1,310 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Banknote } from 'lucide-react'
+import { toast } from 'sonner'
+import { OrderTable } from './order-table'
+import { OrderDialog } from './order-dialog'
+import { OrderDetailDialog } from './order-detail-dialog'
+import type { Order, OrderStats } from '@/types/orders'
+
+export function OrdersShell() {
+  const [orders, setOrders] = useState<Order[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [paymentFilter, setPaymentFilter] = useState('all')
+
+  const [stats, setStats] = useState<OrderStats>({
+    new: 0,
+    processing: 0,
+    delivered: 0,
+    totalRevenue: 0,
+  })
+
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (search) params.set('search', search)
+      if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter)
+      if (paymentFilter && paymentFilter !== 'all') params.set('payment_status', paymentFilter)
+
+      const res = await fetch(`/api/orders?${params.toString()}`)
+      const data = await res.json()
+      setOrders(data.orders ?? [])
+      setTotal(data.total ?? 0)
+      if (data.stats) setStats(data.stats)
+    } catch {
+      toast.error('Failed to load orders')
+    } finally {
+      setLoading(false)
+    }
+  }, [search, statusFilter, paymentFilter])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [orders])
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this order?')) return
+    try {
+      const res = await fetch(`/api/orders/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Order deleted')
+        fetchOrders()
+      } else {
+        toast.error('Failed to delete order')
+      }
+    } catch {
+      toast.error('Failed to delete order')
+    }
+  }
+
+  const handleSelect = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) setSelectedIds(new Set(orders.map((o) => o.id)))
+    else setSelectedIds(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size
+    const confirmMsg =
+      count === orders.length && count === total
+        ? `Delete ALL ${count} orders? This cannot be undone.`
+        : `Delete ${count} selected order${count !== 1 ? 's' : ''}? This cannot be undone.`
+
+    if (!confirm(confirmMsg)) return
+
+    setDeleting(true)
+    try {
+      const ids = Array.from(selectedIds)
+      await Promise.all(ids.map((id) => fetch(`/api/orders/${id}`, { method: 'DELETE' })))
+      toast.success(`Deleted ${count} order${count !== 1 ? 's' : ''}`)
+      setSelectedIds(new Set())
+      fetchOrders()
+    } catch {
+      toast.error('Some orders could not be deleted')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleView = (order: Order) => {
+    setSelectedOrder(order)
+    setDetailOpen(true)
+  }
+
+  const handleEdit = (order: Order) => {
+    setSelectedOrder(order)
+    setDialogOpen(true)
+  }
+
+  const handleAdd = () => {
+    setSelectedOrder(null)
+    setDialogOpen(true)
+  }
+
+  const handleSaved = () => {
+    setDialogOpen(false)
+    fetchOrders()
+  }
+
+  const handleStatusUpdated = () => {
+    setDetailOpen(false)
+    fetchOrders()
+  }
+
+  return (
+    <div className="flex flex-col gap-6 p-6">
+      {/* Header Row */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
+          <p className="text-sm text-muted-foreground">
+            {total} order{total !== 1 ? 's' : ''} total in workspace
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchOrders}
+            className="flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium hover:bg-accent transition-colors"
+          >
+            <RefreshCw className="size-4" /> Refresh
+          </button>
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground font-semibold hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <Plus className="size-4" /> New Order
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">New Orders</p>
+            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats.new}</p>
+          </div>
+          <div className="rounded-xl bg-blue-50 dark:bg-blue-950/50 p-2.5 text-blue-600">
+            <ShoppingBag className="size-5" />
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Processing</p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{stats.processing}</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/50 p-2.5 text-amber-600">
+            <Clock className="size-5" />
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Delivered</p>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{stats.delivered}</p>
+          </div>
+          <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 text-emerald-600">
+            <CheckCircle className="size-5" />
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Total Revenue</p>
+            <p className="text-2xl font-bold text-foreground mt-1">৳{stats.totalRevenue.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
+            <Banknote className="size-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-center gap-3">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by customer name, phone, or order number..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-lg border bg-background py-2 pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="all">All Statuses</option>
+            <option value="new">New</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="all">All Payment Statuses</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="partial">Partial</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-destructive">
+              {selectedIds.size} order{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            {selectedIds.size < orders.length && (
+              <button
+                onClick={() => handleSelectAll(true)}
+                className="text-xs text-primary underline-offset-2 hover:underline"
+              >
+                Select all {total}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-accent"
+            >
+              <X className="size-3" /> Deselect
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-xs text-white font-medium hover:bg-destructive/90 disabled:opacity-50"
+            >
+              <Trash2 className="size-3.5" />
+              {deleting ? 'Deleting...' : `Delete ${selectedIds.size === total ? 'All' : selectedIds.size}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Orders Table */}
+      <OrderTable
+        orders={orders}
+        loading={loading}
+        selectedIds={selectedIds}
+        onSelect={handleSelect}
+        onSelectAll={handleSelectAll}
+        onView={handleView}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
+
+      {/* Dialogs */}
+      <OrderDialog
+        open={dialogOpen}
+        order={selectedOrder}
+        onClose={() => setDialogOpen(false)}
+        onSaved={handleSaved}
+      />
+
+      <OrderDetailDialog
+        open={detailOpen}
+        order={selectedOrder}
+        onClose={() => setDetailOpen(false)}
+        onStatusUpdated={handleStatusUpdated}
+      />
+    </div>
+  )
+}
