@@ -6,8 +6,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const { accountId, supabase } = await requireRole('agent')
-    const session = await getMessengerStatus(accountId, supabase)
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
+    const session = await getMessengerStatus(targetId, supabase)
     return NextResponse.json(session)
   } catch (err) {
     return toErrorResponse(err)
@@ -16,21 +17,22 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { accountId, supabase } = await requireRole('agent')
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
     const body = await req.json().catch(() => ({}))
 
     if (body.action === 'disconnect') {
-      const session = await disconnectFacebookPage(accountId, supabase)
+      const session = await disconnectFacebookPage(targetId, supabase)
       return NextResponse.json(session)
     }
 
     const pageData = body.pageData || {
-      pageId: body.pageId,
-      pageName: body.pageName,
-      accessToken: body.accessToken || body.pageAccessToken,
+      pageId: body.pageId || body.facebook_page_id,
+      pageName: body.pageName || body.facebook_page_name,
+      accessToken: body.accessToken || body.pageAccessToken || body.facebook_page_access_token,
     }
 
-    const session = await connectFacebookPage(accountId, pageData, supabase)
+    const session = await connectFacebookPage(targetId, pageData, supabase)
     return NextResponse.json(session)
   } catch (err) {
     return toErrorResponse(err)

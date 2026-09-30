@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { accountId } = await requireRole('agent')
+    const { accountId, userId } = await requireRole('agent')
     const { userAccessToken, code } = await req.json().catch(() => ({}))
 
     let token = userAccessToken
@@ -59,11 +59,10 @@ export async function POST(req: Request) {
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || '1789555715522515'
     const appSecret = process.env.META_APP_SECRET || ''
 
-    // If OAuth authorization code provided, exchange for user access token
     if (code && !token) {
       if (!appSecret) {
         return NextResponse.json(
-          { error: 'META_APP_SECRET is not configured in Vercel environment variables yet. Please add META_APP_SECRET in Vercel Settings or use manual setup below.' },
+          { error: 'META_APP_SECRET is missing in environment variables.' },
           { status: 400 }
         )
       }
@@ -87,7 +86,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'User Access Token or Code is required' }, { status: 400 })
     }
 
-    // Fetch user's managed Facebook Pages from Meta Graph API
     const pagesRes = await fetch(
       `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${encodeURIComponent(token)}`
     )

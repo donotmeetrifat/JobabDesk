@@ -15,9 +15,9 @@ export interface MessengerSession {
   pageName: string
 }
 
-export async function getMessengerStatus(accountId: string, supabase?: any): Promise<MessengerSession> {
+export async function getMessengerStatus(targetId: string, supabase?: any): Promise<MessengerSession> {
   const db = getAdminClient()
-  if (!accountId) {
+  if (!targetId) {
     return { status: 'disconnected', pageId: '', pageName: '' }
   }
 
@@ -25,7 +25,7 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
     const { data: account, error } = await db
       .from('accounts')
       .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status')
-      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+      .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
       .maybeSingle()
 
     if (error) {
@@ -50,7 +50,7 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
 }
 
 export async function connectFacebookPage(
-  accountId: string,
+  targetId: string,
   pageData?: { pageId?: string; pageName?: string; accessToken?: string },
   supabase?: any
 ): Promise<MessengerSession> {
@@ -59,7 +59,7 @@ export async function connectFacebookPage(
   const pageName = pageData?.pageName?.trim() || ''
   const token = pageData?.accessToken?.trim() || ''
 
-  if (!accountId || !pageId || !token) {
+  if (!targetId || !pageId || !token) {
     return {
       status: 'disconnected',
       pageId: '',
@@ -91,7 +91,7 @@ export async function connectFacebookPage(
         messenger_status: 'connected',
         messenger_connection_status: 'connected',
       })
-      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+      .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
 
     if (updateErr) {
       console.error('[connectFacebookPage DB Update Error]:', updateErr)
@@ -102,7 +102,7 @@ export async function connectFacebookPage(
           facebook_page_name: pageName || pageId,
           facebook_page_access_token: token,
         })
-        .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+        .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
     }
 
     return {
@@ -120,9 +120,9 @@ export async function connectFacebookPage(
   }
 }
 
-export async function disconnectFacebookPage(accountId: string, supabase?: any): Promise<MessengerSession> {
+export async function disconnectFacebookPage(targetId: string, supabase?: any): Promise<MessengerSession> {
   const db = getAdminClient()
-  if (!accountId) {
+  if (!targetId) {
     return { status: 'disconnected', pageId: '', pageName: '' }
   }
 
@@ -136,7 +136,7 @@ export async function disconnectFacebookPage(accountId: string, supabase?: any):
         messenger_status: 'disconnected',
         messenger_connection_status: 'disconnected',
       })
-      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+      .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
   } catch (err) {
     console.error('[disconnectFacebookPage Exception]:', err)
   }
