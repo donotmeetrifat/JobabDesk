@@ -52,7 +52,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const { accountId, userId } = await requireRole('agent')
-    const { userAccessToken, code } = await req.json().catch(() => ({}))
+    const { userAccessToken, code, redirectUri } = await req.json().catch(() => ({}))
 
     let token = userAccessToken
 
@@ -67,9 +67,11 @@ export async function POST(req: Request) {
         )
       }
 
+      const finalRedirectUri = redirectUri || 'https://jobabdesk.vercel.app/api/channels/messenger/pages'
+
       try {
         const tokenRes = await fetch(
-          `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&code=${code}&redirect_uri=${encodeURIComponent('https://jobabdesk.vercel.app/api/channels/messenger/pages')}`
+          `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&code=${code}&redirect_uri=${encodeURIComponent(finalRedirectUri)}`
         )
         const tokenData = await tokenRes.json()
         if (tokenData.access_token) {

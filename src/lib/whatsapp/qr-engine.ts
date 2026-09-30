@@ -93,15 +93,32 @@ export async function getWhatsAppStatus(accountId: string, supabase?: any): Prom
   try {
     const { data: account } = await db
       .from('accounts')
-      .select('whatsapp_session_status, whatsapp_qr_code, whatsapp_connected_number, whatsapp_status')
+      .select('*')
       .eq('id', accountId)
       .maybeSingle()
 
-    const status = account?.whatsapp_session_status || (account?.whatsapp_status === 'connected' ? 'connected' : 'disconnected')
+    let status = account?.whatsapp_session_status || (account?.whatsapp_status === 'connected' ? 'connected' : 'disconnected')
+    let connectedNumber = account?.whatsapp_connected_number || account?.whatsapp_phone_number_id || ''
+
+    if (status !== 'connected' && supabase && accountId) {
+      try {
+        const { data: waCfg } = await supabase
+          .from('whatsapp_config')
+          .select('*')
+          .eq('account_id', accountId)
+          .maybeSingle()
+
+        if (waCfg && waCfg.phone_number_id) {
+          status = 'connected'
+          connectedNumber = connectedNumber || waCfg.phone_number_id
+        }
+      } catch {}
+    }
+
     return {
       status,
       qrCode: account?.whatsapp_qr_code || '',
-      connectedNumber: account?.whatsapp_connected_number || account?.whatsapp_phone_number_id || '',
+      connectedNumber,
     }
   } catch {
     return { status: 'disconnected', qrCode: '', connectedNumber: '' }

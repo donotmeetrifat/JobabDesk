@@ -73,7 +73,7 @@ export async function fetchWhapiQRCode(
   if (!apiKey) {
     const { data: account } = await db
       .from('accounts')
-      .select('whapi_api_key, whapi_instance_id, whatsapp_gateway_provider')
+      .select('*')
       .eq('id', accountId)
       .maybeSingle()
 
@@ -143,7 +143,7 @@ export async function fetchWhapiSessionStatus(
 
   const { data: account } = await db
     .from('accounts')
-    .select('whapi_api_key, whapi_instance_id, whatsapp_gateway_provider, whatsapp_session_status, whatsapp_qr_code, whatsapp_connected_number, whatsapp_status')
+    .select('*')
     .eq('id', accountId)
     .maybeSingle()
 

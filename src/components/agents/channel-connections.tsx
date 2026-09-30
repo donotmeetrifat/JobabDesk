@@ -119,6 +119,7 @@ export function ChannelConnections() {
 
   async function fetchWaStatus() {
     try {
+      // 1. Primary check: Meta Cloud API status
       const metaRes = await fetch('/api/channels/whatsapp/meta')
       if (metaRes.ok) {
         const metaData = await metaRes.json()
@@ -146,6 +147,34 @@ export function ChannelConnections() {
         }
       }
 
+      // 2. Secondary check: /api/ai/settings (authenticated SSR accounts table read)
+      try {
+        const aiRes = await fetch('/api/ai/settings')
+        if (aiRes.ok) {
+          const aiData = await aiRes.json()
+          const settings = aiData.settings || aiData
+          const waPhone = settings.whatsapp_phone_number_id || settings.whatsapp_connected_number
+          if (waPhone || settings.whatsapp_status === 'connected') {
+            if (settings.whatsapp_phone_number_id) setWaPhoneNumberId(settings.whatsapp_phone_number_id)
+            if (settings.whatsapp_access_token) setWaAccessToken(settings.whatsapp_access_token)
+            if (settings.whatsapp_waba_id) setWaWabaId(settings.whatsapp_waba_id)
+
+            const newSession: WhatsAppStatus = {
+              status: 'connected',
+              connectedNumber: waPhone || 'Meta Official WABA',
+              qrCode: '',
+            }
+            setWaSession(newSession)
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
+            }
+            setLoadingWa(false)
+            return
+          }
+        }
+      } catch {}
+
+      // 3. Tertiary check: WhatsApp Gateway / QR session
       const gwRes = await fetch('/api/channels/whatsapp/gateway')
       if (gwRes.ok) {
         const data: WhatsAppStatus = await gwRes.json()
@@ -156,16 +185,12 @@ export function ChannelConnections() {
           }
           setShowQrModal(false)
         } else {
+          // NEVER overwrite an active connected session with an unconfigured gateway's disconnected status
           setWaSession((prev) => {
-            const updated = {
-              ...data,
-              status: prev.status === 'connected' ? 'connected' : data.status,
-              connectedNumber: prev.status === 'connected' ? prev.connectedNumber : data.connectedNumber,
+            if (prev.status === 'connected') {
+              return prev
             }
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('jobabdesk_wa_session', JSON.stringify(updated))
-            }
-            return updated
+            return data
           })
         }
         if (data.qrCode) {
@@ -181,16 +206,65 @@ export function ChannelConnections() {
 
   async function fetchFbStatus() {
     try {
+      // 1. Primary check: Messenger connect API
       const res = await fetch('/api/channels/messenger/connect')
       if (res.ok) {
         const data = await res.json()
-        setFbSession(data)
         if (data.pageId) setFbPageId(data.pageId)
         if (data.pageName) setFbPageName(data.pageName)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('jobabdesk_fb_session', JSON.stringify(data))
+
+        if (data.status === 'connected') {
+          setFbSession(data)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('jobabdesk_fb_session', JSON.stringify(data))
+          }
+          setLoadingFb(false)
+          return
         }
       }
+
+      // 2. Secondary check: /api/ai/settings (authenticated SSR accounts table read)
+      try {
+        const aiRes = await fetch('/api/ai/settings')
+        if (aiRes.ok) {
+          const aiData = await aiRes.json()
+          const settings = aiData.settings || aiData
+          const pageId = settings.facebook_page_id
+          const pageName = settings.facebook_page_name || pageId
+          if (pageId || settings.messenger_status === 'connected') {
+            if (pageId) setFbPageId(pageId)
+            if (pageName) setFbPageName(pageName)
+
+            const newSession: MessengerStatus = {
+              status: 'connected',
+              pageId: pageId || '',
+              pageName: pageName || 'Connected Page',
+            }
+            setFbSession(newSession)
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
+            }
+            setLoadingFb(false)
+            return
+          }
+        }
+      } catch {}
+
+      // If both explicitly returned disconnected, verify before marking disconnected
+      setFbSession((prev) => {
+        // Only clear if not already confirmed connected
+        if (prev.status === 'connected') {
+          // Check localStorage as fallback
+          try {
+            const cached = localStorage.getItem('jobabdesk_fb_session')
+            if (cached) {
+              const parsed = JSON.parse(cached)
+              if (parsed.status === 'connected') return parsed
+            }
+          } catch {}
+        }
+        return { status: 'disconnected', pageId: '', pageName: '' }
+      })
     } catch {
       // quiet catch
     } finally {
@@ -233,6 +307,19 @@ export function ChannelConnections() {
             setMetaSuccessMsg('Successfully connected WhatsApp with Facebook Meta WABA!')
             setTimeout(() => setMetaSuccessMsg(''), 5000)
             setShowQrModal(false)
+
+            // Redundant dual-sync to AI settings for guaranteed persistence
+            fetch('/api/ai/settings', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                whatsapp_phone_number_id: result.phoneNumberId || '',
+                whatsapp_waba_id: result.wabaId || '',
+                whatsapp_access_token: result.accessToken || '',
+                whatsapp_status: 'connected',
+                whatsapp_auto_reply_enabled: true,
+              }),
+            }).catch(() => {})
           } else {
             setMetaErrorMsg(data.error || 'Failed to complete Meta Embedded Signup.')
             setShowQrModal(true)
@@ -291,6 +378,19 @@ export function ChannelConnections() {
           setMetaSuccessMsg('Meta WhatsApp Cloud API credentials saved successfully!')
           setTimeout(() => setMetaSuccessMsg(''), 4000)
           setShowQrModal(false)
+
+          // Redundant dual-sync to AI settings for guaranteed persistence
+          fetch('/api/ai/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              whatsapp_phone_number_id: waPhoneNumberId.trim(),
+              whatsapp_access_token: waAccessToken.trim(),
+              whatsapp_waba_id: waWabaId.trim(),
+              whatsapp_status: 'connected',
+              whatsapp_auto_reply_enabled: true,
+            }),
+          }).catch(() => {})
         } else {
           setMetaErrorMsg('Failed to save Meta WhatsApp credentials.')
         }
@@ -385,6 +485,15 @@ export function ChannelConnections() {
     try {
       await fetch('/api/channels/whatsapp/meta', { method: 'DELETE' })
       await fetch('/api/channels/whatsapp/gateway', { method: 'DELETE' })
+      // Sync disconnected status to AI settings
+      fetch('/api/ai/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          whatsapp_status: 'disconnected',
+        }),
+      }).catch(() => {})
+
       const disconnectedState: WhatsAppStatus = { status: 'disconnected', qrCode: '', connectedNumber: '' }
       setWaSession(disconnectedState)
       setPersistentQr('')
@@ -439,7 +548,7 @@ export function ChannelConnections() {
             const res = await fetch('/api/channels/messenger/pages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code: event.data.code }),
+              body: JSON.stringify({ code: event.data.code, redirectUri }),
             })
             const data = await res.json()
             if (res.ok && data.pages && data.pages.length > 0) {
@@ -497,6 +606,19 @@ export function ChannelConnections() {
           localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
         }
         setShowFbModal(false)
+
+        // Dual-sync to AI settings for guaranteed persistence
+        fetch('/api/ai/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            facebook_page_id: page.id,
+            facebook_page_name: page.name,
+            facebook_page_access_token: page.accessToken,
+            messenger_status: 'connected',
+            messenger_auto_reply_enabled: true,
+          }),
+        }).catch(() => {})
       } else {
         const errData = await res.json().catch(() => ({}))
         setFbError(errData.error || 'Failed to connect Facebook Page.')
@@ -531,14 +653,27 @@ export function ChannelConnections() {
         const data = await res.json()
         const newSession: MessengerStatus = {
           status: 'connected',
-          pageId: data.settings?.messenger_page_id || fbPageId.trim(),
-          pageName: data.settings?.messenger_page_name || fbPageName.trim() || 'Connected Page',
+          pageId: data.pageId || data.settings?.messenger_page_id || fbPageId.trim(),
+          pageName: data.pageName || data.settings?.messenger_page_name || fbPageName.trim() || 'Connected Page',
         }
         setFbSession(newSession)
         if (typeof window !== 'undefined') {
           localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
         }
         setShowFbModal(false)
+
+        // Dual-sync to AI settings for guaranteed persistence
+        fetch('/api/ai/settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            facebook_page_id: fbPageId.trim(),
+            facebook_page_name: fbPageName.trim() || fbPageId.trim(),
+            facebook_page_access_token: fbAccessToken.trim(),
+            messenger_status: 'connected',
+            messenger_auto_reply_enabled: true,
+          }),
+        }).catch(() => {})
       } else {
         const errData = await res.json().catch(() => ({}))
         setFbError(errData.error || 'Failed to save Facebook credentials.')
@@ -553,6 +688,15 @@ export function ChannelConnections() {
   async function handleDisconnectFb() {
     try {
       await fetch('/api/channels/messenger/connect', { method: 'DELETE' })
+      // Sync disconnected status to AI settings
+      fetch('/api/ai/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messenger_status: 'disconnected',
+        }),
+      }).catch(() => {})
+
       const disconnectedState: MessengerStatus = { status: 'disconnected', pageId: '', pageName: '' }
       setFbSession(disconnectedState)
       setFbPageId('')

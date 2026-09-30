@@ -61,9 +61,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { accountId, userId } = await requireRole('agent')
+    const { accountId, userId, supabase } = await requireRole('agent')
     const { phoneNumberId, wabaId, code, accessToken } = await req.json()
-    const db = getAdminClient()
 
     let finalToken = accessToken
 
@@ -88,42 +87,98 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid Meta signup payload' }, { status: 400 })
     }
 
-    const updates = {
+    const targetId = accountId || userId
+
+    // Canonical guaranteed columns from migration 053
+    const coreUpdates: Record<string, any> = {
       whatsapp_phone_number_id: phoneNumberId || '',
       whatsapp_waba_id: wabaId || '',
       whatsapp_access_token: finalToken || '',
-      whatsapp_session_status: 'connected',
       whatsapp_status: 'connected',
-      whatsapp_connection_type: 'meta_cloud',
     }
 
-    const targetId = accountId || userId
-    let updatedData = null
-
-    if (targetId) {
-      const { data } = await db
+    // 1. Update accounts table via authenticated SSR client
+    let updatedAccount = null
+    if (supabase && targetId) {
+      const { data, error: coreErr } = await supabase
         .from('accounts')
-        .update(updates)
-        .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
-        .select()
+        .update(coreUpdates)
+        .eq('id', targetId)
+        .select('*')
         .maybeSingle()
-      updatedData = data
+
+      updatedAccount = data
+
+      if (coreErr) {
+        console.warn('[embedded-signup core update error, retrying field-by-field]:', coreErr.message)
+        for (const [k, v] of Object.entries(coreUpdates)) {
+          await supabase.from('accounts').update({ [k]: v }).eq('id', targetId)
+        }
+      }
+
+      // Try auxiliary columns optionally
+      try {
+        await supabase.from('accounts').update({
+          whatsapp_session_status: 'connected',
+          whatsapp_connection_type: 'meta_cloud',
+          whatsapp_connected_number: phoneNumberId || '',
+        }).eq('id', targetId)
+      } catch {}
     }
 
-    if (!updatedData) {
-      const { data: allAccounts } = await db.from('accounts').select('id').limit(1)
-      if (allAccounts && allAccounts.length > 0) {
-        const { data } = await db
-          .from('accounts')
-          .update(updates)
-          .eq('id', allAccounts[0].id)
-          .select()
-          .maybeSingle()
-        updatedData = data
+    // 2. Also update via admin client if service role key is present
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const db = getAdminClient()
+      await db.from('accounts').update(coreUpdates).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+      try {
+        await db.from('accounts').update({
+          whatsapp_session_status: 'connected',
+          whatsapp_connection_type: 'meta_cloud',
+          whatsapp_connected_number: phoneNumberId || '',
+        }).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+      } catch {}
+    }
+
+    // 3. Multi-table redundancy: Upsert into whatsapp_config table (migration 001/017)
+    if (supabase && targetId && (phoneNumberId || finalToken)) {
+      try {
+        await supabase.from('whatsapp_config').upsert(
+          {
+            account_id: targetId,
+            user_id: userId,
+            phone_number_id: phoneNumberId || 'meta_cloud_waba',
+            access_token: finalToken || '',
+            waba_id: wabaId || '',
+            status: 'connected',
+            connected_at: new Date().toISOString(),
+          },
+          { onConflict: 'account_id' }
+        )
+      } catch (waCfgErr) {
+        console.warn('[embedded-signup whatsapp_config upsert warning]:', waCfgErr)
       }
     }
 
-    return NextResponse.json({ success: true, settings: updatedData })
+    // 4. Multi-table redundancy: Upsert into channel_connections table (migration 044)
+    if (supabase && targetId && (phoneNumberId || finalToken)) {
+      try {
+        await supabase.from('channel_connections').upsert(
+          {
+            account_id: targetId,
+            channel_type: 'whatsapp',
+            external_account_id: phoneNumberId || 'meta_cloud_waba',
+            display_name: 'WhatsApp Business',
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'account_id,channel_type,external_account_id' }
+        )
+      } catch {
+        // channel_connections upsert is non-fatal
+      }
+    }
+
+    return NextResponse.json({ success: true, settings: updatedAccount || coreUpdates })
   } catch (err) {
     return toErrorResponse(err)
   }
