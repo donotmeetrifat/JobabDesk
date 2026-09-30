@@ -16,17 +16,21 @@ export interface MessengerSession {
 }
 
 export async function getMessengerStatus(accountId: string, supabase?: any): Promise<MessengerSession> {
-  const db = supabase || getAdminClient()
+  const db = getAdminClient()
   try {
-    const { data: account } = await db
+    const { data: account, error } = await db
       .from('accounts')
-      .select('*')
+      .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status')
       .eq('id', accountId)
       .maybeSingle()
 
-    const pageId = (account?.facebook_page_id || account?.messenger_page_id || account?.page_id || '').trim()
-    const pageToken = (account?.facebook_page_access_token || account?.messenger_access_token || account?.page_access_token || '').trim()
-    const pageName = (account?.facebook_page_name || account?.messenger_page_name || account?.page_name || pageId).trim()
+    if (error) {
+      console.error('[getMessengerStatus DB Error]:', error)
+    }
+
+    const pageId = (account?.facebook_page_id || '').trim()
+    const pageToken = (account?.facebook_page_access_token || '').trim()
+    const pageName = (account?.facebook_page_name || pageId).trim()
 
     const isConnected = Boolean(pageId && pageToken)
 
@@ -35,7 +39,8 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
       pageId: isConnected ? pageId : '',
       pageName: isConnected ? pageName : '',
     }
-  } catch {
+  } catch (err) {
+    console.error('[getMessengerStatus Exception]:', err)
     return { status: 'disconnected', pageId: '', pageName: '' }
   }
 }
@@ -45,7 +50,7 @@ export async function connectFacebookPage(
   pageData?: { pageId?: string; pageName?: string; accessToken?: string },
   supabase?: any
 ): Promise<MessengerSession> {
-  const db = supabase || getAdminClient()
+  const db = getAdminClient()
   const pageId = pageData?.pageId?.trim() || ''
   const pageName = pageData?.pageName?.trim() || ''
   const token = pageData?.accessToken?.trim() || ''
@@ -68,31 +73,42 @@ export async function connectFacebookPage(
         access_token: token,
       }),
     })
-  } catch {
-    // quiet catch
+  } catch (subErr) {
+    console.error('[FB Subscribed Apps Error]:', subErr)
   }
 
   try {
-    await db
+    const { error: updateErr } = await db
       .from('accounts')
       .update({
-        messenger_connection_status: 'connected',
-        messenger_status: 'connected',
         facebook_page_id: pageId,
         facebook_page_name: pageName || pageId,
         facebook_page_access_token: token,
-        messenger_page_id: pageId,
-        messenger_page_name: pageName || pageId,
-        messenger_access_token: token,
+        messenger_status: 'connected',
+        messenger_connection_status: 'connected',
       })
       .eq('id', accountId)
+
+    if (updateErr) {
+      console.error('[connectFacebookPage DB Update Error]:', updateErr)
+      // Fallback update with essential columns only
+      await db
+        .from('accounts')
+        .update({
+          facebook_page_id: pageId,
+          facebook_page_name: pageName || pageId,
+          facebook_page_access_token: token,
+        })
+        .eq('id', accountId)
+    }
 
     return {
       status: 'connected',
       pageId,
       pageName: pageName || pageId,
     }
-  } catch {
+  } catch (err) {
+    console.error('[connectFacebookPage Exception]:', err)
     return {
       status: 'disconnected',
       pageId: '',
@@ -102,23 +118,20 @@ export async function connectFacebookPage(
 }
 
 export async function disconnectFacebookPage(accountId: string, supabase?: any): Promise<MessengerSession> {
-  const db = supabase || getAdminClient()
+  const db = getAdminClient()
   try {
     await db
       .from('accounts')
       .update({
-        messenger_connection_status: 'disconnected',
-        messenger_status: 'disconnected',
         facebook_page_id: '',
         facebook_page_name: '',
         facebook_page_access_token: '',
-        messenger_page_id: '',
-        messenger_page_name: '',
-        messenger_access_token: '',
+        messenger_status: 'disconnected',
+        messenger_connection_status: 'disconnected',
       })
       .eq('id', accountId)
-  } catch {
-    // quiet catch
+  } catch (err) {
+    console.error('[disconnectFacebookPage Exception]:', err)
   }
 
   return {
