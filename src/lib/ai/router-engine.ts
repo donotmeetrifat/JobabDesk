@@ -318,32 +318,42 @@ Return ONLY valid JSON:
     }
   }
 
-  // TIER 3: OpenRouter API Fallback
+  // TIER 3: OpenRouter API Fallback (Verified Bengali-Capable Free Models)
   if (!rawResponse && process.env.OPENROUTER_API_KEY) {
-    try {
-      const openRouterResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'meta-llama/llama-3.2-11b-vision-instruct:free',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: messageText },
-          ],
-        }),
-      })
-      const orJson = await openRouterResp.json()
-      const content = orJson?.choices?.[0]?.message?.content?.trim()
-      if (content) {
-        rawResponse = content
-        providerUsed = 'openrouter'
-        modelUsed = 'llama-3.2-11b-vision-free'
+    const openRouterModels = [
+      'qwen/qwen-2.5-72b-instruct:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+    ]
+
+    for (const orModel of openRouterModels) {
+      try {
+        const openRouterResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: orModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: messageText },
+            ],
+            temperature: 0.2,
+          }),
+        })
+        const orJson = await openRouterResp.json()
+        const content = orJson?.choices?.[0]?.message?.content?.trim()
+        if (content) {
+          rawResponse = content
+          providerUsed = 'openrouter'
+          modelUsed = orModel
+          break
+        }
+      } catch {
+        // try next openrouter model
       }
-    } catch {
-      // fallback to tier 4
     }
   }
 
