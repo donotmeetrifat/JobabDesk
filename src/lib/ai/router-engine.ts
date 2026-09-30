@@ -352,25 +352,31 @@ Return ONLY valid JSON:
     }
   }
 
-  // 5. Log to ai_auto_replies database table
-  const { data: logEntry } = await db
-    .from('ai_auto_replies')
-    .insert({
-      account_id: accountId,
-      contact_id: contactId || null,
-      channel,
-      incoming_message: messageText.trim(),
-      detected_language: detectedLang,
-      intent_detected: intent,
-      ai_reply: aiReply,
-      provider_used: providerUsed,
-      model_used: modelUsed,
-    })
-    .select('id')
-    .single()
+  // 5. Log to ai_auto_replies database table (safe try/catch if table not created yet)
+  let logId: string | undefined
+  try {
+    const { data: logEntry } = await db
+      .from('ai_auto_replies')
+      .insert({
+        account_id: accountId,
+        contact_id: contactId || null,
+        channel,
+        incoming_message: messageText.trim(),
+        detected_language: detectedLang,
+        intent_detected: intent,
+        ai_reply: aiReply,
+        provider_used: providerUsed,
+        model_used: modelUsed,
+      })
+      .select('id')
+      .maybeSingle()
+    logId = logEntry?.id
+  } catch (_logErr) {
+    // Log insert failed (e.g. table not created yet), continue gracefully
+  }
 
   return {
-    id: logEntry?.id,
+    id: logId,
     intent,
     language: detectedLang,
     aiReply,
