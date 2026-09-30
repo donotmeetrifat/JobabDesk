@@ -24,7 +24,13 @@ export async function POST(req: Request) {
       return NextResponse.json(session)
     }
 
-    const session = await connectFacebookPage(accountId, body.pageData, supabase)
+    const pageData = body.pageData || {
+      pageId: body.pageId,
+      pageName: body.pageName,
+      accessToken: body.accessToken || body.pageAccessToken,
+    }
+
+    const session = await connectFacebookPage(accountId, pageData, supabase)
     return NextResponse.json(session)
   } catch (err) {
     return toErrorResponse(err)
