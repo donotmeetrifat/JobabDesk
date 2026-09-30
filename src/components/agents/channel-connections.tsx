@@ -361,6 +361,86 @@ export function ChannelConnections() {
     }
   }
 
+  const [fbPagesList, setFbPagesList] = useState<Array<{ id: string; name: string; accessToken: string; category?: string; picture?: string }>>([])
+  const [fetchingFbPages, setFetchingFbPages] = useState(false)
+  const [showManualFbInput, setShowManualFbInput] = useState(false)
+
+  async function handle1ClickFbConnect() {
+    setFbError('')
+    setFetchingFbPages(true)
+
+    const appId = metaAppId || process.env.NEXT_PUBLIC_META_APP_ID || '1789555715522515'
+    await loadFacebookSDK(appId)
+
+    if (typeof window !== 'undefined' && (window as any).FB) {
+      ;(window as any).FB.login(
+        async (response: any) => {
+          if (response && response.authResponse) {
+            const userAccessToken = response.authResponse.accessToken
+            try {
+              const res = await fetch('/api/channels/messenger/pages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userAccessToken }),
+              })
+              const data = await res.json()
+              if (res.ok && data.pages && data.pages.length > 0) {
+                setFbPagesList(data.pages)
+              } else {
+                setFbError(data.error || 'No Facebook Pages found under your account. Make sure you are an Admin of a Facebook Page.')
+              }
+            } catch (err: any) {
+              setFbError(err?.message || 'Error fetching Facebook Pages.')
+            } finally {
+              setFetchingFbPages(false)
+            }
+          } else {
+            setFbError('Facebook Login was cancelled.')
+            setFetchingFbPages(false)
+          }
+        },
+        {
+          scope: 'pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata',
+        }
+      )
+    } else {
+      setFbError('Meta Facebook SDK failed to load. Please try again.')
+      setFetchingFbPages(false)
+    }
+  }
+
+  async function handleSelectFbPage(page: { id: string; name: string; accessToken: string }) {
+    setConnectingFb(true)
+    setFbError('')
+    try {
+      const res = await fetch('/api/channels/messenger/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageId: page.id,
+          accessToken: page.accessToken,
+          pageName: page.name,
+        }),
+      })
+
+      if (res.ok) {
+        setFbSession({
+          status: 'connected',
+          pageId: page.id,
+          pageName: page.name,
+        })
+        setShowFbModal(false)
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setFbError(errData.error || 'Failed to connect Facebook Page.')
+      }
+    } catch {
+      setFbError('Network error while connecting Facebook Page.')
+    } finally {
+      setConnectingFb(false)
+    }
+  }
+
   async function handleSaveFbCredentials() {
     setFbError('')
     if (!fbPageId.trim() || !fbAccessToken.trim()) {
@@ -933,7 +1013,7 @@ export function ChannelConnections() {
       {/* Facebook Messenger Credentials Modal */}
       {showFbModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-card border rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative">
+          <div className="bg-card border rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowFbModal(false)}
               className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-sm font-bold p-1.5 rounded-full hover:bg-muted"
@@ -947,7 +1027,7 @@ export function ChannelConnections() {
                 Connect Facebook Business Page
               </h3>
               <p className="text-xs text-muted-foreground">
-                Configure your authentic Facebook Page ID and Page Access Token
+                Connect your Facebook Page automatically in 1-Click or configure manually
               </p>
             </div>
 
@@ -957,119 +1037,184 @@ export function ChannelConnections() {
               </div>
             )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">
-                  Facebook Page Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. My Fashion Store BD"
-                  value={fbPageName}
-                  onChange={(e) => setFbPageName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">
-                  Facebook Page ID <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 109876543210987"
-                  value={fbPageId}
-                  onChange={(e) => setFbPageId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">
-                  Page Access Token <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Paste Meta Page Access Token (EAAG...)"
-                  value={fbAccessToken}
-                  onChange={(e) => setFbAccessToken(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                />
-              </div>
-
-              {/* Meta Webhook Instructions Box */}
-              <div className="bg-muted/40 rounded-2xl p-4 space-y-3 text-xs border">
-                <div className="flex items-center gap-1.5 font-bold text-foreground">
-                  <Globe className="h-4 w-4 text-blue-600" />
-                  Meta Webhook Configuration
-                </div>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  Set these credentials in your Meta Developer App &rr; Messenger &rr; Webhooks settings:
-                </p>
-
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-foreground">Callback Webhook URL:</span>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
-                        {messengerWebhookUrl}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleCopy(messengerWebhookUrl, 'webhook')}
-                        className="h-8 px-2.5 text-xs shrink-0"
-                      >
-                        {copiedWebhook ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[11px] font-semibold text-muted-foreground">Verify Token:</span>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
-                        {verifyToken}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleCopy(verifyToken, 'token')}
-                        className="h-8 px-2.5 text-xs shrink-0"
-                      >
-                        {copiedVerifyToken ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
+            {/* 1-Click Facebook Login Banner */}
+            <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 space-y-3">
+              <h4 className="font-bold text-xs text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+                <Zap className="h-4 w-4 text-blue-600" /> Recommended 1-Click Facebook Connect
+              </h4>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Log in with Facebook to automatically list and select your Facebook Business Pages.
+              </p>
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setShowFbModal(false)}
-                className="flex-1 rounded-xl text-xs font-semibold"
+                onClick={handle1ClickFbConnect}
+                disabled={fetchingFbPages}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl py-2.5 gap-2"
               >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSaveFbCredentials}
-                disabled={connectingFb}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl"
-              >
-                {connectingFb ? (
+                {fetchingFbPages ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : (
-                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  <Globe className="h-4 w-4" />
                 )}
-                Save & Connect Page
+                Log in & Select Facebook Page
               </Button>
             </div>
+
+            {/* Facebook Pages Picker List */}
+            {fbPagesList.length > 0 && (
+              <div className="space-y-2.5 border-t pt-3">
+                <h4 className="text-xs font-bold text-foreground">Select a Facebook Page to Connect:</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {fbPagesList.map((page) => (
+                    <div
+                      key={page.id}
+                      className="p-3 rounded-xl border bg-muted/30 flex items-center justify-between gap-3 hover:border-blue-500 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {page.picture ? (
+                          <img src={page.picture} alt={page.name} className="h-8 w-8 rounded-full shrink-0 border" />
+                        ) : (
+                          <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">
+                            {page.name.slice(0, 1)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs text-foreground truncate">{page.name}</p>
+                          <p className="text-[10px] text-muted-foreground">ID: {page.id}</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleSelectFbPage(page)}
+                        disabled={connectingFb}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg px-3 h-8 shrink-0"
+                      >
+                        {connectingFb ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : 'Connect Page'}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-muted"></div>
+              <button
+                type="button"
+                onClick={() => setShowManualFbInput(!showManualFbInput)}
+                className="flex-shrink mx-3 text-[10px] uppercase font-bold text-muted-foreground hover:text-foreground tracking-wider underline cursor-pointer"
+              >
+                {showManualFbInput ? 'Hide Manual Settings' : 'Or Manual Setup (Page ID & Access Token)'}
+              </button>
+              <div className="flex-grow border-t border-muted"></div>
+            </div>
+
+            {showManualFbInput && (
+              <div className="space-y-4 animate-in fade-in">
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1">
+                    Facebook Page Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. My Fashion Store BD"
+                    value={fbPageName}
+                    onChange={(e) => setFbPageName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border bg-background text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1">
+                    Facebook Page ID <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 109876543210987"
+                    value={fbPageId}
+                    onChange={(e) => setFbPageId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1">
+                    Page Access Token <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Paste Meta Page Access Token (EAAG...)"
+                    value={fbAccessToken}
+                    onChange={(e) => setFbAccessToken(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                  />
+                </div>
+
+                {/* Meta Webhook Instructions Box */}
+                <div className="bg-muted/40 rounded-2xl p-4 space-y-3 text-xs border">
+                  <div className="flex items-center gap-1.5 font-bold text-foreground">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    Meta Webhook Configuration
+                  </div>
+                  <p className="text-muted-foreground text-[11px] leading-relaxed">
+                    Set these credentials in your Meta Developer App &rr; Messenger &rr; Webhooks settings:
+                  </p>
+
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-foreground">Callback Webhook URL:</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                          {messengerWebhookUrl}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCopy(messengerWebhookUrl, 'webhook')}
+                          className="h-8 px-2.5 text-xs shrink-0"
+                        >
+                          {copiedWebhook ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[11px] font-semibold text-muted-foreground">Verify Token:</span>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                          {verifyToken}
+                        </code>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCopy(verifyToken, 'token')}
+                          className="h-8 px-2.5 text-xs shrink-0"
+                        >
+                          {copiedVerifyToken ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleSaveFbCredentials}
+                  disabled={connectingFb}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl py-2.5"
+                >
+                  {connectingFb ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  )}
+                  Save & Connect Page Manually
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

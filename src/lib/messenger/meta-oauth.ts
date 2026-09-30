@@ -59,6 +59,20 @@ export async function connectFacebookPage(
     }
   }
 
+  // Auto-subscribe page to Webhooks via Meta Graph API
+  try {
+    await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscribed_fields: ['messages', 'messaging_postbacks'],
+        access_token: token,
+      }),
+    })
+  } catch {
+    // quiet catch
+  }
+
   try {
     await db
       .from('accounts')
