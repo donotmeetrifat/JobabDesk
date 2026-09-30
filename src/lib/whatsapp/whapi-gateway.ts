@@ -77,8 +77,8 @@ export async function fetchWhapiQRCode(
       .eq('id', accountId)
       .maybeSingle()
 
-    apiKey = account?.whapi_api_key || ''
-    instanceId = account?.whapi_instance_id || ''
+    apiKey = account?.whapi_api_key || process.env.WHAPI_API_KEY || ''
+    instanceId = account?.whapi_instance_id || process.env.WHAPI_INSTANCE_ID || ''
     provider = account?.whatsapp_gateway_provider || 'whapi'
   }
 
@@ -147,7 +147,7 @@ export async function fetchWhapiSessionStatus(
     .eq('id', accountId)
     .maybeSingle()
 
-  const apiKey = credentials?.apiKey || account?.whapi_api_key || ''
+  const apiKey = credentials?.apiKey || account?.whapi_api_key || process.env.WHAPI_API_KEY || ''
   const provider = account?.whatsapp_gateway_provider || 'whapi'
 
   if (apiKey) {
