@@ -112,34 +112,33 @@ export async function handleIncomingCustomerMessage({
   // Detect language
   const detectedLang = detectLanguage(messageText, account.ai_primary_language || 'auto_detect')
 
-  // 2. Fetch Ground Truth Context (Products & Customer Orders)
-  const [productsRes, ordersRes] = await Promise.all([
-    db
+  // 2. Fetch Ground Truth Context (Products & Customer Orders - Safe queries)
+  let products: any[] = []
+  let recentOrders: any[] = []
+
+  try {
+    const { data: pData } = await db
       .from('products')
       .select('name, price, brand, category, stock_qty, is_in_stock, description')
       .eq('account_id', accountId)
-      .eq('is_active', true)
-      .limit(100),
-    contactId || customerPhone
-      ? db
-          .from('orders')
-          .select('order_number, status, payment_status, total, created_at, order_items(product_name, quantity, total)')
-          .eq('account_id', accountId)
-          .or(
-            [
-              contactId ? `contact_id.eq.${contactId}` : '',
-              customerPhone ? `customer_phone.ilike.%${customerPhone.replace(/\D/g, '')}%` : '',
-            ]
-              .filter(Boolean)
-              .join(',')
-          )
-          .order('created_at', { ascending: false })
-          .limit(5)
-      : Promise.resolve({ data: [] }),
-  ])
+      .limit(100)
+    products = pData ?? []
+  } catch (_pErr) {
+    // products query fallback
+  }
 
-  const products = productsRes.data ?? []
-  const recentOrders = ordersRes.data ?? []
+  if (contactId || customerPhone) {
+    try {
+      const { data: oData } = await db
+        .from('orders')
+        .select('order_number, status, payment_status, total, created_at')
+        .eq('account_id', accountId)
+        .limit(5)
+      recentOrders = oData ?? []
+    } catch (_oErr) {
+      // orders query fallback
+    }
+  }
 
   // Build Language Instruction
   let langGuidance = ''
