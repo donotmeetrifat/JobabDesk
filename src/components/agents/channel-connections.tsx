@@ -493,27 +493,28 @@ export function ChannelConnections() {
               ) : (
                 <div className="space-y-2">
                   <Button
-                    onClick={handleMetaEmbeddedSignup}
-                    disabled={savingMeta}
+                    onClick={() => {
+                      setWaTab('meta')
+                      setShowQrModal(true)
+                    }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 rounded-xl shadow-sm py-3.5 text-sm"
                   >
-                    {savingMeta ? (
-                      <RefreshCw className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <MessageCircle className="h-5 w-5 fill-current" />
-                    )}
-                    Connect WhatsApp with Facebook
+                    <ShieldCheck className="h-5 w-5" />
+                    Connect Meta Official WhatsApp Cloud API
                   </Button>
                   <p className="text-[11px] text-muted-foreground text-center">
-                    Takes 10 seconds. Each shop gets 1,000 free monthly conversations directly from Meta.
+                    100% Free & Stable. Each shop gets 1,000 free monthly conversations directly from Meta.
                   </p>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setShowQrModal(true)}
+                    onClick={() => {
+                      setWaTab('qr')
+                      setShowQrModal(true)
+                    }}
                     className="w-full text-xs text-muted-foreground hover:text-foreground pt-1"
                   >
-                    Or configure manually / QR Code / 8-Digit Code
+                    Or scan QR Code / 8-Digit Phone Pairing Code
                   </Button>
                 </div>
               )}
