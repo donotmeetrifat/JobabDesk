@@ -163,10 +163,19 @@ export function ChannelConnections() {
   async function handleMetaEmbeddedSignup() {
     setMetaErrorMsg('')
     setMetaSuccessMsg('')
+
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID || ''
+    if (!appId) {
+      setShowQrModal(true)
+      setWaTab('meta')
+      setMetaErrorMsg('Meta App ID is not configured in Vercel environment variables yet. Please enter your Phone Number ID & Permanent Access Token manually below.')
+      return
+    }
+
     setSavingMeta(true)
 
     launchMetaEmbeddedSignup({
-      appId: process.env.NEXT_PUBLIC_META_APP_ID || '',
+      appId,
       configId: process.env.NEXT_PUBLIC_META_CONFIG_ID || '',
       onSuccess: async (result: { phoneNumberId?: string; wabaId?: string; code?: string; accessToken?: string }) => {
         try {
@@ -189,9 +198,13 @@ export function ChannelConnections() {
             setShowQrModal(false)
           } else {
             setMetaErrorMsg(data.error || 'Failed to complete Meta Embedded Signup.')
+            setShowQrModal(true)
+            setWaTab('meta')
           }
         } catch (err: any) {
           setMetaErrorMsg(err?.message || 'Error exchanging Meta credentials.')
+          setShowQrModal(true)
+          setWaTab('meta')
         } finally {
           setSavingMeta(false)
         }
@@ -199,6 +212,8 @@ export function ChannelConnections() {
       onError: (err: string) => {
         setMetaErrorMsg(err)
         setSavingMeta(false)
+        setShowQrModal(true)
+        setWaTab('meta')
       },
     })
   }

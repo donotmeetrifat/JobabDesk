@@ -79,6 +79,34 @@ export function launchMetaEmbeddedSignup(
     configId = optionsOrSuccess.configId
   }
 
+  const metaAppId = appId || process.env.NEXT_PUBLIC_META_APP_ID || ''
+  const metaConfigId = configId || process.env.NEXT_PUBLIC_META_CONFIG_ID || ''
+
+  if (!metaAppId) {
+    onError('Meta App ID is missing. Please enter your Phone Number ID & Permanent Access Token manually below, or set NEXT_PUBLIC_META_APP_ID in Vercel.')
+    return
+  }
+
+  let handled = false
+  const safeSuccess = (res: MetaSignupResult) => {
+    if (handled) return
+    handled = true
+    clearTimeout(timeoutId)
+    onSuccess(res)
+  }
+
+  const safeError = (err: string) => {
+    if (handled) return
+    handled = true
+    clearTimeout(timeoutId)
+    onError(err)
+  }
+
+  // Safety 30-second timeout guard to prevent infinite spinner
+  const timeoutId = setTimeout(() => {
+    safeError('Connection window timed out or popup was blocked by browser. Please check popups or use manual setup.')
+  }, 30000)
+
   // Session message listener for Meta postMessage events
   const sessionHandler = (event: MessageEvent) => {
     if (
@@ -93,10 +121,10 @@ export function launchMetaEmbeddedSignup(
       if (data && data.type === 'WA_EMBEDDED_SIGNUP') {
         if (data.event === 'FINISH') {
           const { phone_number_id, waba_id } = data.data || {}
-          onSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id })
+          safeSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id })
           window.removeEventListener('message', sessionHandler)
         } else if (data.event === 'CANCEL') {
-          onError('Embedded Signup cancelled by user')
+          safeError('Embedded Signup cancelled by user')
           window.removeEventListener('message', sessionHandler)
         }
       }
@@ -106,9 +134,6 @@ export function launchMetaEmbeddedSignup(
   }
 
   window.addEventListener('message', sessionHandler)
-
-  const metaAppId = appId || process.env.NEXT_PUBLIC_META_APP_ID || ''
-  const metaConfigId = configId || process.env.NEXT_PUBLIC_META_CONFIG_ID || ''
 
   const executeLogin = () => {
     if ((window as any).FB) {
@@ -120,17 +145,21 @@ export function launchMetaEmbeddedSignup(
         },
       }
 
-      ;(window as any).FB.login((response: any) => {
-        if (response && response.authResponse) {
-          const code = response.authResponse.code
-          const accessToken = response.authResponse.accessToken
-          onSuccess({ code, accessToken })
-        } else {
-          onError('Facebook Login cancelled or failed.')
-        }
-      }, loginOptions)
+      try {
+        ;(window as any).FB.login((response: any) => {
+          if (response && response.authResponse) {
+            const code = response.authResponse.code
+            const accessToken = response.authResponse.accessToken
+            safeSuccess({ code, accessToken })
+          } else {
+            safeError('Facebook Login popup was closed or cancelled.')
+          }
+        }, loginOptions)
+      } catch (err: any) {
+        safeError(err?.message || 'Failed to open Facebook Login window.')
+      }
     } else {
-      onError('Meta Facebook SDK not loaded. Please try again in a moment.')
+      safeError('Meta Facebook SDK failed to initialize. Please check your browser popup blocker or use manual setup below.')
     }
   }
 
@@ -138,7 +167,7 @@ export function launchMetaEmbeddedSignup(
     executeLogin()
   } else {
     loadFacebookSDK(metaAppId).then(() => {
-      setTimeout(executeLogin, 300)
+      executeLogin()
     })
   }
 }
