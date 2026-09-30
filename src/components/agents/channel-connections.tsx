@@ -94,19 +94,10 @@ export function ChannelConnections() {
     }
   }
 
-  // Simulated 1-Click Meta OAuth Connection
+  // Toggle manual setup panels for WhatsApp and Messenger
   function handleConnectWhatsapp() {
-    // Simulated Meta OAuth signup process
-    const mockPhoneId = '100982736451001'
-    const mockWabaId = '9082736154321'
-    const mockToken = 'EAAG' + Math.random().toString(36).substring(2, 15)
-    
-    saveSettings({
-      whatsapp_phone_number_id: mockPhoneId,
-      whatsapp_waba_id: mockWabaId,
-      whatsapp_access_token: mockToken,
-      whatsapp_status: 'connected',
-    })
+    setShowWaManual(true)
+    setMsg({ type: 'success', text: 'Please configure your Meta WhatsApp Cloud API credentials below.' })
   }
 
   function handleDisconnectWhatsapp() {
@@ -119,17 +110,8 @@ export function ChannelConnections() {
   }
 
   function handleConnectMessenger() {
-    // Simulated Meta Facebook Page OAuth signup process
-    const mockPageId = '1029384756102'
-    const mockPageName = 'JobabDesk Shop (Official)'
-    const mockToken = 'EAAB' + Math.random().toString(36).substring(2, 15)
-
-    saveSettings({
-      facebook_page_id: mockPageId,
-      facebook_page_name: mockPageName,
-      facebook_page_access_token: mockToken,
-      messenger_status: 'connected',
-    })
+    setShowFbManual(true)
+    setMsg({ type: 'success', text: 'Please configure your Meta Facebook Page Access Token below.' })
   }
 
   function handleDisconnectMessenger() {
