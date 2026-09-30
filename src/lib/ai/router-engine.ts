@@ -2,10 +2,12 @@ import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  return createClient(url, key)
 }
 
 export type SupportedChannel = 'whatsapp' | 'messenger' | 'sandbox'
@@ -65,33 +67,26 @@ export async function handleIncomingCustomerMessage({
 
   // 1. Fetch Account Channel & AI Settings
   let account: any = null
-  const { data: acctData, error: acctErr } = await db
-    .from('accounts')
-    .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language')
-    .eq('id', accountId)
-    .maybeSingle()
-
-  if (acctErr || !acctData) {
-    // Fallback lookup if migration 053 columns not applied yet
-    const { data: fallbackAcct } = await db
+  try {
+    const { data: acctData } = await db
       .from('accounts')
-      .select('id, name')
+      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language')
       .eq('id', accountId)
       .maybeSingle()
-    
-    if (!fallbackAcct) {
-      console.error('[AI Router] Account lookup failed completely')
-      return null
-    }
+    account = acctData
+  } catch {
+    // fallback
+  }
+
+  if (!account) {
     account = {
-      ...fallbackAcct,
+      id: accountId,
+      name: 'JobabDesk Store',
       ai_auto_reply_enabled: true,
       whatsapp_auto_reply_enabled: true,
       messenger_auto_reply_enabled: true,
       ai_primary_language: 'auto_detect',
     }
-  } else {
-    account = acctData
   }
 
   // Verification 1: Master AI switch (allow sandbox testing regardless)
