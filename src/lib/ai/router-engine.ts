@@ -73,7 +73,7 @@ export async function handleIncomingCustomerMessage({
   try {
     const { data: acctData } = await client
       .from('accounts')
-      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language')
+      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_store_instructions')
       .eq('id', accountId)
       .maybeSingle()
     account = acctData
@@ -89,6 +89,24 @@ export async function handleIncomingCustomerMessage({
       whatsapp_auto_reply_enabled: true,
       messenger_auto_reply_enabled: true,
       ai_primary_language: 'auto_detect',
+      ai_store_instructions: '',
+    }
+  }
+
+  // Check Per-Contact AI Mute Status
+  if (contactId || customerPhone) {
+    try {
+      let query = client.from('contacts').select('id, ai_auto_reply_muted')
+      if (contactId) query = query.eq('id', contactId)
+      else if (customerPhone) query = query.eq('phone', customerPhone)
+
+      const { data: contactData } = await query.maybeSingle()
+      if (contactData?.ai_auto_reply_muted === true && channel !== 'sandbox') {
+        // Customer has AI Auto-Reply Muted - leave for human agent
+        return null
+      }
+    } catch (_cErr) {
+      // safe fallback
     }
   }
 
@@ -149,7 +167,7 @@ export async function handleIncomingCustomerMessage({
   }
 
   const systemPrompt = `You are an AI customer support router for "${account.name}".
-Language Requirement: ${langGuidance}
+Language Requirement: ${langGuidance}${account.ai_store_instructions ? `\nCustom Store Policies & Instructions:\n${account.ai_store_instructions}` : ''}
 
 Instructions:
 1. Intent Classification:

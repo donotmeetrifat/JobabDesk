@@ -15,6 +15,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +38,26 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [aiMuted, setAiMuted] = useState(contact?.ai_auto_reply_muted ?? false);
+
+  useEffect(() => {
+    setAiMuted(contact?.ai_auto_reply_muted ?? false);
+  }, [contact]);
+
+  const handleToggleAiMute = useCallback(async () => {
+    if (!contact) return;
+    const next = !aiMuted;
+    setAiMuted(next);
+    try {
+      await fetch(`/api/contacts/${contact.id}/ai-mute`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ai_auto_reply_muted: next }),
+      });
+    } catch {
+      setAiMuted(!next);
+    }
+  }, [contact, aiMuted]);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -180,6 +201,32 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <span className="truncate">{contact.email}</span>
+              </div>
+            )}
+          </div>
+
+          {/* AI Mute Toggle Card */}
+          <div className="mt-4 p-3 rounded-xl bg-muted/40 border space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">Mute AI for this Customer</span>
+              <button
+                type="button"
+                onClick={handleToggleAiMute}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  aiMuted ? "bg-amber-600" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    aiMuted ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+            {aiMuted && (
+              <div className="text-[11px] p-2 rounded-lg bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-medium flex items-center gap-1.5">
+                <Bot className="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400" />
+                <span>AI Muted for this contact — manual chat mode</span>
               </div>
             )}
           </div>

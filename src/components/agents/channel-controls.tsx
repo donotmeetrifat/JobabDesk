@@ -1,14 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bot, Radio, MessageSquare, Globe, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Bot, Radio, MessageSquare, Globe, CheckCircle2, AlertCircle, Save, FileText } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 
 interface ChannelSettings {
   ai_auto_reply_enabled: boolean
   whatsapp_auto_reply_enabled: boolean
   messenger_auto_reply_enabled: boolean
   ai_primary_language: string
+  ai_store_instructions: string
   whatsapp_status: string
   messenger_status: string
 }
@@ -19,6 +21,7 @@ export function ChannelControls() {
     whatsapp_auto_reply_enabled: true,
     messenger_auto_reply_enabled: true,
     ai_primary_language: 'auto_detect',
+    ai_store_instructions: '',
     whatsapp_status: 'disconnected',
     messenger_status: 'disconnected',
   })
@@ -34,7 +37,11 @@ export function ChannelControls() {
       const res = await fetch('/api/ai/settings')
       const data = await res.json()
       if (data.settings) {
-        setSettings((prev) => ({ ...prev, ...data.settings }))
+        setSettings((prev) => ({
+          ...prev,
+          ...data.settings,
+          ai_store_instructions: data.settings.ai_store_instructions || '',
+        }))
       }
     } catch {
       // quiet catch
@@ -62,6 +69,16 @@ export function ChannelControls() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSaveAll = () => {
+    updateSettings({
+      ai_auto_reply_enabled: settings.ai_auto_reply_enabled,
+      whatsapp_auto_reply_enabled: settings.whatsapp_auto_reply_enabled,
+      messenger_auto_reply_enabled: settings.messenger_auto_reply_enabled,
+      ai_primary_language: settings.ai_primary_language,
+      ai_store_instructions: settings.ai_store_instructions,
+    })
   }
 
   if (loading) {
@@ -201,7 +218,7 @@ export function ChannelControls() {
       <div className="rounded-xl border bg-card p-5 space-y-3 shadow-xs">
         <div className="flex items-center gap-2 border-b pb-2">
           <Globe className="size-4 text-primary" />
-          <h4 className="font-semibold text-sm text-foreground">Multi-Language Response Mode</h4>
+          <h4 className="font-semibold text-sm text-foreground">Primary Language Mode</h4>
         </div>
 
         <p className="text-xs text-muted-foreground">
@@ -210,15 +227,15 @@ export function ChannelControls() {
 
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
           {[
-            { id: 'auto_detect', label: '⚡ Auto-Detect (Recommended)', desc: 'Smart matches BN, EN, Banglish' },
+            { id: 'auto_detect', label: '⚡ Auto-Detect (BN/EN/Banglish)', desc: 'Smart matches language' },
             { id: 'bn', label: '🇧🇩 Bengali Only', desc: 'Responds exclusively in বাংলা' },
-            { id: 'banglish', label: '💬 Banglish Only', desc: 'Bangla written in English script' },
+            { id: 'banglish', label: '💬 Banglish Only', desc: 'Bangla in English script' },
             { id: 'en', label: '🌐 English Only', desc: 'Responds exclusively in English' },
           ].map((mode) => (
             <button
               key={mode.id}
               type="button"
-              onClick={() => updateSettings({ ai_primary_language: mode.id })}
+              onClick={() => setSettings({ ...settings, ai_primary_language: mode.id })}
               className={`rounded-xl p-3 text-left border transition-all ${
                 settings.ai_primary_language === mode.id
                   ? 'border-primary bg-primary/5 text-foreground ring-1 ring-primary'
@@ -229,6 +246,37 @@ export function ChannelControls() {
               <p className="text-[10px] mt-1 opacity-80">{mode.desc}</p>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Custom Store Instructions Textarea */}
+      <div className="rounded-xl border bg-card p-5 space-y-3 shadow-xs">
+        <div className="flex items-center gap-2 border-b pb-2">
+          <FileText className="size-4 text-primary" />
+          <h4 className="font-semibold text-sm text-foreground">Custom Store Instructions & Policies</h4>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Provide specific instructions, delivery rules, or FAQs for the AI to include in customer replies (e.g. &ldquo;We offer free delivery inside Dhaka for orders over ৳2000&rdquo;).
+        </p>
+
+        <textarea
+          rows={3}
+          value={settings.ai_store_instructions}
+          onChange={(e) => setSettings({ ...settings, ai_store_instructions: e.target.value })}
+          placeholder="e.g. We offer free delivery inside Dhaka for orders over ৳2000. Inside Dhaka delivery takes 24 hours, outside Dhaka takes 2-3 days."
+          className="w-full rounded-xl border bg-background p-3.5 text-xs outline-none focus:ring-2 focus:ring-primary resize-none"
+        />
+
+        <div className="flex justify-end pt-2">
+          <Button
+            onClick={handleSaveAll}
+            disabled={saving}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium gap-2 text-xs rounded-xl px-5 shadow-sm"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {saving ? 'Saving...' : 'Save Settings'}
+          </Button>
         </div>
       </div>
     </div>
