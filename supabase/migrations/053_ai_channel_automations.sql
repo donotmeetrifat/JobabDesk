@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS ai_auto_replies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
-  channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'messenger', 'sandbox')),
+  channel TEXT NOT NULL DEFAULT 'sandbox',
   incoming_message TEXT NOT NULL,
   detected_language TEXT DEFAULT 'auto', -- 'bn' | 'en' | 'banglish'
   intent_detected TEXT CHECK (intent_detected IN ('product_inquiry', 'order_status', 'general_faq', 'human_escalation')),
@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS ai_auto_replies (
   model_used TEXT DEFAULT 'gemini-3.8-flash',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Ensure all columns exist if table was created in earlier migration
+ALTER TABLE ai_auto_replies ADD COLUMN IF NOT EXISTS channel TEXT DEFAULT 'sandbox';
+ALTER TABLE ai_auto_replies ADD COLUMN IF NOT EXISTS detected_language TEXT DEFAULT 'auto';
+ALTER TABLE ai_auto_replies ADD COLUMN IF NOT EXISTS provider_used TEXT DEFAULT 'gemini';
 
 -- RLS
 ALTER TABLE ai_auto_replies ENABLE ROW LEVEL SECURITY;
@@ -44,3 +49,4 @@ CREATE INDEX IF NOT EXISTS idx_ai_auto_replies_account_channel ON ai_auto_replie
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ai_auto_replies TO authenticated;
 NOTIFY pgrst, 'reload schema';
+
