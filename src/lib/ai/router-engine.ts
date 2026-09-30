@@ -77,17 +77,19 @@ export async function handleIncomingCustomerMessage({
     return null
   }
 
-  // Verification 1: Master AI switch
-  if (account.ai_auto_reply_enabled === false) {
-    return null
-  }
+  // Verification 1: Master AI switch (allow sandbox testing regardless)
+  if (channel !== 'sandbox') {
+    if (account.ai_auto_reply_enabled === false) {
+      return null
+    }
 
-  // Verification 2: Channel-specific switches
-  if (channel === 'whatsapp' && account.whatsapp_auto_reply_enabled === false) {
-    return null
-  }
-  if (channel === 'messenger' && account.messenger_auto_reply_enabled === false) {
-    return null
+    // Verification 2: Channel-specific switches
+    if (channel === 'whatsapp' && account.whatsapp_auto_reply_enabled === false) {
+      return null
+    }
+    if (channel === 'messenger' && account.messenger_auto_reply_enabled === false) {
+      return null
+    }
   }
 
   // Detect language

@@ -21,13 +21,17 @@ export async function POST(req: Request) {
 
     if (!result) {
       return NextResponse.json(
-        { error: 'AI auto-reply is disabled for this channel or failed to generate.' },
+        { error: 'AI auto-reply could not be generated. Please ensure GEMINI_API_KEY is configured.' },
         { status: 400 }
       )
     }
 
     return NextResponse.json({ result })
-  } catch (err) {
-    return toErrorResponse(err)
+  } catch (err: any) {
+    console.error('[AI Simulate Error]:', err)
+    return NextResponse.json(
+      { error: err?.message || 'Error simulating AI auto-reply' },
+      { status: 500 }
+    )
   }
 }
