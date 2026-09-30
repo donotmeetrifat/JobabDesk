@@ -5,12 +5,13 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const { accountId, supabase } = await requireRole('agent')
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
 
     const { data: account } = await supabase
       .from('accounts')
       .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, whatsapp_status')
-      .eq('id', accountId)
+      .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
       .maybeSingle()
 
     const hasCredentials = Boolean(
@@ -35,7 +36,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const { accountId, supabase } = await requireRole('agent')
+    const { accountId, userId, supabase } = await requireRole('agent')
+    const targetId = accountId || userId
     const body = await req.json().catch(() => ({}))
 
     const phoneNumberId = body.phoneNumberId?.trim() || ''
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
         whatsapp_status: 'connected',
         whatsapp_connection_type: 'meta_cloud',
       })
-      .eq('id', accountId)
+      .or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
 
     return NextResponse.json({
       status: 'connected',

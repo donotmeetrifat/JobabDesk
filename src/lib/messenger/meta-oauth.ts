@@ -17,11 +17,15 @@ export interface MessengerSession {
 
 export async function getMessengerStatus(accountId: string, supabase?: any): Promise<MessengerSession> {
   const db = getAdminClient()
+  if (!accountId) {
+    return { status: 'disconnected', pageId: '', pageName: '' }
+  }
+
   try {
     const { data: account, error } = await db
       .from('accounts')
       .select('facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status')
-      .eq('id', accountId)
+      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
       .maybeSingle()
 
     if (error) {
@@ -55,7 +59,7 @@ export async function connectFacebookPage(
   const pageName = pageData?.pageName?.trim() || ''
   const token = pageData?.accessToken?.trim() || ''
 
-  if (!pageId || !token) {
+  if (!accountId || !pageId || !token) {
     return {
       status: 'disconnected',
       pageId: '',
@@ -87,11 +91,10 @@ export async function connectFacebookPage(
         messenger_status: 'connected',
         messenger_connection_status: 'connected',
       })
-      .eq('id', accountId)
+      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
 
     if (updateErr) {
       console.error('[connectFacebookPage DB Update Error]:', updateErr)
-      // Fallback update with essential columns only
       await db
         .from('accounts')
         .update({
@@ -99,7 +102,7 @@ export async function connectFacebookPage(
           facebook_page_name: pageName || pageId,
           facebook_page_access_token: token,
         })
-        .eq('id', accountId)
+        .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
     }
 
     return {
@@ -119,6 +122,10 @@ export async function connectFacebookPage(
 
 export async function disconnectFacebookPage(accountId: string, supabase?: any): Promise<MessengerSession> {
   const db = getAdminClient()
+  if (!accountId) {
+    return { status: 'disconnected', pageId: '', pageName: '' }
+  }
+
   try {
     await db
       .from('accounts')
@@ -129,7 +136,7 @@ export async function disconnectFacebookPage(accountId: string, supabase?: any):
         messenger_status: 'disconnected',
         messenger_connection_status: 'disconnected',
       })
-      .eq('id', accountId)
+      .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
   } catch (err) {
     console.error('[disconnectFacebookPage Exception]:', err)
   }
