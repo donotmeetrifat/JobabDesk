@@ -27,9 +27,7 @@ export async function getMessengerStatus(accountId: string, supabase?: any): Pro
     const hasRealCredentials = Boolean(
       account?.facebook_page_id?.trim() && account?.facebook_page_access_token?.trim()
     )
-    const isConnected =
-      hasRealCredentials &&
-      (account?.messenger_connection_status === 'connected' || account?.messenger_status === 'connected')
+    const isConnected = hasRealCredentials
 
     return {
       status: isConnected ? 'connected' : 'disconnected',
