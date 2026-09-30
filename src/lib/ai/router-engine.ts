@@ -1,8 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 
-const MODEL_CHAIN = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-2.5-flash']
-
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,35 +8,67 @@ function getAdminClient() {
   )
 }
 
-export interface RouterEngineInput {
+export type SupportedChannel = 'whatsapp' | 'messenger' | 'sandbox'
+export type DetectedLanguage = 'bn' | 'en' | 'banglish'
+export type DetectedIntent = 'product_inquiry' | 'order_status' | 'general_faq' | 'human_escalation'
+
+export interface RouterInput {
   accountId: string
   contactId?: string | null
   customerPhone?: string | null
+  channel?: SupportedChannel
   messageText: string
 }
 
-export interface RouterEngineOutput {
+export interface RouterOutput {
   id?: string
-  intent: 'product_inquiry' | 'order_status' | 'general_faq' | 'human_escalation'
+  intent: DetectedIntent
+  language: DetectedLanguage
   aiReply: string
+  providerUsed: 'gemini' | 'groq' | 'openrouter' | 'offline_dictionary'
   modelUsed: string
-  confidence: number
+}
+
+// Simple heuristic language detector
+export function detectLanguage(text: string, preferredSetting = 'auto_detect'): DetectedLanguage {
+  if (preferredSetting === 'bn') return 'bn'
+  if (preferredSetting === 'en') return 'en'
+  if (preferredSetting === 'banglish') return 'banglish'
+
+  // Check for Bengali script characters
+  const hasBengaliScript = /[\u0980-\u09FF]/.test(text)
+  if (hasBengaliScript) return 'bn'
+
+  // Check for Banglish common words
+  const banglishKeywords = [
+    'bhai', 'apna', 'dam', 'dam?', 'koto', 'koto?', 'ache', 'ache?', 'naki', 'kobe', 'pabo', 'dorkar',
+    'shob', 'khub', 'valo', 'bhalo', 'akush', 'taka', 'tk', 'delivery', 'charge', 'koto', 'address', 'bhaiya', 'apni'
+  ]
+  const lower = text.toLowerCase()
+  const words = lower.split(/\s+/)
+  const isBanglish = words.some((w) => banglishKeywords.includes(w.replace(/[^a-z]/g, '')))
+
+  if (isBanglish) return 'banglish'
+  return 'en'
 }
 
 export async function handleIncomingCustomerMessage({
   accountId,
   contactId,
   customerPhone,
+  channel = 'sandbox',
   messageText,
-}: RouterEngineInput): Promise<RouterEngineOutput | null> {
+}: RouterInput): Promise<RouterOutput | null> {
   if (!messageText?.trim()) return null
 
   const db = getAdminClient()
 
-  // 1. Fetch Account settings
+  // 1. Fetch Account Channel & AI Settings
   const { data: account, error: acctErr } = await db
     .from('accounts')
-    .select('id, name, ai_auto_reply_enabled, ai_auto_reply_tone')
+    .select(
+      'id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language'
+    )
     .eq('id', accountId)
     .single()
 
@@ -47,10 +77,21 @@ export async function handleIncomingCustomerMessage({
     return null
   }
 
-  // If auto-reply is disabled for this account, stand down
+  // Verification 1: Master AI switch
   if (account.ai_auto_reply_enabled === false) {
     return null
   }
+
+  // Verification 2: Channel-specific switches
+  if (channel === 'whatsapp' && account.whatsapp_auto_reply_enabled === false) {
+    return null
+  }
+  if (channel === 'messenger' && account.messenger_auto_reply_enabled === false) {
+    return null
+  }
+
+  // Detect language
+  const detectedLang = detectLanguage(messageText, account.ai_primary_language || 'auto_detect')
 
   // 2. Fetch Ground Truth Context (Products & Customer Orders)
   const [productsRes, ordersRes] = await Promise.all([
@@ -81,179 +122,240 @@ export async function handleIncomingCustomerMessage({
   const products = productsRes.data ?? []
   const recentOrders = ordersRes.data ?? []
 
-  // Tone guidance
-  const toneSetting = account.ai_auto_reply_tone || 'friendly_bangla'
-  let toneGuidance = 'Speak in natural, warm, polite Bangladeshi Bengali.'
-  if (toneSetting === 'professional_english') {
-    toneGuidance = 'Speak in clear, professional English.'
-  } else if (toneSetting === 'short_direct') {
-    toneGuidance = 'Keep your answers concise, short, and directly to the point.'
+  // Build Language Instruction
+  let langGuidance = ''
+  if (detectedLang === 'bn') {
+    langGuidance = 'Respond in natural, polite Bangladeshi Bengali (বাংলা Script).'
+  } else if (detectedLang === 'banglish') {
+    langGuidance = 'Respond in natural Banglish (Bengali spoken language written in Latin/English alphabet). For example: "Bhai, Nivea face wash er dam ৳850. Stock e ache!".'
+  } else {
+    langGuidance = 'Respond in clear, professional English.'
   }
 
-  // Build System Prompt
-  const systemPrompt = `You are an AI customer support router and assistant for "${account.name}".
-${toneGuidance}
+  const systemPrompt = `You are an AI customer support router for "${account.name}".
+Language Requirement: ${langGuidance}
 
-Instructions & Rules:
+Instructions:
 1. Intent Classification:
-   Classify the customer's request into EXACTLY ONE of these categories:
-   - "product_inquiry": Questions about available items, prices, brands, stock, or product recommendations.
-   - "order_status": Questions about existing orders, delivery status, order numbers, or payment status.
-   - "general_faq": Greetings, store location, payment options, delivery policies, general chat.
-   - "human_escalation": Complaints, complex custom requests, urgent issues needing a human agent.
+   Classify customer message into EXACTLY ONE:
+   - "product_inquiry": Questions about available items, prices, brands, stock, or recommendations.
+   - "order_status": Questions about existing orders, delivery status, or order numbers.
+   - "general_faq": Greetings, location, payment methods, delivery charge, general chat.
+   - "human_escalation": Complaints, urgent issues needing a human agent.
 
-2. Ground Truth Constraints:
+2. Ground Truth Rules:
    - ONLY use the provided Product List and Customer Recent Orders.
-   - Never invent prices, product features, stock numbers, or fake order numbers.
-   - If a product is out of stock or not in the list, state politely that it's currently unavailable.
-   - Format prices in BDT (৳).
+   - NEVER invent non-existent products, prices, or orders.
+   - Format prices with BDT (৳).
 
-Available Product Catalogue:
+Product List:
 ${
   products.length === 0
-    ? 'No products cataloged yet.'
+    ? 'No products available.'
     : products
         .map(
           (p) =>
-            `- Name: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Category: ${p.category || 'N/A'}, Brand: ${p.brand || 'N/A'}${p.description ? `, Desc: ${p.description}` : ''}`
+            `- Name: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Category: ${p.category || 'N/A'}${p.description ? `, Desc: ${p.description}` : ''}`
         )
         .join('\n')
 }
 
-Customer's Recent Orders:
+Customer Orders:
 ${
   recentOrders.length === 0
-    ? 'No previous orders on record.'
+    ? 'No previous orders.'
     : recentOrders
         .map(
           (o) =>
-            `- Order #: ${o.order_number}, Status: ${o.status}, Payment: ${o.payment_status}, Total: ৳${o.total}, Date: ${new Date(o.created_at).toLocaleDateString()} (Items: ${(o.order_items || []).map((i: { product_name: string; quantity: number }) => `${i.product_name} x${i.quantity}`).join(', ')})`
+            `- Order #: ${o.order_number}, Status: ${o.status}, Payment: ${o.payment_status}, Total: ৳${o.total}, Date: ${new Date(o.created_at).toLocaleDateString()}`
         )
         .join('\n')
 }
 
-CRITICAL: Return ONLY valid JSON in this exact structure:
+Return ONLY valid JSON:
 {
   "intent": "product_inquiry" | "order_status" | "general_faq" | "human_escalation",
-  "reply": "string (the natural response to send to customer)",
-  "confidence": number (between 0.0 and 1.0)
+  "reply": "string",
+  "confidence": number
 }`
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    console.error('[AI Router] GEMINI_API_KEY not configured')
-    return null
-  }
+  // 3-TIER UNSTOPPABLE FALLBACK CHAIN
 
-  const ai = new GoogleGenAI({ apiKey })
+  let providerUsed: 'gemini' | 'groq' | 'openrouter' | 'offline_dictionary' = 'gemini'
+  let modelUsed = 'gemini-3.8-flash'
+  let rawResponse: string | null = null
 
-  let selectedModel = 'gemini-3.8-flash'
-  let responseText: string | null = null
+  // TIER 1: Gemini API Fallback Chain
+  const geminiApiKey = process.env.GEMINI_API_KEY
+  if (geminiApiKey) {
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey })
+    const geminiModels = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
 
-  // Fallback model loop
-  for (const modelName of MODEL_CHAIN) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: systemPrompt },
-              { text: `Customer Incoming Message:\n"${messageText.trim()}"` },
-            ],
-          },
-        ],
-        config: {
-          temperature: 0.2,
-        },
-      })
-
-      const raw = response.text?.trim()
-      if (raw) {
-        responseText = raw
-        selectedModel = modelName
-        break
+    for (const gModel of geminiModels) {
+      try {
+        const resp = await ai.models.generateContent({
+          model: gModel,
+          contents: [
+            { role: 'user', parts: [{ text: systemPrompt }, { text: `Customer Message:\n"${messageText}"` }] },
+          ],
+          config: { temperature: 0.2 },
+        })
+        const txt = resp.text?.trim()
+        if (txt) {
+          rawResponse = txt
+          providerUsed = 'gemini'
+          modelUsed = gModel
+          break
+        }
+      } catch {
+        // try next model
       }
-    } catch (err: unknown) {
-      console.warn(`[AI Router] Model ${modelName} failed, trying fallback...`, (err as Error)?.message)
     }
   }
 
-  if (!responseText) {
-    console.error('[AI Router] All fallback models failed to generate response.')
-    return null
+  // TIER 2: Groq Free API Fallback
+  if (!rawResponse && process.env.GROQ_API_KEY) {
+    try {
+      const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: messageText },
+          ],
+          temperature: 0.2,
+        }),
+      })
+      const groqJson = await groqResp.json()
+      const content = groqJson?.choices?.[0]?.message?.content?.trim()
+      if (content) {
+        rawResponse = content
+        providerUsed = 'groq'
+        modelUsed = 'llama-3.3-70b-versatile'
+      }
+    } catch {
+      // try tier 3
+    }
   }
 
-  // Parse JSON response
-  try {
-    const cleaned = responseText
-      .replace(/^```(?:json)?\n?/, '')
-      .replace(/\n?```$/, '')
-      .trim()
-
-    const parsed = JSON.parse(cleaned) as {
-      intent: 'product_inquiry' | 'order_status' | 'general_faq' | 'human_escalation'
-      reply: string
-      confidence?: number
-    }
-
-    const intent = parsed.intent || 'general_faq'
-    const aiReply = parsed.reply || 'ধন্যবাদ! আমরা শিগগিরই আপনার সাথে যোগাযোগ করব।'
-    const confidence = parsed.confidence ?? 1.0
-
-    // Log reply to ai_auto_replies table
-    const { data: logEntry, error: logErr } = await db
-      .from('ai_auto_replies')
-      .insert({
-        account_id: accountId,
-        contact_id: contactId || null,
-        incoming_message: messageText.trim(),
-        intent_detected: intent,
-        ai_reply: aiReply,
-        model_used: selectedModel,
-        confidence_score: confidence,
-        is_sent: true,
+  // TIER 3: OpenRouter API Fallback
+  if (!rawResponse && process.env.OPENROUTER_API_KEY) {
+    try {
+      const openRouterResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: messageText },
+          ],
+        }),
       })
-      .select('id')
-      .single()
-
-    if (logErr) {
-      console.error('[AI Router] Failed to insert log entry:', logErr.message)
+      const orJson = await openRouterResp.json()
+      const content = orJson?.choices?.[0]?.message?.content?.trim()
+      if (content) {
+        rawResponse = content
+        providerUsed = 'openrouter'
+        modelUsed = 'llama-3.2-11b-vision-free'
+      }
+    } catch {
+      // fallback to tier 4
     }
+  }
 
-    return {
-      id: logEntry?.id,
-      intent,
-      aiReply,
-      modelUsed: selectedModel,
-      confidence,
-    }
-  } catch (parseErr) {
-    console.error('[AI Router] JSON parse error:', parseErr, 'Raw response:', responseText)
-    // Fallback if model outputted plain text instead of JSON
-    const fallbackReply = responseText.replace(/^[\s\S]*"reply":\s*"/, '').replace(/[\s\S]*\}$/, '')
-    const { data: logEntry } = await db
-      .from('ai_auto_replies')
-      .insert({
-        account_id: accountId,
-        contact_id: contactId || null,
-        incoming_message: messageText.trim(),
-        intent_detected: 'general_faq',
-        ai_reply: fallbackReply,
-        model_used: selectedModel,
-        confidence_score: 0.9,
-        is_sent: true,
-      })
-      .select('id')
-      .single()
+  // TIER 4: Offline Dictionary & Product Matcher Engine
+  let intent: DetectedIntent = 'general_faq'
+  let aiReply = ''
 
-    return {
-      id: logEntry?.id,
-      intent: 'general_faq',
-      aiReply: fallbackReply,
-      modelUsed: selectedModel,
-      confidence: 0.9,
+  if (!rawResponse) {
+    providerUsed = 'offline_dictionary'
+    modelUsed = 'offline-rule-matcher'
+
+    // Simple offline keyword matcher
+    const textLower = messageText.toLowerCase()
+    const matchedProduct = products.find((p) => textLower.includes(p.name.toLowerCase()))
+
+    if (matchedProduct) {
+      intent = 'product_inquiry'
+      if (detectedLang === 'banglish') {
+        aiReply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'}`
+      } else if (detectedLang === 'bn') {
+        aiReply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'}`
+      } else {
+        aiReply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'}`
+      }
+    } else if (textLower.includes('order') || textLower.includes('delivery') || textLower.includes('status')) {
+      intent = 'order_status'
+      if (recentOrders.length > 0) {
+        const lastOrder = recentOrders[0]
+        if (detectedLang === 'banglish') {
+          aiReply = `Apnar porer order (${lastOrder.order_number}) er status: ${lastOrder.status}. Total bill: ৳${lastOrder.total}.`
+        } else if (detectedLang === 'bn') {
+          aiReply = `আপনার সর্বশেষ অর্ডারের (${lastOrder.order_number}) স্ট্যাটাস: ${lastOrder.status}। মোট বিল: ৳${lastOrder.total}।`
+        } else {
+          aiReply = `Your recent order (${lastOrder.order_number}) status is ${lastOrder.status}. Total: ৳${lastOrder.total}.`
+        }
+      } else {
+        aiReply = detectedLang === 'banglish' ? 'Apnar kono rasta order khuje pawa jayni.' : 'আপনার কোনো অর্ডার খুঁজে পাওয়া যায়নি।'
+      }
+    } else {
+      intent = 'general_faq'
+      if (detectedLang === 'banglish') {
+        aiReply = `Dhonnobad ${account.name} e jogajog korar jonno! Kivabe shahajjo korte pari?`
+      } else if (detectedLang === 'bn') {
+        aiReply = `${account.name}-এ যোগাযোগের জন্য ধন্যবাদ! কীভাবে সাহায্য করতে পারি?`
+      } else {
+        aiReply = `Thank you for reaching out to ${account.name}! How can we assist you today?`
+      }
     }
+  } else {
+    // Parse LLM rawResponse JSON
+    try {
+      const cleaned = rawResponse
+        .replace(/^[\s\S]*?\{/, '{')
+        .replace(/\}[^}]*$/, '}')
+        .trim()
+      const parsed = JSON.parse(cleaned) as { intent?: DetectedIntent; reply?: string }
+      intent = parsed.intent || 'general_faq'
+      aiReply = parsed.reply || rawResponse
+    } catch {
+      intent = 'general_faq'
+      aiReply = rawResponse
+    }
+  }
+
+  // 5. Log to ai_auto_replies database table
+  const { data: logEntry } = await db
+    .from('ai_auto_replies')
+    .insert({
+      account_id: accountId,
+      contact_id: contactId || null,
+      channel,
+      incoming_message: messageText.trim(),
+      detected_language: detectedLang,
+      intent_detected: intent,
+      ai_reply: aiReply,
+      provider_used: providerUsed,
+      model_used: modelUsed,
+    })
+    .select('id')
+    .single()
+
+  return {
+    id: logEntry?.id,
+    intent,
+    language: detectedLang,
+    aiReply,
+    providerUsed,
+    modelUsed,
   }
 }
