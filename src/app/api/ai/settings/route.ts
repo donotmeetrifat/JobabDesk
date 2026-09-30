@@ -10,7 +10,7 @@ export async function GET() {
     const { data: account, error } = await supabase
       .from('accounts')
       .select(
-        'name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_status, facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status'
+        'name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, delivery_policy, return_policy, special_instructions, ai_persona, whatsapp_phone_number_id, whatsapp_waba_id, whatsapp_access_token, whatsapp_status, facebook_page_id, facebook_page_name, facebook_page_access_token, messenger_status'
       )
       .eq('id', accountId)
       .single()
@@ -40,6 +40,10 @@ export async function PATCH(req: Request) {
       'ai_return_policy',
       'ai_auto_reply_tone',
       'ai_store_instructions',
+      'delivery_policy',
+      'return_policy',
+      'special_instructions',
+      'ai_persona',
       'whatsapp_phone_number_id',
       'whatsapp_waba_id',
       'whatsapp_access_token',

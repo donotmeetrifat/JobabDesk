@@ -73,7 +73,7 @@ export async function handleIncomingCustomerMessage({
   try {
     const { data: acctData } = await client
       .from('accounts')
-      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions')
+      .select('id, name, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, delivery_policy, return_policy, special_instructions, ai_persona')
       .eq('id', accountId)
       .maybeSingle()
     account = acctData
@@ -94,6 +94,10 @@ export async function handleIncomingCustomerMessage({
       ai_return_policy: '',
       ai_auto_reply_tone: 'friendly_bangla',
       ai_store_instructions: '',
+      delivery_policy: '',
+      return_policy: '',
+      special_instructions: '',
+      ai_persona: 'friendly_bangla',
     }
   }
 
@@ -171,24 +175,26 @@ export async function handleIncomingCustomerMessage({
   }
 
   // Build Tone Guidance
+  const effectivePersona = account.ai_persona || account.ai_auto_reply_tone || 'friendly_bangla'
   let toneGuidance = 'Friendly and helpful.'
-  if (account.ai_auto_reply_tone === 'professional_english') toneGuidance = 'Professional, formal, and precise.'
-  else if (account.ai_auto_reply_tone === 'short_direct') toneGuidance = 'Short, concise, and direct.'
+  if (effectivePersona === 'professional_english') toneGuidance = 'Professional, formal, and precise.'
+  else if (effectivePersona === 'short_direct') toneGuidance = 'Short, concise, and direct.'
 
-  const businessContextPrompt = [
-    account.ai_business_description ? `Business Overview & Products: ${account.ai_business_description}` : '',
-    account.ai_delivery_policy ? `Delivery Policy & Rates: ${account.ai_delivery_policy}` : '',
-    account.ai_return_policy ? `Return & Refund Policy: ${account.ai_return_policy}` : '',
-    account.ai_store_instructions ? `Additional Instructions: ${account.ai_store_instructions}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const businessContext = `
+Store Name: ${account.name}
+Business Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
+Delivery Rates & Policy: ${account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150'}
+Return & Exchange Policy: ${account.return_policy || account.ai_return_policy || 'Standard exchange policy applies'}
+Payment Methods & Instructions: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
+`.trim()
 
   const systemPrompt = `You are an AI customer support agent for "${account.name}".
 Language Requirement: ${langGuidance}
 Response Tone: ${toneGuidance}
 
-${businessContextPrompt ? `=== BUSINESS CONTEXT & SETUP RULES ===\n${businessContextPrompt}\n` : ''}
+=== BUSINESS CONTEXT & SETUP RULES ===
+${businessContext}
+
 Instructions:
 1. Intent Classification:
    Classify customer message into EXACTLY ONE:
