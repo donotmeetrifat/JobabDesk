@@ -16,6 +16,8 @@ import {
   Key,
   Globe,
   Hash,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -51,8 +53,16 @@ export function ChannelConnections() {
   const [showQrModal, setShowQrModal] = useState(false)
   const [persistentQr, setPersistentQr] = useState('')
 
-  // WhatsApp Linking Dual-Tab state
-  const [waTab, setWaTab] = useState<'qr' | 'phone'>('qr')
+  // WhatsApp Linking 3-Tab state
+  const [waTab, setWaTab] = useState<'meta' | 'qr' | 'phone'>('meta')
+  const [waPhoneNumberId, setWaPhoneNumberId] = useState('')
+  const [waAccessToken, setWaAccessToken] = useState('')
+  const [waWabaId, setWaWabaId] = useState('')
+  const [showAccessToken, setShowAccessToken] = useState(false)
+  const [savingMeta, setSavingMeta] = useState(false)
+  const [metaSuccessMsg, setMetaSuccessMsg] = useState('')
+  const [metaErrorMsg, setMetaErrorMsg] = useState('')
+
   const [waPhoneInput, setWaPhoneInput] = useState('')
   const [waPairingCode, setWaPairingCode] = useState('')
   const [loadingCode, setLoadingCode] = useState(false)
@@ -71,8 +81,11 @@ export function ChannelConnections() {
   const [fbError, setFbError] = useState('')
   const [copiedWebhook, setCopiedWebhook] = useState(false)
   const [copiedVerifyToken, setCopiedVerifyToken] = useState(false)
+  const [copiedMetaWebhook, setCopiedMetaWebhook] = useState(false)
+  const [copiedMetaVerifyToken, setCopiedMetaVerifyToken] = useState(false)
 
-  const webhookUrl = 'https://jobabdesk.vercel.app/api/webhooks/messenger'
+  const metaWebhookUrl = 'https://jobabdesk.vercel.app/api/webhooks/whatsapp'
+  const messengerWebhookUrl = 'https://jobabdesk.vercel.app/api/webhooks/messenger'
   const verifyToken = 'jobabdesk_verify_token'
 
   // Load WhatsApp & Facebook Messenger statuses
@@ -92,11 +105,27 @@ export function ChannelConnections() {
 
   async function fetchWaStatus() {
     try {
-      const res = await fetch('/api/channels/whatsapp/gateway')
-      if (res.ok) {
-        const data: WhatsAppStatus = await res.json()
+      const metaRes = await fetch('/api/channels/whatsapp/meta')
+      if (metaRes.ok) {
+        const metaData = await metaRes.json()
+        if (metaData.phoneNumberId) setWaPhoneNumberId(metaData.phoneNumberId)
+        if (metaData.accessToken) setWaAccessToken(metaData.accessToken)
+        if (metaData.wabaId) setWaWabaId(metaData.wabaId)
+        if (metaData.status === 'connected') {
+          setWaSession((prev) => ({
+            ...prev,
+            status: 'connected',
+            connectedNumber: metaData.phoneNumberId,
+          }))
+        }
+      }
+
+      const gwRes = await fetch('/api/channels/whatsapp/gateway')
+      if (gwRes.ok) {
+        const data: WhatsAppStatus = await gwRes.json()
         setWaSession((prev) => ({
           ...data,
+          status: prev.status === 'connected' ? 'connected' : data.status,
           qrCode: data.qrCode || prev.qrCode,
         }))
         if (data.qrCode) {
@@ -126,6 +155,52 @@ export function ChannelConnections() {
       // quiet catch
     } finally {
       setLoadingFb(false)
+    }
+  }
+
+  async function handleSaveMetaCredentials() {
+    setMetaErrorMsg('')
+    setMetaSuccessMsg('')
+
+    if (!waPhoneNumberId.trim() || !waAccessToken.trim()) {
+      setMetaErrorMsg('Phone Number ID and Permanent Access Token are required.')
+      return
+    }
+
+    setSavingMeta(true)
+    try {
+      const res = await fetch('/api/channels/whatsapp/meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumberId: waPhoneNumberId.trim(),
+          accessToken: waAccessToken.trim(),
+          wabaId: waWabaId.trim(),
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        if (data.status === 'connected') {
+          setWaSession((prev) => ({
+            ...prev,
+            status: 'connected',
+            connectedNumber: waPhoneNumberId.trim(),
+          }))
+          setMetaSuccessMsg('Meta WhatsApp Cloud API credentials saved successfully!')
+          setTimeout(() => setMetaSuccessMsg(''), 4000)
+          setShowQrModal(false)
+        } else {
+          setMetaErrorMsg('Failed to save Meta WhatsApp credentials.')
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setMetaErrorMsg(errData.error || 'Failed to save Meta WhatsApp credentials.')
+      }
+    } catch {
+      setMetaErrorMsg('Network error while saving Meta WhatsApp credentials.')
+    } finally {
+      setSavingMeta(false)
     }
   }
 
@@ -211,6 +286,8 @@ export function ChannelConnections() {
         setWaSession(data)
         setPersistentQr('')
         setWaPairingCode('')
+        setWaPhoneNumberId('')
+        setWaAccessToken('')
       }
     } catch {
       // quiet catch
@@ -275,7 +352,7 @@ export function ChannelConnections() {
     }
   }
 
-  function handleCopy(text: string, type: 'webhook' | 'token' | 'code') {
+  function handleCopy(text: string, type: 'webhook' | 'token' | 'code' | 'meta_webhook' | 'meta_token') {
     navigator.clipboard.writeText(text)
     if (type === 'webhook') {
       setCopiedWebhook(true)
@@ -286,6 +363,12 @@ export function ChannelConnections() {
     } else if (type === 'code') {
       setCopiedCode(true)
       setTimeout(() => setCopiedCode(false), 2000)
+    } else if (type === 'meta_webhook') {
+      setCopiedMetaWebhook(true)
+      setTimeout(() => setCopiedMetaWebhook(false), 2000)
+    } else if (type === 'meta_token') {
+      setCopiedMetaVerifyToken(true)
+      setTimeout(() => setCopiedMetaVerifyToken(false), 2000)
     }
   }
 
@@ -294,7 +377,7 @@ export function ChannelConnections() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card 1: WhatsApp Customer Support (QR Code Scanner & Phone Pairing) */}
+        {/* Card 1: WhatsApp Customer Support */}
         <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
           <div className="space-y-4">
             <div className="flex items-start justify-between">
@@ -304,10 +387,10 @@ export function ChannelConnections() {
                 </div>
                 <div>
                   <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
-                    WhatsApp Business Pairing
+                    WhatsApp Integration
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Connect your phone by QR Code or 8-digit Phone Pairing Code
+                    Connect Meta Official Cloud API, QR Code, or 8-digit Phone Code
                   </p>
                 </div>
               </div>
@@ -325,7 +408,7 @@ export function ChannelConnections() {
                 ) : waSession.status === 'connecting' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                     <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-600" />
-                    Waiting for Pairing...
+                    Waiting for Connection...
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
@@ -337,43 +420,13 @@ export function ChannelConnections() {
 
               {waSession.status === 'connected' && (
                 <div className="flex items-center justify-between text-xs pt-1 border-t">
-                  <span className="text-muted-foreground">Connected Phone:</span>
+                  <span className="text-muted-foreground">Connected ID / Phone:</span>
                   <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                    {waSession.connectedNumber || '+88017XXXXXXXX'}
+                    {waSession.connectedNumber || waPhoneNumberId || '+88017XXXXXXXX'}
                   </span>
                 </div>
               )}
             </div>
-
-            {/* Whapi Gateway Credentials inputs */}
-            {waSession.status !== 'connected' && (
-              <div className="space-y-3 pt-1 border-t">
-                <div>
-                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                    Whapi API Key / Token (Optional Gateway Instance)
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Paste Whapi API Key"
-                    value={whapiApiKey}
-                    onChange={(e) => setWhapiApiKey(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                    Instance ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. instance10492"
-                    value={whapiInstanceId}
-                    onChange={(e) => setWhapiInstanceId(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Action Buttons */}
             <div>
@@ -387,16 +440,11 @@ export function ChannelConnections() {
                 </Button>
               ) : (
                 <Button
-                  onClick={handleGenerateQr}
-                  disabled={generatingQr}
+                  onClick={() => setShowQrModal(true)}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
                 >
-                  {generatingQr ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <QrCode className="h-4 w-4" />
-                  )}
-                  📱 Generate & Scan Real WhatsApp QR Code
+                  <Smartphone className="h-4 w-4" />
+                  Configure WhatsApp Channel
                 </Button>
               )}
             </div>
@@ -404,7 +452,7 @@ export function ChannelConnections() {
 
           <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
             <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-            <span>0% Ban Risk with Jittered Human Typing Simulation (800ms–1500ms)</span>
+            <span>Meta Official WhatsApp Cloud API & 0% Ban Anti-Spam Safeguards</span>
           </div>
         </div>
 
@@ -492,10 +540,10 @@ export function ChannelConnections() {
         </div>
       </div>
 
-      {/* Dual-Tab WhatsApp Linking Modal */}
+      {/* 3-Tab WhatsApp Setup & Pairing Modal */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-card border rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 relative text-center">
+          <div className="bg-card border rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 relative">
             <button
               onClick={() => setShowQrModal(false)}
               className="absolute top-4 right-4 text-muted-foreground hover:text-foreground text-sm font-bold p-1.5 rounded-full hover:bg-muted"
@@ -503,45 +551,188 @@ export function ChannelConnections() {
               ✕
             </button>
 
-            <div className="space-y-1">
+            <div className="space-y-1 text-center">
               <h3 className="font-bold text-lg text-foreground flex items-center justify-center gap-2">
                 <Smartphone className="h-5 w-5 text-emerald-600" />
-                Link WhatsApp Business Account
+                Configure WhatsApp Business Connection
               </h3>
               <p className="text-xs text-muted-foreground">
-                Choose your preferred pairing method below
+                Select your preferred WhatsApp pairing method
               </p>
             </div>
 
-            {/* Tab Navigation Switcher */}
-            <div className="flex rounded-xl bg-muted p-1 gap-1 text-xs font-semibold">
+            {/* 3 Tab Navigation Switcher */}
+            <div className="flex rounded-xl bg-muted p-1 gap-1 text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => setWaTab('meta')}
+                className={`flex-1 py-2 px-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
+                  waTab === 'meta'
+                    ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0" /> Meta Cloud API
+              </button>
               <button
                 type="button"
                 onClick={() => setWaTab('qr')}
-                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
                   waTab === 'qr'
                     ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <QrCode className="h-3.5 w-3.5" /> Scan QR Code
+                <QrCode className="h-3.5 w-3.5 shrink-0" /> Scan QR Code
               </button>
               <button
                 type="button"
                 onClick={() => setWaTab('phone')}
-                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 px-1 rounded-lg transition-all flex items-center justify-center gap-1 ${
                   waTab === 'phone'
                     ? 'bg-card text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <Hash className="h-3.5 w-3.5" /> 8-Digit Phone Code
+                <Hash className="h-3.5 w-3.5 shrink-0" /> 8-Digit Code
               </button>
             </div>
 
-            {/* Tab 1: Scan QR Code */}
+            {/* Tab 1: Meta Official WhatsApp Cloud API */}
+            {waTab === 'meta' && (
+              <div className="space-y-4 animate-in fade-in text-left">
+                {metaSuccessMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" /> {metaSuccessMsg}
+                  </div>
+                )}
+                {metaErrorMsg && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-600 font-medium">
+                    {metaErrorMsg}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground mb-1">
+                      Phone Number ID <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 109876543210987"
+                      value={waPhoneNumberId}
+                      onChange={(e) => setWaPhoneNumberId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground mb-1">
+                      Permanent Access Token <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAccessToken ? 'text' : 'password'}
+                        placeholder="Paste Meta Permanent Access Token (EAAG...)"
+                        value={waAccessToken}
+                        onChange={(e) => setWaAccessToken(e.target.value)}
+                        className="w-full px-3 py-2 pr-10 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAccessToken(!showAccessToken)}
+                        className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                      >
+                        {showAccessToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground mb-1">
+                      WhatsApp Business Account ID (Optional WABA ID)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 100200300400500"
+                      value={waWabaId}
+                      onChange={(e) => setWaWabaId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border bg-background text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Meta Webhook Box */}
+                  <div className="bg-muted/40 rounded-2xl p-4 space-y-3 text-xs border">
+                    <div className="flex items-center gap-1.5 font-bold text-foreground">
+                      <Globe className="h-4 w-4 text-emerald-600" />
+                      Meta Webhook Configuration
+                    </div>
+                    <p className="text-muted-foreground text-[11px] leading-relaxed">
+                      Set these values in Meta Developer Console &rarr; WhatsApp &rarr; Configuration:
+                    </p>
+
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[11px] font-semibold text-muted-foreground">Callback Webhook URL:</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                            {metaWebhookUrl}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopy(metaWebhookUrl, 'meta_webhook')}
+                            className="h-8 px-2.5 text-xs shrink-0"
+                          >
+                            {copiedMetaWebhook ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[11px] font-semibold text-muted-foreground">Verify Token:</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
+                            {verifyToken}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopy(verifyToken, 'meta_token')}
+                            className="h-8 px-2.5 text-xs shrink-0"
+                          >
+                            {copiedMetaVerifyToken ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-muted-foreground pt-1">
+                        Subscribed Webhook Fields: <code className="font-mono text-emerald-600 font-bold">messages</code>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleSaveMetaCredentials}
+                  disabled={savingMeta}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl py-2.5"
+                >
+                  {savingMeta ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  )}
+                  Save Meta WhatsApp Credentials
+                </Button>
+              </div>
+            )}
+
+            {/* Tab 2: Scan QR Code */}
             {waTab === 'qr' && (
-              <div className="space-y-4 animate-in fade-in">
+              <div className="space-y-4 animate-in fade-in text-center">
                 <div className="p-4 bg-white rounded-2xl border flex items-center justify-center max-w-[220px] mx-auto shadow-inner">
                   {activeQrSvg ? (
                     activeQrSvg.startsWith('data:image/') || activeQrSvg.startsWith('http') ? (
@@ -581,7 +772,7 @@ export function ChannelConnections() {
               </div>
             )}
 
-            {/* Tab 2: Link with Phone Number */}
+            {/* Tab 3: Link with Phone Number */}
             {waTab === 'phone' && (
               <div className="space-y-4 text-left animate-in fade-in">
                 <div>
@@ -733,13 +924,13 @@ export function ChannelConnections() {
                     <span className="text-[11px] font-semibold text-muted-foreground">Callback Webhook URL:</span>
                     <div className="flex items-center gap-2 mt-0.5">
                       <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border text-[11px] font-mono text-foreground truncate">
-                        {webhookUrl}
+                        {messengerWebhookUrl}
                       </code>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleCopy(webhookUrl, 'webhook')}
+                        onClick={() => handleCopy(messengerWebhookUrl, 'webhook')}
                         className="h-8 px-2.5 text-xs shrink-0"
                       >
                         {copiedWebhook ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
@@ -797,3 +988,4 @@ export function ChannelConnections() {
     </div>
   )
 }
+
