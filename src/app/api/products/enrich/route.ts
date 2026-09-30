@@ -50,10 +50,14 @@ ${products.map((p, i) => `${i + 1}. name: "${p.name}"${p.brand ? `, current_bran
 Return exactly ${products.length} objects with rowIndex values: ${products.map(p => p.rowIndex).join(', ')}
 Format: [{"rowIndex":number,"brand":"string","category":"string","description":"string"}]`
 
-    // Same model chain as translate.mjs (confirmed working with this API key)
+    // All confirmed free-tier models — newest first
     const MODEL_CHAIN = [
       'gemini-3.8-flash',
+      'gemini-3.7-flash',
       'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-3-flash',
       'gemini-2.5-flash',
     ]
 
