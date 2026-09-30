@@ -2,31 +2,31 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Bot, Sparkles, Settings2, BarChart3 } from 'lucide-react';
+import { Bot, Sparkles, Settings2, BarChart3, Cpu } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AiPlayground } from '@/components/agents/ai-playground';
 import { AiUsageCard } from '@/components/agents/ai-usage';
 import { AiConfig } from '@/components/settings/ai-config';
+import { AiRouterPanel } from '@/components/agents/ai-router-panel';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 
-type Tab = 'playground' | 'setup' | 'usage';
+type Tab = 'router' | 'playground' | 'setup' | 'usage';
 
 export default function AgentsPage() {
   const t = useTranslations('Agents');
   const { accountRole } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;
-  const [tab, setTab] = useState<Tab>('playground');
+  const [tab, setTab] = useState<Tab>('router');
   const [decided, setDecided] = useState(false);
 
-  // Land first-time users on Setup, returning users on the Playground.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch('/api/ai/config');
         const data = await res.json().catch(() => ({}));
-        if (!cancelled) setTab(data?.configured ? 'playground' : 'setup');
+        if (!cancelled) setTab(data?.configured ? 'router' : 'setup');
       } catch {
         if (!cancelled) setTab('setup');
       } finally {
@@ -57,6 +57,9 @@ export default function AgentsPage() {
           className="mt-6"
         >
           <TabsList>
+            <TabsTrigger value="router">
+              <Cpu className="mr-1.5 h-4 w-4" /> AI Auto-Reply Router
+            </TabsTrigger>
             <TabsTrigger value="playground">
               <Sparkles className="mr-1.5 h-4 w-4" /> {t('tabPlayground')}
             </TabsTrigger>
@@ -69,6 +72,10 @@ export default function AgentsPage() {
               </TabsTrigger>
             )}
           </TabsList>
+
+          <TabsContent value="router" className="mt-4">
+            <AiRouterPanel />
+          </TabsContent>
 
           <TabsContent value="playground" className="mt-4">
             <AiPlayground onGoToSetup={() => setTab('setup')} />
