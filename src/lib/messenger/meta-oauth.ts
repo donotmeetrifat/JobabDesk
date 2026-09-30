@@ -101,11 +101,25 @@ export async function connectFacebookPage(
   pageData: { pageId: string; pageName?: string; accessToken?: string },
   supabase?: any
 ): Promise<MessengerSession> {
-  const pageId = pageData?.pageId?.trim() || ''
-  const pageName = pageData?.pageName?.trim() || ''
+  let pageId = pageData?.pageId?.trim() || ''
+  let pageName = pageData?.pageName?.trim() || ''
   const token = pageData?.accessToken?.trim() || ''
 
-  if (!pageId) {
+  // If token is provided, verify real Page ID and Page Name directly from Meta
+  if (token) {
+    try {
+      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(token)}`)
+      if (meRes.ok) {
+        const meData = await meRes.json()
+        if (meData?.id) {
+          pageId = meData.id
+          pageName = meData.name || pageName || 'Digiplus'
+        }
+      }
+    } catch {}
+  }
+
+  if (!pageId && !token) {
     return {
       status: 'disconnected',
       pageId: '',
@@ -115,7 +129,7 @@ export async function connectFacebookPage(
   }
 
   // Auto-subscribe page to Webhooks via Meta Graph API if token available
-  if (token) {
+  if (token && pageId) {
     try {
       await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
         method: 'POST',

@@ -135,15 +135,59 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // If explicit token was passed in from client, persist it to accounts and channel_connections tables
-    if (explicitPageToken && actualAccountId) {
-      pageToken = explicitPageToken.trim()
-      pageId = pageId || explicitPageId || ''
+    // If we have a pageToken, automatically verify and resolve the real Page ID and Page Name
+    // directly from Meta via /me and /me/accounts. This guarantees zero ID mismatches (fixes error #10).
+    if (pageToken) {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(pageToken)}`
+        )
+        if (meRes.ok) {
+          const meData = await meRes.json()
+          if (meData?.id) {
+            pageId = meData.id
+            pageName = meData.name || pageName || 'Digiplus'
+          }
+        }
+
+        // Also check /me/accounts in case a User Access Token or admin token was provided
+        const accsRes = await fetch(
+          `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+        )
+        if (accsRes.ok) {
+          const accsData = await accsRes.json()
+          const pages: any[] = accsData.data || []
+          if (pages.length > 0) {
+            const matched =
+              pages.find(
+                (p) =>
+                  p.id === pageId ||
+                  (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
+                  p.name?.toLowerCase().includes('digiplus')
+              ) || pages[0]
+
+            if (matched) {
+              pageId = matched.id
+              pageName = matched.name
+              if (matched.access_token) {
+                pageToken = matched.access_token
+              }
+            }
+          }
+        }
+      } catch (tokenInspectErr) {
+        console.warn('[Sync conversations token inspection warning]:', tokenInspectErr)
+      }
+    }
+
+    // Persist verified credentials to accounts and channel_connections tables
+    if (pageToken && actualAccountId) {
       try {
         await db
           .from('accounts')
           .update({
-            facebook_page_id: pageId,
+            facebook_page_id: pageId || '',
+            facebook_page_name: pageName || 'Digiplus',
             facebook_page_access_token: pageToken,
             messenger_status: 'connected',
           })
@@ -152,49 +196,65 @@ export async function syncFacebookMessengerConversations(
         console.warn('[Sync conversations persist token warning]:', saveErr)
       }
 
-      try {
-        await db.from('channel_connections').upsert(
-          {
-            account_id: actualAccountId,
-            channel_type: 'messenger',
-            external_account_id: pageId,
-            display_name: pageName || pageId,
-            is_active: true,
-            metadata: { access_token: pageToken },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'account_id,channel_type,external_account_id' }
-        )
-      } catch {}
+      if (pageId) {
+        try {
+          await db.from('channel_connections').upsert(
+            {
+              account_id: actualAccountId,
+              channel_type: 'messenger',
+              external_account_id: pageId,
+              display_name: pageName || pageId,
+              is_active: true,
+              metadata: { access_token: pageToken },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'account_id,channel_type,external_account_id' }
+          )
+        } catch {}
+      }
     }
 
-    if (!pageId || !pageToken) {
+    if (!pageToken) {
       console.warn('[Sync Facebook Messenger]: No page credentials found for accountId:', accountId)
       return {
         success: false,
         tokenMissing: true,
         conversationsCount: 0,
         messagesCount: 0,
-        error: 'Facebook Page ID or Page Access Token is missing. Please enter your Page Access Token to sync.',
+        error: 'Facebook Page Access Token is missing. Please enter your Page Access Token to sync.',
       }
     }
 
     const ownerUserId = await resolveOwnerUserId(db, actualAccountId, explicitUserId)
 
     // 2. Query Meta Graph API for conversations
-    // fields: id, updated_time, participants, senders, messages
-    const graphUrl = `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=id,updated_time,participants,senders,messages.limit(20){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+    // Using /me/conversations guarantees that the token queries its own authenticated Page conversations,
+    // avoiding error #10 ("Requested Page Does Not Match Page Access Token").
+    let graphUrl = `https://graph.facebook.com/v19.0/me/conversations?fields=id,updated_time,participants,senders,messages.limit(20){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
 
-    const res = await fetch(graphUrl)
-    const data = await res.json()
+    let res = await fetch(graphUrl)
+    let data = await res.json()
+
+    // If /me/conversations returned error and pageId is available, retry with /${pageId}/conversations
+    if ((!res.ok || data.error) && pageId) {
+      const fallbackUrl = `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=id,updated_time,participants,senders,messages.limit(20){id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      const fallbackRes = await fetch(fallbackUrl)
+      const fallbackData = await fallbackRes.json()
+      if (fallbackRes.ok && !fallbackData.error) {
+        res = fallbackRes
+        data = fallbackData
+      }
+    }
 
     if (!res.ok || data.error) {
       console.error('[Meta Graph API conversations error]:', data.error)
+      const errMsg = data.error?.message || 'Failed to fetch conversations from Meta Graph API.'
       return {
         success: false,
+        tokenMissing: errMsg.toLowerCase().includes('token'),
         conversationsCount: 0,
         messagesCount: 0,
-        error: data.error?.message || 'Failed to fetch conversations from Meta Graph API.',
+        error: errMsg,
       }
     }
 
