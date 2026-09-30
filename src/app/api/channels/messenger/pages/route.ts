@@ -3,6 +3,52 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 export const dynamic = 'force-dynamic'
 
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url)
+  const code = searchParams.get('code')
+  const error = searchParams.get('error_description') || searchParams.get('error')
+
+  if (error) {
+    return new Response(
+      `<!DOCTYPE html>
+<html>
+<head><title>Facebook Authentication</title></head>
+<body>
+<script>
+  try {
+    if (window.opener) {
+      window.opener.postMessage({ type: 'FB_PAGE_CONNECT', event: 'CANCEL', error: ${JSON.stringify(error)} }, '*');
+    }
+  } catch (e) {}
+  window.close();
+</script>
+<p style="font-family: sans-serif; text-align: center; margin-top: 40px;">Authentication cancelled. Closing window...</p>
+</body>
+</html>`,
+      { headers: { 'Content-Type': 'text/html' } }
+    )
+  }
+
+  return new Response(
+    `<!DOCTYPE html>
+<html>
+<head><title>Facebook Authentication</title></head>
+<body>
+<script>
+  try {
+    if (window.opener) {
+      window.opener.postMessage({ type: 'FB_PAGE_CONNECT', event: 'FINISH', code: ${JSON.stringify(code || '')} }, '*');
+    }
+  } catch (e) {}
+  window.close();
+</script>
+<p style="font-family: sans-serif; text-align: center; margin-top: 40px;">Authentication successful! Loading pages...</p>
+</body>
+</html>`,
+    { headers: { 'Content-Type': 'text/html' } }
+  )
+}
+
 export async function POST(req: Request) {
   try {
     const { accountId } = await requireRole('agent')

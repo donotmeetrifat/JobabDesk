@@ -365,47 +365,72 @@ export function ChannelConnections() {
   const [fetchingFbPages, setFetchingFbPages] = useState(false)
   const [showManualFbInput, setShowManualFbInput] = useState(false)
 
-  async function handle1ClickFbConnect() {
+  function handle1ClickFbConnect() {
     setFbError('')
     setFetchingFbPages(true)
 
     const appId = metaAppId || process.env.NEXT_PUBLIC_META_APP_ID || '1789555715522515'
-    await loadFacebookSDK(appId)
+    const redirectUri = window.location.origin + '/api/channels/messenger/pages'
 
-    if (typeof window !== 'undefined' && (window as any).FB) {
-      ;(window as any).FB.login(
-        async (response: any) => {
-          if (response && response.authResponse) {
-            const userAccessToken = response.authResponse.accessToken
-            try {
-              const res = await fetch('/api/channels/messenger/pages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userAccessToken }),
-              })
-              const data = await res.json()
-              if (res.ok && data.pages && data.pages.length > 0) {
-                setFbPagesList(data.pages)
-              } else {
-                setFbError(data.error || 'No Facebook Pages found under your account. Make sure you are an Admin of a Facebook Page.')
-              }
-            } catch (err: any) {
-              setFbError(err?.message || 'Error fetching Facebook Pages.')
-            } finally {
-              setFetchingFbPages(false)
+    const oauthUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${encodeURIComponent(
+      appId
+    )}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&scope=pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata&response_type=code`
+
+    let handled = false
+    const safeStopFetching = () => {
+      if (!handled) {
+        handled = true
+        setFetchingFbPages(false)
+      }
+    }
+
+    const timer = setTimeout(() => {
+      safeStopFetching()
+      setFbError('Login timed out or popup was closed. Please check popups or try again.')
+    }, 30000)
+
+    const messageHandler = async (event: MessageEvent) => {
+      if (event.data?.type === 'FB_PAGE_CONNECT') {
+        clearTimeout(timer)
+        window.removeEventListener('message', messageHandler)
+
+        if (event.data.event === 'FINISH' && event.data.code) {
+          try {
+            const res = await fetch('/api/channels/messenger/pages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code: event.data.code }),
+            })
+            const data = await res.json()
+            if (res.ok && data.pages && data.pages.length > 0) {
+              setFbPagesList(data.pages)
+            } else {
+              setFbError(data.error || 'No Facebook Pages found. Make sure you are an Admin of a Facebook Page.')
             }
-          } else {
-            setFbError('Facebook Login was cancelled.')
-            setFetchingFbPages(false)
+          } catch (err: any) {
+            setFbError(err?.message || 'Error fetching Facebook Pages.')
+          } finally {
+            safeStopFetching()
           }
-        },
-        {
-          scope: 'pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata',
+        } else {
+          setFbError(event.data.error || 'Facebook Login was cancelled.')
+          safeStopFetching()
         }
-      )
-    } else {
-      setFbError('Meta Facebook SDK failed to load. Please try again.')
-      setFetchingFbPages(false)
+      }
+    }
+
+    window.addEventListener('message', messageHandler)
+
+    // Synchronous popup execution to bypass browser popup blockers
+    const popup = window.open(oauthUrl, 'FBPagesPopup', 'width=600,height=750,scrollbars=yes,resizable=yes')
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      clearTimeout(timer)
+      window.removeEventListener('message', messageHandler)
+      safeStopFetching()
+      setFbError('Browser blocked the popup window! Please click the popup icon 🚫 in your browser address bar to allow popups.')
     }
   }
 
