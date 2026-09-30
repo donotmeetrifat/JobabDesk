@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { getWhatsAppStatus, generateWhatsAppQR, confirmWhatsAppPairing } from '@/lib/whatsapp/qr-engine'
+import {
+  getWhatsAppStatus,
+  generateWhatsAppQR,
+  generatePairingCode,
+  confirmWhatsAppPairing,
+} from '@/lib/whatsapp/qr-engine'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +26,11 @@ export async function POST(req: Request) {
 
     if (body.action === 'confirm') {
       const session = await confirmWhatsAppPairing(accountId, body.phoneNumber, supabase)
+      return NextResponse.json(session)
+    }
+
+    if (body.action === 'pairing_code') {
+      const session = await generatePairingCode(accountId, body.phoneNumber, supabase)
       return NextResponse.json(session)
     }
 
