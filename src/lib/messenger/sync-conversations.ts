@@ -426,29 +426,68 @@ export async function syncFacebookMessengerConversations(
       if (!customerPsid) {
         customerPsid = rawConv.id
       }
-      if (!customerName) {
+
+      // 2. Discover customer participant and real name
+      if (customer?.name && (!pageName || customer.name.toLowerCase() !== pageName.toLowerCase())) {
+        customerName = customer.name
+      }
+
+      // Fetch customer's real Facebook Name and Profile Picture via Meta Graph API
+      let customerAvatarUrl = ''
+      if (customerPsid && customerPsid !== pageId && pageToken) {
+        try {
+          const profileRes = await fetch(
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageToken)}`
+          )
+          if (profileRes.ok) {
+            const profileJson = await profileRes.json()
+            const resolvedName = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
+            if (resolvedName) {
+              customerName = resolvedName
+            }
+            if (profileJson.profile_pic) {
+              customerAvatarUrl = profileJson.profile_pic
+            }
+          }
+        } catch (fetchProfileErr) {
+          console.warn('[Sync customer profile fetch warning]:', fetchProfileErr)
+        }
+      }
+
+      if (!customerName || customerName === 'Unknown') {
         customerName = `Messenger User (${customerPsid.slice(-4)})`
       }
       const customerEmail = customer?.email || null
 
-      // 3. Find or create Contact in contacts table (NO channel column exists in contacts table!)
+      // 3. Find or create Contact in contacts table
       let contactId = ''
       const { data: existingContact } = await db
         .from('contacts')
-        .select('id, name')
+        .select('id, name, avatar_url, company')
         .eq('account_id', actualAccountId)
         .eq('phone', customerPsid)
         .maybeSingle()
 
       if (existingContact) {
         contactId = existingContact.id
-        // Update name if we now have a real Facebook name
-        if (customer.name && existingContact.name !== customer.name) {
-          await db
-            .from('contacts')
-            .update({ name: customer.name, updated_at: new Date().toISOString() })
-            .eq('id', existingContact.id)
+        // Update contact with real Facebook name, avatar, and company
+        const updates: any = {
+          updated_at: new Date().toISOString(),
+          company: 'Facebook Messenger',
         }
+        if (
+          customerName &&
+          (!existingContact.name ||
+            existingContact.name === 'Unknown' ||
+            existingContact.name.startsWith('Messenger User') ||
+            existingContact.name !== customerName)
+        ) {
+          updates.name = customerName
+        }
+        if (customerAvatarUrl && existingContact.avatar_url !== customerAvatarUrl) {
+          updates.avatar_url = customerAvatarUrl
+        }
+        await db.from('contacts').update(updates).eq('id', existingContact.id)
       } else {
         const contactPayload = {
           account_id: actualAccountId,
@@ -456,6 +495,8 @@ export async function syncFacebookMessengerConversations(
           phone: customerPsid,
           name: customerName,
           email: customerEmail,
+          avatar_url: customerAvatarUrl || null,
+          company: 'Facebook Messenger',
         }
 
         let { data: newContact, error: createContactErr } = await db

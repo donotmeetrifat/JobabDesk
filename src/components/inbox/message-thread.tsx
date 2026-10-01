@@ -862,10 +862,8 @@ export function MessageThread({
     [conversation, onAssignChange, t],
   );
 
-  // Empty state — same WhatsApp-style doodle background as the active
-  // thread below, so swapping between empty/selected doesn't change the
-  // pattern under the user's eye.
-  if (!conversation || !contact) {
+  // Empty state — only show when no conversation is selected
+  if (!conversation) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
@@ -881,7 +879,30 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
+  const isMessenger =
+    contact?.company === "Facebook Messenger" ||
+    contact?.channel === "messenger" ||
+    (contact?.phone && !contact.phone.startsWith("+") && !isNaN(Number(contact.phone)));
+
+  const effectiveContact: Contact = contact || {
+    id: conversation.contact_id || conversation.id,
+    user_id: conversation.user_id || "",
+    account_id: (conversation as any).account_id || "",
+    phone: "",
+    name: isMessenger ? `Messenger User (${conversation.id.slice(-4)})` : t("customer"),
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    company: isMessenger ? "Facebook Messenger" : undefined,
+  };
+
+  const displayName =
+    effectiveContact.name && effectiveContact.name !== "Unknown"
+      ? effectiveContact.name
+      : isMessenger
+      ? `Messenger User (${effectiveContact.phone?.slice(-4) || conversation.id.slice(-4)})`
+      : effectiveContact.phone || contactHandle(effectiveContact);
+  const initials = displayName.charAt(0).toUpperCase();
+
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -918,27 +939,57 @@ export function MessageThread({
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden shadow-inner">
+            {effectiveContact.avatar_url ? (
+              <img
+                src={effectiveContact.avatar_url}
+                alt={displayName}
+                className="h-9 w-9 rounded-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = "none";
+                }}
+              />
+            ) : (
+              initials
+            )}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
+            <div className="flex items-center gap-1.5">
+              <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
+              {isMessenger && (
+                <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.2 text-[9px] font-semibold text-blue-600 dark:text-blue-400">
+                  Messenger
+                </span>
+              )}
+            </div>
             <p className="truncate text-xs text-muted-foreground">
-              {contactHandle(contact)}
+              {isMessenger
+                ? effectiveContact.phone
+                  ? `ID: ${effectiveContact.phone}`
+                  : "Facebook Messenger"
+                : contactHandle(effectiveContact)}
             </p>
           </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+          {/* Session / Channel status badge */}
+          {isMessenger ? (
+            <Badge
+              variant="outline"
+              className="ml-1 hidden gap-1 border-blue-500/30 bg-blue-500/10 text-[10px] text-blue-600 dark:text-blue-400 sm:inline-flex sm:ml-2 font-medium"
+            >
+              Messenger Live Chat
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                sessionInfo.expired ? "text-red-400" : "text-primary"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

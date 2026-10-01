@@ -156,10 +156,20 @@ export async function POST(request: Request) {
       .eq('account_id', accountId)
       .maybeSingle()
 
-    const contact = (convData as any)?.contact
+    let contact = (convData as any)?.contact
+    if (!contact && convData?.contact_id) {
+      const { data: directContact } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('id', convData.contact_id)
+        .maybeSingle()
+      contact = directContact
+    }
+
     const isMessenger =
       contact?.channel === 'messenger' ||
-      (contact?.phone && !contact.phone.startsWith('+') && !isNaN(Number(contact.phone)) && contact.phone.length > 10)
+      contact?.company === 'Facebook Messenger' ||
+      (contact?.phone && !contact.phone.startsWith('+') && !isNaN(Number(contact.phone)) && contact.phone.length > 9)
 
     if (isMessenger && content_text) {
       const { data: accountRow } = await supabase
@@ -168,11 +178,21 @@ export async function POST(request: Request) {
         .eq('id', accountId)
         .maybeSingle()
 
-      const fbToken = accountRow?.facebook_page_access_token
+      let fbToken = accountRow?.facebook_page_access_token
+      if (!fbToken) {
+        const { data: chan } = await supabase
+          .from('channel_connections')
+          .select('metadata')
+          .eq('account_id', accountId)
+          .eq('channel_type', 'messenger')
+          .maybeSingle()
+        fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken
+      }
+
       if (fbToken) {
         const psid = contact.phone
         const fbRes = await fetch(
-          `https://graph.facebook.com/v19.0/me/messages?access_token=${encodeURIComponent(fbToken)}`,
+          `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(fbToken)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

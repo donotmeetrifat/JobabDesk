@@ -125,18 +125,34 @@ export async function POST(req: Request) {
 
     if (existingContact) {
       contactId = existingContact.id
+      if (pageAccessToken && (!existingContact.name || existingContact.name === 'Unknown' || existingContact.name.startsWith('Messenger User'))) {
+        try {
+          const profileRes = await fetch(
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
+          )
+          const profileJson = await profileRes.json()
+          const updates: any = { updated_at: new Date().toISOString(), company: 'Facebook Messenger' }
+          const resolved = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim() || profileJson.name
+          if (resolved) updates.name = resolved
+          if (profileJson.profile_pic) updates.avatar_url = profileJson.profile_pic
+          await db.from('contacts').update(updates).eq('id', existingContact.id)
+        } catch {}
+      }
     } else {
       let customerName = `Messenger User (${customerPsid.slice(-4)})`
+      let customerAvatarUrl = ''
       if (pageAccessToken) {
         try {
           const profileRes = await fetch(
-            `https://graph.facebook.com/v19.0/${customerPsid}?fields=first_name,last_name,name&access_token=${encodeURIComponent(pageAccessToken)}`
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
           )
           const profileJson = await profileRes.json()
-          if (profileJson.name) {
-            customerName = profileJson.name
-          } else if (profileJson.first_name) {
-            customerName = `${profileJson.first_name} ${profileJson.last_name || ''}`.trim()
+          const resolved = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim() || profileJson.name
+          if (resolved) {
+            customerName = resolved
+          }
+          if (profileJson.profile_pic) {
+            customerAvatarUrl = profileJson.profile_pic
           }
         } catch {
           // ignore profile fetch failure
@@ -150,6 +166,8 @@ export async function POST(req: Request) {
           user_id: ownerUserId,
           phone: customerPsid,
           name: customerName,
+          avatar_url: customerAvatarUrl || null,
+          company: 'Facebook Messenger',
         })
         .select('id')
         .maybeSingle()

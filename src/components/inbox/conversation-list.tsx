@@ -493,7 +493,16 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const isMessenger =
+    contact?.company === "Facebook Messenger" ||
+    contact?.channel === "messenger" ||
+    (contact?.phone && !contact.phone.startsWith("+") && !isNaN(Number(contact.phone)));
+  const displayName =
+    contact?.name && contact.name !== "Unknown"
+      ? contact.name
+      : isMessenger
+      ? `Messenger User (${contact?.phone?.slice(-4) || conversation.id.slice(-4)})`
+      : contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -515,12 +524,16 @@ function ConversationItem({
       )}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden">
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
             alt={displayName}
             className="h-10 w-10 rounded-full object-cover"
+            onError={(e) => {
+              // Hide broken image so initials show
+              (e.target as HTMLElement).style.display = 'none';
+            }}
           />
         ) : (
           initials
@@ -534,7 +547,7 @@ function ConversationItem({
             <span className="truncate text-sm font-medium text-foreground">
               {displayName}
             </span>
-            {contact?.channel === "messenger" && (
+            {isMessenger && (
               <span className="shrink-0 rounded bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-blue-500">
                 Messenger
               </span>

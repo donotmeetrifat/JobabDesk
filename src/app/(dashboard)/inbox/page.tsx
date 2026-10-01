@@ -13,8 +13,9 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import Link from "next/link";
 import { toast } from "sonner";
-import { WifiOff, RefreshCw, KeyRound, ExternalLink, X } from "lucide-react";
+import { WifiOff, RefreshCw, KeyRound, ExternalLink, X, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
@@ -314,6 +315,45 @@ function InboxPageInner() {
 
     checkConnection();
   }, [messengerPageId]);
+
+  // Automatic background Messenger sync every 15s so users never need to click sync manually
+  useEffect(() => {
+    if (!messengerConnected) return;
+
+    const interval = setInterval(() => {
+      let pageIdToSend = messengerPageId;
+      let tokenToSend = "";
+
+      if (typeof window !== "undefined") {
+        try {
+          const cached = localStorage.getItem("jobabdesk_fb_session");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            tokenToSend = parsed.accessToken || "";
+            if (!pageIdToSend) pageIdToSend = parsed.pageId || "";
+          }
+        } catch {}
+      }
+
+      fetch("/api/channels/messenger/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pageId: pageIdToSend || undefined,
+          accessToken: tokenToSend || undefined,
+        }),
+      })
+        .then((res) => res.json())
+        .then((syncRes) => {
+          if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
+            setResyncToken((prev) => prev + 1);
+          }
+        })
+        .catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [messengerConnected, messengerPageId]);
 
   const handleSyncMessenger = useCallback(
     async (customToken?: string) => {
@@ -644,9 +684,22 @@ function InboxPageInner() {
             );
           }
         }
+      } else if (
+        !deepLinkConvId &&
+        !activeConversation &&
+        loaded.length > 0 &&
+        typeof window !== "undefined" &&
+        window.innerWidth >= 1024 &&
+        !autoSelectedForDeepLinkRef.current
+      ) {
+        const first = loaded[0];
+        setActiveConversation(first);
+        setActiveContact(first.contact ?? null);
+        autoSelectedForDeepLinkRef.current = first.id;
+        router.replace(`/inbox?c=${first.id}`, { scroll: false });
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, activeConversation?.id, router]
   );
 
   const handleSelectConversation = useCallback(
@@ -703,6 +756,35 @@ function InboxPageInner() {
     autoSelectedForDeepLinkRef.current = null;
     router.replace("/inbox", { scroll: false });
   }, [router]);
+
+  // If activeConversation has a contact_id but activeContact is missing,
+  // load the contact directly from contacts table and update state.
+  useEffect(() => {
+    if (activeConversation?.contact_id && !activeContact) {
+      const supabase = createClient();
+      supabase
+        .from("contacts")
+        .select("*, contact_tags(tags(*))")
+        .eq("id", activeConversation.contact_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            const normalized = {
+              ...data,
+              tags: (data.contact_tags ?? [])
+                .map((ct: any) => ct.tags)
+                .filter((t: any) => t != null),
+            };
+            setActiveContact(normalized);
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === activeConversation.id ? { ...c, contact: normalized } : c
+              )
+            );
+          }
+        });
+    }
+  }, [activeConversation?.id, activeConversation?.contact_id, activeContact]);
 
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
@@ -766,53 +848,72 @@ function InboxPageInner() {
 
   return (
     <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
-      {/* Facebook Messenger connected banner with 1-click sync */}
-      {messengerConnected && (
-        <div className="flex shrink-0 items-center justify-between border-b border-blue-500/20 bg-blue-500/10 px-4 py-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="font-semibold text-blue-500 dark:text-blue-400">
-              Facebook Messenger Connected:
+      {/* Channels Connection Bar: Messenger & WhatsApp side by side */}
+      <div className="flex flex-wrap shrink-0 items-center justify-between border-b border-border bg-card/80 backdrop-blur-xs px-4 py-2 gap-3 text-xs">
+        {/* Messenger Status */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-2.5 py-1">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                messengerConnected ? "bg-blue-500 animate-pulse" : "bg-muted-foreground"
+              )}
+            />
+            <span className="font-semibold text-blue-600 dark:text-blue-400">
+              Messenger:
             </span>
-            <span className="text-foreground font-medium">
-              {messengerPageName || "Facebook Page"}
+            <span className="font-medium text-foreground">
+              {messengerConnected ? (messengerPageName || "Connected") : "Not Connected"}
             </span>
             {tokenMissing && (
-              <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-500">
+              <span className="ml-1 inline-flex items-center rounded-full bg-amber-500/20 px-1.5 py-0.2 text-[9px] font-semibold text-amber-500">
                 Token Required
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowTokenModal(true)}
-              className="flex items-center gap-1.5 rounded border border-blue-500/40 bg-background/90 hover:bg-background px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 transition-colors shadow-xs"
-              title="Set or update Facebook Page Access Token"
-            >
-              <KeyRound className="h-3 w-3" />
-              Set / Update Token
-            </button>
-            <button
-              onClick={() => handleSyncMessenger()}
-              disabled={isSyncingMessenger}
-              className="flex items-center gap-1.5 rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
-              {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
-            </button>
-          </div>
+          <button
+            onClick={() => setShowTokenModal(true)}
+            className="flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted transition-colors shadow-2xs"
+            title="Set or update Facebook Page Access Token"
+          >
+            <KeyRound className="h-3 w-3 text-blue-500" />
+            Set Token
+          </button>
+          <button
+            onClick={() => handleSyncMessenger()}
+            disabled={isSyncingMessenger}
+            className="flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
+            {isSyncingMessenger ? "Syncing..." : "Sync"}
+          </button>
         </div>
-      )}
 
-      {/* WhatsApp connection banner — shown only if NEITHER WhatsApp NOR Messenger is connected */}
-      {whatsappConnected === false && !messengerConnected && (
-        <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
-          <WifiOff className="h-4 w-4 text-amber-400" />
-          <p className="text-xs text-amber-400">
-            {t("whatsappNotConnected")}
-          </p>
+        {/* WhatsApp Status */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1">
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                whatsappConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+              )}
+            />
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              WhatsApp:
+            </span>
+            <span className="font-medium text-foreground">
+              {whatsappConnected ? "Connected" : "Not Connected"}
+            </span>
+          </div>
+          <Link
+            href="/settings"
+            className="flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 transition-colors shadow-2xs"
+          >
+            <MessageCircle className="h-3 w-3" />
+            {whatsappConnected ? "WhatsApp Settings" : "Connect WhatsApp"}
+          </Link>
         </div>
-      )}
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel: Conversation list.
@@ -877,7 +978,7 @@ function InboxPageInner() {
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar contact={activeContact} conversation={activeConversation} />
           </div>
         )}
       </div>

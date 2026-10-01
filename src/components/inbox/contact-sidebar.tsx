@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Conversation, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
@@ -16,6 +16,7 @@ import {
   StickyNote,
   Plus,
   Bot,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,11 +26,23 @@ import { contactHandle } from "@/lib/whatsapp/wa-identity";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  conversation?: Conversation | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+
+  const effectiveContact: Contact | null = contact || (conversation ? {
+    id: conversation.contact_id || conversation.id,
+    user_id: conversation.user_id || "",
+    account_id: (conversation as any).account_id || "",
+    phone: "",
+    name: "Messenger User",
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    company: "Facebook Messenger",
+  } : null);
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -38,11 +51,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
-  const [aiMuted, setAiMuted] = useState(contact?.ai_auto_reply_muted ?? false);
+  const [aiMuted, setAiMuted] = useState(effectiveContact?.ai_auto_reply_muted ?? false);
 
   useEffect(() => {
-    setAiMuted(contact?.ai_auto_reply_muted ?? false);
-  }, [contact]);
+    setAiMuted(effectiveContact?.ai_auto_reply_muted ?? false);
+  }, [effectiveContact?.ai_auto_reply_muted]);
 
   const handleToggleAiMute = useCallback(async () => {
     if (!contact) return;
@@ -103,20 +116,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   }, [fetchContactData]);
 
   const handleCopyPhone = useCallback(async () => {
-    // Copies whatever the row displays — a BSUID-only contact has no
-    // phone number to copy, but its @username still identifies them.
-    const handle = contact ? contactHandle(contact) : '';
+    const handle = effectiveContact?.phone || (effectiveContact ? contactHandle(effectiveContact) : '');
     if (!handle) return;
     await navigator.clipboard.writeText(handle);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    // Dep is the whole `contact` object (not `contact?.phone`) so the
-    // React Compiler's inference agrees with the manual dep list —
-    // fixes the `preserve-manual-memoization` lint error.
-  }, [contact]);
+  }, [effectiveContact]);
 
   const handleAddNote = useCallback(async () => {
-    if (!contact || !newNote.trim()) return;
+    if (!effectiveContact || !newNote.trim()) return;
     if (!accountId) return;
     setAddingNote(true);
 
@@ -129,7 +137,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     const { data, error } = await supabase
       .from("contact_notes")
       .insert({
-        contact_id: contact.id,
+        contact_id: effectiveContact.id,
         account_id: accountId,
         user_id: user?.id,
         note_text: newNote.trim(),
@@ -142,9 +150,9 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       setNewNote("");
     }
     setAddingNote(false);
-  }, [contact, newNote, accountId]);
+  }, [effectiveContact, newNote, accountId]);
 
-  if (!contact) {
+  if (!effectiveContact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
         <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
@@ -152,7 +160,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
+  const isMessenger =
+    effectiveContact.company === "Facebook Messenger" ||
+    (effectiveContact.phone && !effectiveContact.phone.startsWith("+") && !isNaN(Number(effectiveContact.phone)));
+  const displayName =
+    effectiveContact.name && effectiveContact.name !== "Unknown"
+      ? effectiveContact.name
+      : isMessenger
+      ? `Messenger User (${effectiveContact.phone?.slice(-4) || ""})`
+      : contactHandle(effectiveContact);
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -161,12 +177,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
-              {contact.avatar_url ? (
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground overflow-hidden shadow-inner">
+              {effectiveContact.avatar_url ? (
                 <img
-                  src={contact.avatar_url}
+                  src={effectiveContact.avatar_url}
                   alt={displayName}
                   className="h-16 w-16 rounded-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = "none";
+                  }}
                 />
               ) : (
                 initials
@@ -175,32 +194,65 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             <h3 className="mt-3 text-sm font-semibold text-foreground">
               {displayName}
             </h3>
-            {contact.company && (
-              <p className="text-xs text-muted-foreground">{contact.company}</p>
-            )}
+            {isMessenger ? (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                Facebook Messenger
+              </span>
+            ) : effectiveContact.company ? (
+              <p className="text-xs text-muted-foreground">{effectiveContact.company}</p>
+            ) : null}
           </div>
 
-          {/* Phone */}
+          {/* Messenger Direct Links */}
+          {isMessenger && (
+            <div className="mt-3 space-y-1.5">
+              <a
+                href={`https://facebook.com/${effectiveContact.phone}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                View Facebook Profile
+              </a>
+              <a
+                href={`https://m.me/${effectiveContact.phone}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                Open in Messenger Web
+              </a>
+            </div>
+          )}
+
+          {/* Identifier / Phone */}
           <div className="mt-4 space-y-2">
             <button
               onClick={handleCopyPhone}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              title={isMessenger ? "Copy Facebook User ID" : "Copy Phone Number"}
             >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">
-                {contactHandle(contact)}
-              </span>
+              <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex flex-col text-left overflow-hidden flex-1">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground/80">
+                  {isMessenger ? "Facebook User ID" : "Phone"}
+                </span>
+                <span className="truncate text-xs font-mono text-foreground">
+                  {effectiveContact.phone || contactHandle(effectiveContact)}
+                </span>
+              </div>
               {copied ? (
-                <Check className="h-3 w-3 text-primary" />
+                <Check className="h-3 w-3 text-primary shrink-0" />
               ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
+                <Copy className="h-3 w-3 text-muted-foreground shrink-0" />
               )}
             </button>
 
-            {contact.email && (
+            {effectiveContact.email && (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="truncate">{contact.email}</span>
+                <span className="truncate">{effectiveContact.email}</span>
               </div>
             )}
           </div>
