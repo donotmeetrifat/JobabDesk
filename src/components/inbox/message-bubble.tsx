@@ -257,16 +257,16 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex flex-col",
+        "flex flex-col transition-all duration-300 ease-out animate-in fade-in-50 slide-in-from-bottom-2",
         isAgent ? "items-end" : "items-start",
       )}
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          "relative rounded-2xl px-4 py-2.5 transition-all duration-200 shadow-sm",
           isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+            ? "rounded-br-xs bg-primary text-primary-foreground shadow-primary/10 hover:shadow-md"
+            : "rounded-bl-xs bg-muted/80 backdrop-blur-xs text-foreground border border-border/40 shadow-xs hover:bg-muted",
         )}
       >
         {reply && (

@@ -76,11 +76,36 @@ export async function POST(req: Request) {
     const isEcho = Boolean(messaging?.message?.is_echo)
     const pageId = entry?.id || (isEcho ? messaging?.sender?.id : messaging?.recipient?.id) || ''
     const customerPsid = isEcho ? messaging?.recipient?.id : messaging?.sender?.id
-    const messageText = messaging?.message?.text?.trim()
+    const messageText = messaging?.message?.text?.trim() || ''
     const messageId = messaging?.message?.mid
 
-    if (!customerPsid || !messageText) {
-      return NextResponse.json({ status: 'ignored', reason: 'No actionable text or sender' }, { status: 200 })
+    // Support attachments (photos, voice notes, audio, videos, files)
+    const attachments = messaging?.message?.attachments || []
+    const firstAttachment = attachments[0]
+    const rawType = firstAttachment?.type // "image" | "audio" | "video" | "file"
+    const mediaUrl = firstAttachment?.payload?.url || null
+    const contentType = rawType === 'image'
+      ? 'image'
+      : rawType === 'audio'
+      ? 'audio'
+      : rawType === 'video'
+      ? 'video'
+      : rawType === 'file'
+      ? 'document'
+      : 'text'
+
+    const displayText =
+      messageText ||
+      (contentType === 'image'
+        ? 'Photo'
+        : contentType === 'audio'
+        ? 'Voice Message'
+        : contentType === 'video'
+        ? 'Video'
+        : 'Attachment')
+
+    if (!customerPsid || (!messageText && !mediaUrl)) {
+      return NextResponse.json({ status: 'ignored', reason: 'No actionable content or sender' }, { status: 200 })
     }
 
     // Resolve Account matching Facebook Page ID
@@ -91,21 +116,45 @@ export async function POST(req: Request) {
       const { data: matchedAccount } = await db
         .from('accounts')
         .select('id, facebook_page_access_token')
-        .eq('facebook_page_id', pageId)
+        .or(`facebook_page_id.eq.${pageId},fb_page_id.eq.${pageId}`)
         .maybeSingle()
       accountId = matchedAccount?.id || ''
       pageAccessToken = matchedAccount?.facebook_page_access_token || ''
+    }
+
+    if (!accountId && pageId) {
+      // Check channel_connections (migration 044)
+      const { data: chan } = await db
+        .from('channel_connections')
+        .select('account_id, metadata')
+        .eq('channel_type', 'messenger')
+        .eq('external_account_id', pageId)
+        .maybeSingle()
+      if (chan) {
+        accountId = chan.account_id
+        pageAccessToken = chan.metadata?.access_token || chan.metadata?.accessToken || ''
+      }
     }
 
     if (!accountId) {
       const { data: firstAccount } = await db
         .from('accounts')
         .select('id, facebook_page_access_token')
-        .not('facebook_page_id', 'is', null)
+        .not('facebook_page_access_token', 'is', null)
         .limit(1)
         .maybeSingle()
       accountId = firstAccount?.id || ''
       pageAccessToken = firstAccount?.facebook_page_access_token || ''
+    }
+
+    if (!accountId) {
+      const { data: anyAccount } = await db
+        .from('accounts')
+        .select('id, facebook_page_access_token')
+        .limit(1)
+        .maybeSingle()
+      accountId = anyAccount?.id || ''
+      pageAccessToken = anyAccount?.facebook_page_access_token || ''
     }
 
     if (!accountId) {
@@ -118,21 +167,21 @@ export async function POST(req: Request) {
     let contactId = ''
     const { data: existingContact } = await db
       .from('contacts')
-      .select('id, name')
+      .select('id, name, avatar_url')
       .eq('account_id', accountId)
       .eq('phone', customerPsid)
       .maybeSingle()
 
     if (existingContact) {
       contactId = existingContact.id
-      if (pageAccessToken && (!existingContact.name || existingContact.name === 'Unknown' || existingContact.name.startsWith('Messenger User'))) {
+      if (pageAccessToken && (!existingContact.name || existingContact.name === 'Unknown' || existingContact.name.startsWith('Messenger User') || !existingContact.avatar_url)) {
         try {
           const profileRes = await fetch(
-            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
           )
           const profileJson = await profileRes.json()
           const updates: any = { updated_at: new Date().toISOString(), company: 'Facebook Messenger' }
-          const resolved = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim() || profileJson.name
+          const resolved = profileJson.name || [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
           if (resolved) updates.name = resolved
           if (profileJson.profile_pic) updates.avatar_url = profileJson.profile_pic
           await db.from('contacts').update(updates).eq('id', existingContact.id)
@@ -144,10 +193,10 @@ export async function POST(req: Request) {
       if (pageAccessToken) {
         try {
           const profileRes = await fetch(
-            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
           )
           const profileJson = await profileRes.json()
-          const resolved = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim() || profileJson.name
+          const resolved = profileJson.name || [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
           if (resolved) {
             customerName = resolved
           }
@@ -159,7 +208,7 @@ export async function POST(req: Request) {
         }
       }
 
-      const { data: newContact, error: createContactErr } = await db
+      const { data: newContact } = await db
         .from('contacts')
         .insert({
           account_id: accountId,
@@ -204,7 +253,7 @@ export async function POST(req: Request) {
       await db
         .from('conversations')
         .update({
-          last_message_text: messageText,
+          last_message_text: displayText,
           last_message_at: nowIso,
           unread_count: isEcho ? existingConv.unread_count : (existingConv.unread_count || 0) + 1,
           status: 'open',
@@ -219,7 +268,7 @@ export async function POST(req: Request) {
           contact_id: contactId,
           user_id: ownerUserId,
           status: 'open',
-          last_message_text: messageText,
+          last_message_text: displayText,
           last_message_at: nowIso,
           unread_count: isEcho ? 0 : 1,
         })
@@ -257,8 +306,9 @@ export async function POST(req: Request) {
       await db.from('messages').insert({
         conversation_id: conversationId,
         sender_type: isEcho ? 'agent' : 'customer',
-        content_type: 'text',
-        content_text: messageText,
+        content_type: contentType || 'text',
+        content_text: displayText,
+        media_url: mediaUrl || null,
         message_id: messageId || null,
         status: 'delivered',
         created_at: nowIso,
@@ -273,6 +323,7 @@ export async function POST(req: Request) {
         customerPhone: customerPsid,
         channel: 'messenger',
         messageText,
+        supabase: db,
       })
 
       if (result?.aiReply && pageAccessToken) {

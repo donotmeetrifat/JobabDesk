@@ -369,20 +369,20 @@ export async function syncFacebookMessengerConversations(
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}}&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}}&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
@@ -450,7 +450,7 @@ export async function syncFacebookMessengerConversations(
       if (rawMessages.length === 0 && rawConv.id) {
         try {
           const msgRes = await fetch(
-            `https://graph.facebook.com/v20.0/${rawConv.id}/messages?fields=id,message,created_time,from,to&limit=30&access_token=${encodeURIComponent(pageToken)}`
+            `https://graph.facebook.com/v20.0/${rawConv.id}/messages?fields=id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}&limit=30&access_token=${encodeURIComponent(pageToken)}`
           )
           if (msgRes.ok) {
             const msgData = await msgRes.json()
@@ -495,11 +495,14 @@ export async function syncFacebookMessengerConversations(
       if (customerPsid && customerPsid !== pageId && pageToken) {
         try {
           const profileRes = await fetch(
-            `https://graph.facebook.com/v20.0/${customerPsid}?fields=first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageToken)}`
+            `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageToken)}`
           )
           if (profileRes.ok) {
             const profileJson = await profileRes.json()
-            const resolvedName = [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
+            const resolvedName = (
+              profileJson.name ||
+              [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ')
+            ).trim()
             if (resolvedName) {
               customerName = resolvedName
             }
@@ -600,7 +603,14 @@ export async function syncFacebookMessengerConversations(
       }
 
       // 4. Find or create Conversation in conversations table
-      const latestMsg = rawMessages[0]?.message || 'Messenger conversation'
+      let latestMsg = rawMessages[0]?.message || ''
+      if (!latestMsg && rawMessages[0]?.attachments?.data?.length > 0) {
+        const firstAtt = rawMessages[0].attachments.data[0]
+        if (firstAtt.image_data) latestMsg = '📷 Photo'
+        else if (firstAtt.file_url?.includes('.aac') || firstAtt.mime_type?.startsWith('audio')) latestMsg = '🎵 Voice message'
+        else latestMsg = '📎 Attachment'
+      }
+      if (!latestMsg) latestMsg = 'Messenger conversation'
       const latestTime = rawMessages[0]?.created_time || rawConv.updated_time || new Date().toISOString()
 
       let conversationId = ''
@@ -673,7 +683,48 @@ export async function syncFacebookMessengerConversations(
       // 5. Ingest messages into messages table
       let convMessageCount = 0
       for (const msg of rawMessages) {
-        if (!msg.message && !msg.id) continue
+        let mediaUrl: string | null = null
+        let contentType: 'text' | 'image' | 'audio' | 'video' | 'document' = 'text'
+        let contentText = msg.message || ''
+
+        const attachments = msg.attachments?.data || []
+        if (attachments.length > 0) {
+          const att = attachments[0]
+          if (att.image_data?.url) {
+            mediaUrl = att.image_data.url
+            contentType = 'image'
+          } else if (att.video_data?.url) {
+            mediaUrl = att.video_data.url
+            contentType = 'video'
+          } else if (att.file_url) {
+            mediaUrl = att.file_url
+            const mime = (att.mime_type || '').toLowerCase()
+            if (
+              mime.startsWith('audio') ||
+              att.file_url.includes('.aac') ||
+              att.file_url.includes('.mp3') ||
+              att.file_url.includes('.m4a') ||
+              att.file_url.includes('.ogg')
+            ) {
+              contentType = 'audio'
+            } else if (mime.startsWith('image')) {
+              contentType = 'image'
+            } else if (mime.startsWith('video')) {
+              contentType = 'video'
+            } else {
+              contentType = 'document'
+            }
+          }
+
+          if (!contentText) {
+            if (contentType === 'image') contentText = 'Photo'
+            else if (contentType === 'audio') contentText = 'Voice Message'
+            else if (contentType === 'video') contentText = 'Video'
+            else if (contentType === 'document') contentText = 'Attachment'
+          }
+        }
+
+        if (!contentText && !mediaUrl && !msg.id) continue
 
         // Check dedupe by message_id
         if (msg.id) {
@@ -697,8 +748,9 @@ export async function syncFacebookMessengerConversations(
         const msgPayload = {
           conversation_id: conversationId,
           sender_type: senderType,
-          content_type: 'text',
-          content_text: msg.message || '',
+          content_type: contentType,
+          content_text: contentText,
+          media_url: mediaUrl,
           message_id: msg.id || null,
           status: 'delivered',
           created_at: msg.created_time || new Date().toISOString(),

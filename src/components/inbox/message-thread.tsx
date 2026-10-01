@@ -287,6 +287,9 @@ export function MessageThread({
     [conversationId],
   );
 
+  const prevConversationIdRef = useRef<string | undefined>(conversationId);
+  const isInitialLoadRef = useRef(true);
+
   // Fetch messages whenever the selected conversation changes. Kept
   // separate from the unread-reset effect so that incoming messages
   // arriving while the thread is open don't trigger a full refetch —
@@ -294,11 +297,20 @@ export function MessageThread({
   useEffect(() => {
     if (!conversationId) return;
 
+    const isNewConversation = prevConversationIdRef.current !== conversationId;
+    prevConversationIdRef.current = conversationId;
+    if (isNewConversation) {
+      isInitialLoadRef.current = true;
+    }
+
     const supabase = createClient();
     let cancelled = false;
 
     (async () => {
-      setLoading(true);
+      // Only show full spinner on initial conversation load or when empty
+      if (isNewConversation || messages.length === 0) {
+        setLoading(true);
+      }
 
       let msgs: Message[] = [];
       try {
@@ -472,11 +484,19 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages with smooth behavior
   useEffect(() => {
     if (scrollRef.current) {
       const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
+      if (isInitialLoadRef.current) {
+        el.scrollTop = el.scrollHeight;
+        isInitialLoadRef.current = false;
+      } else {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: "smooth",
+        });
+      }
     }
   }, [messages]);
 

@@ -17,6 +17,7 @@ import {
   Plus,
   Bot,
   ExternalLink,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -207,20 +208,29 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
           {isMessenger && (
             <div className="mt-3 space-y-1.5">
               <a
-                href={`https://facebook.com/${effectiveContact.phone}`}
+                href={
+                  effectiveContact.phone
+                    ? `https://business.facebook.com/latest/inbox/messenger?selected_item_id=${effectiveContact.phone}`
+                    : "https://business.facebook.com/latest/inbox"
+                }
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors shadow-2xs"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
-                View Facebook Profile
+                Open in Meta Business Inbox
               </a>
               <a
-                href={`https://m.me/${effectiveContact.phone}`}
+                href={
+                  effectiveContact.phone
+                    ? `https://www.facebook.com/messages/t/${effectiveContact.phone}`
+                    : "https://www.facebook.com/messages"
+                }
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/40 px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
               >
+                <MessageSquare className="h-3 w-3 text-blue-500" />
                 Open in Messenger Web
               </a>
             </div>

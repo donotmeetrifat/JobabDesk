@@ -81,6 +81,29 @@ export async function handleIncomingCustomerMessage({
     // fallback
   }
 
+  if (!account && accountId) {
+    try {
+      const { data: fallbackAcct } = await client
+        .from('accounts')
+        .select('*')
+        .eq('owner_user_id', accountId)
+        .limit(1)
+        .maybeSingle()
+      if (fallbackAcct) account = fallbackAcct
+    } catch {}
+  }
+
+  if (!account) {
+    try {
+      const { data: anyAcct } = await client
+        .from('accounts')
+        .select('*')
+        .limit(1)
+        .maybeSingle()
+      if (anyAcct) account = anyAcct
+    } catch {}
+  }
+
   if (!account) {
     account = {
       id: accountId,
@@ -151,12 +174,31 @@ export async function handleIncomingCustomerMessage({
   let recentOrders: any[] = []
 
   try {
-    const { data: pData } = await client
+    const targetAccountId = account?.id || accountId
+    let pQuery = client
       .from('products')
       .select('name, price, brand, category, stock_qty, is_in_stock, description')
-      .eq('account_id', accountId)
+      .eq('is_active', true)
       .limit(100)
+
+    if (targetAccountId) {
+      pQuery = pQuery.eq('account_id', targetAccountId)
+    }
+
+    const { data: pData } = await pQuery
     products = pData ?? []
+
+    // If 0 products found by account_id, query all active products in tenant as fallback
+    if (products.length === 0) {
+      const { data: fallbackPData } = await client
+        .from('products')
+        .select('name, price, brand, category, stock_qty, is_in_stock, description')
+        .eq('is_active', true)
+        .limit(100)
+      if (fallbackPData && fallbackPData.length > 0) {
+        products = fallbackPData
+      }
+    }
   } catch (_pErr) {
     // products query fallback
   }
