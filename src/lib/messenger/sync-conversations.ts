@@ -258,24 +258,55 @@ export async function syncFacebookMessengerConversations(
       accountRecord?.owner_user_id ||
       (await resolveOwnerUserId(db, actualAccountId, explicitUserId))
 
-    // 2. Query Meta Graph API for conversations across all platform permutations
+    // 2. Verify token permissions directly from Meta
+    let grantedPermissions: string[] = []
+    try {
+      const permRes = await fetch(
+        `https://graph.facebook.com/v20.0/me/permissions?access_token=${encodeURIComponent(pageToken)}`
+      )
+      if (permRes.ok) {
+        const permJson = await permRes.json()
+        grantedPermissions = (permJson.data || [])
+          .filter((p: any) => p.status === 'granted')
+          .map((p: any) => p.permission)
+      }
+    } catch {}
+
+    if (grantedPermissions.length > 0 && !grantedPermissions.includes('pages_messaging')) {
+      return {
+        success: false,
+        tokenMissing: true,
+        conversationsCount: 0,
+        messagesCount: 0,
+        error: `Permission "pages_messaging" is not granted on this token. In Meta Graph API Explorer, add "pages_messaging" under Permissions and click "Generate Access Token".`,
+        debug: {
+          pageId,
+          pageName,
+          rawMetaCount: 0,
+          errors: [`Missing pages_messaging. Granted permissions: ${grantedPermissions.join(', ')}`],
+        },
+      }
+    }
+
+    // 3. Query Meta Graph API for conversations across all platform permutations
+    // Note: Do NOT request 'snippet' on Conversation node — it does not exist on Conversation node (causes error #100).
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,snippet,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
@@ -326,14 +357,10 @@ export async function syncFacebookMessengerConversations(
     // Auto-subscribe page to webhook events so real-time messaging is guaranteed
     if (pageId) {
       try {
-        await fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subscribed_fields: ['messages', 'messaging_postbacks'],
-            access_token: pageToken,
-          }),
-        })
+        await fetch(
+          `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reads,messaging_optins&access_token=${encodeURIComponent(pageToken)}`,
+          { method: 'POST' }
+        )
       } catch {}
     }
 
