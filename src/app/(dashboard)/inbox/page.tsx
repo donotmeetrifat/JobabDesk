@@ -1032,8 +1032,12 @@ function InboxPageInner() {
                 Where to get this token?
               </span>
               <p>1. Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a></p>
-              <p>2. Under User or Page, select Page: <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span></p>
-              <p>3. Generate Access Token &gt; Paste it here &gt; Click Save &amp; Sync.</p>
+              <p>2. Under User or Page, select Page: <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span> with permissions <code className="rounded bg-muted px-1">pages_messaging</code> and <code className="rounded bg-muted px-1">pages_manage_metadata</code>.</p>
+              <p>3. Generate Access Token &gt; Paste it here &gt; Click <strong>Save &amp; Sync</strong>.</p>
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-2 text-[10px] text-amber-700 dark:text-amber-300 mt-2 space-y-1">
+                <span className="font-bold">⚠️ Avoid 1-Hour Expiration (Code 190):</span>
+                <p>Default Graph API Explorer tokens expire after 1 hour. For a <strong>permanent (never-expiring) token</strong>: Go to <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Meta Business Settings → System Users</a>, create a System User, assign your Page, and generate a token with <strong>Never Expire</strong>.</p>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
