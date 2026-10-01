@@ -140,7 +140,7 @@ export async function syncFacebookMessengerConversations(
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
       pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
 
-      // Backfill: Repair any contacts or conversations that mistakenly received owner_user_id as account_id
+      // Backfill: Repair any contacts, conversations, or profiles that mistakenly received owner_user_id as account_id
       if (accountRecord.owner_user_id && accountRecord.owner_user_id !== accountRecord.id) {
         try {
           await db
@@ -150,6 +150,11 @@ export async function syncFacebookMessengerConversations(
 
           await db
             .from('conversations')
+            .update({ account_id: accountRecord.id })
+            .eq('account_id', accountRecord.owner_user_id)
+
+          await db
+            .from('profiles')
             .update({ account_id: accountRecord.id })
             .eq('account_id', accountRecord.owner_user_id)
 
@@ -163,6 +168,11 @@ export async function syncFacebookMessengerConversations(
               .from('conversations')
               .update({ account_id: accountRecord.id })
               .eq('account_id', accountRecord.owner_user_id)
+
+            await adminClient
+              .from('profiles')
+              .update({ account_id: accountRecord.id })
+              .eq('account_id', accountRecord.owner_user_id)
           }
         } catch (repairErr) {
           console.warn('[Sync account_id repair warning]:', repairErr)
@@ -170,18 +180,39 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
+    // Ensure the explicit user's profile is aligned to actualAccountId so RLS is_account_member succeeds
+    if (explicitUserId && actualAccountId) {
+      try {
+        await db
+          .from('profiles')
+          .update({ account_id: actualAccountId })
+          .eq('user_id', explicitUserId)
+
+        if (adminClient && adminClient !== db) {
+          await adminClient
+            .from('profiles')
+            .update({ account_id: actualAccountId })
+            .eq('user_id', explicitUserId)
+        }
+      } catch (pErr) {
+        console.warn('[Sync profile alignment warning]:', pErr)
+      }
+    }
+
     // Try channel_connections table (migration 044) if token is still missing
     if (!pageToken) {
       try {
-        const { data: chan } = await db
+        let chanQuery = db
           .from('channel_connections')
           .select('*')
           .eq('channel_type', 'messenger')
           .eq('is_active', true)
-          .limit(1)
-          .maybeSingle()
+        if (actualAccountId) {
+          chanQuery = chanQuery.eq('account_id', actualAccountId)
+        }
+        const { data: chan } = await chanQuery.limit(1).maybeSingle()
         if (chan) {
-          actualAccountId = chan.account_id || actualAccountId
+          if (!actualAccountId) actualAccountId = chan.account_id
           pageId = pageId || chan.external_account_id
           pageName = pageName || chan.display_name || pageId
           if (chan.metadata?.access_token || chan.metadata?.accessToken) {

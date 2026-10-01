@@ -14,6 +14,12 @@ FROM public.accounts a
 WHERE c.account_id = a.owner_user_id
   AND a.id <> a.owner_user_id;
 
+UPDATE public.profiles p
+SET account_id = a.id
+FROM public.accounts a
+WHERE p.account_id = a.owner_user_id
+  AND a.id <> a.owner_user_id;
+
 -- 2. Allow authenticated users to view conversations if they are an account member OR if auth.uid() = user_id
 DROP POLICY IF EXISTS conversations_select ON public.conversations;
 CREATE POLICY conversations_select ON public.conversations FOR SELECT

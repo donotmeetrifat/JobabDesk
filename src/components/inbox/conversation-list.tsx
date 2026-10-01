@@ -105,35 +105,50 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+      let convs: Conversation[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          .order("last_message_at", { ascending: false });
 
-      if (cancelled) return;
-
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields explicitly
-        console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setLoading(false);
-        return;
+        if (!error && Array.isArray(data) && data.length > 0) {
+          convs = normalizeConversations(data);
+        } else if (error) {
+          console.warn("Direct conversations fetch error:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
+        }
+      } catch (err) {
+        console.warn("Direct conversations fetch exception:", err);
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      // If direct Supabase query returned empty or had RLS issues, fetch from our authenticated API endpoint
+      if (convs.length === 0 && !cancelled) {
+        try {
+          const res = await fetch("/api/inbox/conversations");
+          if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json.conversations) && json.conversations.length > 0) {
+              convs = json.conversations;
+            }
+          }
+        } catch (apiErr) {
+          console.error("API inbox conversations fetch failed:", apiErr);
+        }
+      }
+
+      if (cancelled) return;
+      onConversationsLoadedRef.current(convs);
       setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus — catches
-    // up on any events sent while the WS was disconnected or throttled.
   }, [resyncToken]);
 
   // Tag definitions for the filter picker — loaded once so labels/colours

@@ -149,19 +149,19 @@ function InboxPageInner() {
         .select(CONVERSATION_SELECT)
         .eq("id", convId)
         .maybeSingle();
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields
-        // explicitly so the console message isn't just `{}`.
-        console.error("Failed to hydrate conversation:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        return;
+      let fetched: Conversation | null = null;
+      if (!error && data) {
+        fetched = normalizeConversation(data);
+      } else {
+        try {
+          const res = await fetch("/api/inbox/conversations");
+          if (res.ok) {
+            const json = await res.json();
+            fetched = json.conversations?.find((c: Conversation) => c.id === convId) || null;
+          }
+        } catch {}
       }
-      if (!data) return;
-      const fetched = normalizeConversation(data);
+      if (!fetched) return;
       setConversations((prev) => {
         const existing = prev.find((c) => c.id === fetched.id);
         if (existing) {

@@ -300,30 +300,46 @@ export function MessageThread({
     (async () => {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+      let msgs: Message[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
 
-      if (cancelled) return;
-
-      if (error) {
-        console.error("Failed to fetch messages:", error);
-      } else {
-        onMessagesLoadedRef.current(data ?? []);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          msgs = data;
+        } else if (error) {
+          console.warn("Direct messages fetch error:", error.message);
+        }
+      } catch (err) {
+        console.warn("Direct messages fetch exception:", err);
       }
 
-      if (!cancelled) setLoading(false);
+      // If direct Supabase fetch returned 0 messages or had an RLS issue, fallback to API
+      if (msgs.length === 0 && !cancelled) {
+        try {
+          const res = await fetch(`/api/inbox/conversations/${conversationId}/messages`);
+          if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json.messages) && json.messages.length > 0) {
+              msgs = json.messages;
+            }
+          }
+        } catch (apiErr) {
+          console.error("API messages fetch failed:", apiErr);
+        }
+      }
+
+      if (cancelled) return;
+      onMessagesLoadedRef.current(msgs);
+      setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus —
-    // realtime is best-effort and any message events sent while the WS
-    // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
