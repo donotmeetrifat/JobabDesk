@@ -135,12 +135,39 @@ export async function syncFacebookMessengerConversations(
     }
 
     if (accountRecord) {
-      if (!actualAccountId) {
-        actualAccountId = accountRecord.id
-      }
+      actualAccountId = accountRecord.id
       pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
       pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
+
+      // Backfill: Repair any contacts or conversations that mistakenly received owner_user_id as account_id
+      if (accountRecord.owner_user_id && accountRecord.owner_user_id !== accountRecord.id) {
+        try {
+          await db
+            .from('contacts')
+            .update({ account_id: accountRecord.id })
+            .eq('account_id', accountRecord.owner_user_id)
+
+          await db
+            .from('conversations')
+            .update({ account_id: accountRecord.id })
+            .eq('account_id', accountRecord.owner_user_id)
+
+          if (adminClient && adminClient !== db) {
+            await adminClient
+              .from('contacts')
+              .update({ account_id: accountRecord.id })
+              .eq('account_id', accountRecord.owner_user_id)
+
+            await adminClient
+              .from('conversations')
+              .update({ account_id: accountRecord.id })
+              .eq('account_id', accountRecord.owner_user_id)
+          }
+        } catch (repairErr) {
+          console.warn('[Sync account_id repair warning]:', repairErr)
+        }
+      }
     }
 
     // Try channel_connections table (migration 044) if token is still missing
@@ -307,24 +334,24 @@ export async function syncFacebookMessengerConversations(
     }
 
     // 3. Query Meta Graph API for conversations across all platform permutations
-    // Note: Do NOT request 'snippet' on Conversation node — it does not exist on Conversation node (causes error #100).
+    // Request messages inline so conversations and messages are retrieved in a single fast call
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?folder=inbox&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to},unread_count,message_count&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants&limit=50&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to}&limit=50&access_token=${encodeURIComponent(pageToken)}`
     )
 
     const rawConversations: Array<any> = []
@@ -613,6 +640,7 @@ export async function syncFacebookMessengerConversations(
       totalConversations++
 
       // 5. Ingest messages into messages table
+      let convMessageCount = 0
       for (const msg of rawMessages) {
         if (!msg.message && !msg.id) continue
 
@@ -625,10 +653,14 @@ export async function syncFacebookMessengerConversations(
             .eq('message_id', msg.id)
             .maybeSingle()
 
-          if (existingMsg) continue
+          if (existingMsg) {
+            convMessageCount++
+            totalMessages++
+            continue
+          }
         }
 
-        const isFromPage = msg.from?.id === pageId
+        const isFromPage = msg.from?.id === pageId || (pageName && msg.from?.name?.toLowerCase() === pageName.toLowerCase())
         const senderType = isFromPage ? 'agent' : 'customer'
 
         const msgPayload = {
@@ -649,8 +681,21 @@ export async function syncFacebookMessengerConversations(
         }
 
         if (!msgInsertErr) {
+          convMessageCount++
           totalMessages++
         }
+      }
+
+      if (convMessageCount === 0 && conversationId) {
+        try {
+          const { count } = await db
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('conversation_id', conversationId)
+          if (count && count > 0) {
+            totalMessages += count
+          }
+        } catch {}
       }
     }
 

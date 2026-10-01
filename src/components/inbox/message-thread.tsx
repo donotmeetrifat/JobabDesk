@@ -887,7 +887,7 @@ export function MessageThread({
   const effectiveContact: Contact = contact || {
     id: conversation.contact_id || conversation.id,
     user_id: conversation.user_id || "",
-    account_id: (conversation as any).account_id || "",
+    account_id: conversation.account_id || "",
     phone: "",
     name: isMessenger ? `Messenger User (${conversation.id.slice(-4)})` : t("customer"),
     created_at: conversation.created_at,

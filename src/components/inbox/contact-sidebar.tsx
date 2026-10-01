@@ -36,7 +36,7 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const effectiveContact: Contact | null = contact || (conversation ? {
     id: conversation.contact_id || conversation.id,
     user_id: conversation.user_id || "",
-    account_id: (conversation as any).account_id || "",
+    account_id: conversation.account_id || "",
     phone: "",
     name: "Messenger User",
     created_at: conversation.created_at,
