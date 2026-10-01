@@ -183,6 +183,8 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
                 <img
                   src={effectiveContact.avatar_url}
                   alt={displayName}
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
                   className="h-16 w-16 rounded-full object-cover"
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = "none";
@@ -210,28 +212,28 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
               <a
                 href={
                   effectiveContact.phone
-                    ? `https://business.facebook.com/latest/inbox/messenger?selected_item_id=${effectiveContact.phone}`
-                    : "https://business.facebook.com/latest/inbox"
+                    ? `https://www.messenger.com/t/${effectiveContact.phone}`
+                    : "https://www.messenger.com"
                 }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors shadow-2xs"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open in Meta Business Inbox
+                <MessageSquare className="h-3.5 w-3.5 text-blue-500" />
+                Open in Messenger Web
               </a>
               <a
                 href={
                   effectiveContact.phone
-                    ? `https://www.facebook.com/messages/t/${effectiveContact.phone}`
-                    : "https://www.facebook.com/messages"
+                    ? `https://business.facebook.com/latest/inbox/all?selected_item_id=${effectiveContact.phone}`
+                    : "https://business.facebook.com/latest/inbox"
                 }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/50 px-3 py-1 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
               >
-                <MessageSquare className="h-3 w-3 text-blue-500" />
-                Open in Messenger Web
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                Open in Meta Business Inbox
               </a>
             </div>
           )}

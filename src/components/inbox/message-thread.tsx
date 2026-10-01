@@ -980,6 +980,8 @@ export function MessageThread({
               <img
                 src={effectiveContact.avatar_url}
                 alt={displayName}
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
                 className="h-9 w-9 rounded-full object-cover"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = "none";

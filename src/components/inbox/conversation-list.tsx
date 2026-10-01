@@ -544,6 +544,8 @@ function ConversationItem({
           <img
             src={contact.avatar_url}
             alt={displayName}
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             className="h-10 w-10 rounded-full object-cover"
             onError={(e) => {
               // Hide broken image so initials show

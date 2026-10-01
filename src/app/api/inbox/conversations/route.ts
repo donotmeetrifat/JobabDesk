@@ -100,6 +100,30 @@ export async function GET() {
       })
     }
 
+async function resolvePageAccessToken(rawToken: string): Promise<string> {
+  if (!rawToken) return ''
+  try {
+    const meRes = await fetch(
+      `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(rawToken)}`
+    )
+    if (meRes.ok) {
+      const meData = await meRes.json()
+      if (meData?.category) return rawToken
+    }
+    const accsRes = await fetch(
+      `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(rawToken)}`
+    )
+    if (accsRes.ok) {
+      const accsData = await accsRes.json()
+      const pages = accsData?.data || []
+      if (pages.length > 0 && pages[0].access_token) {
+        return pages[0].access_token
+      }
+    }
+  } catch {}
+  return rawToken
+}
+
     // Fetch page access token to resolve real Facebook customer profiles
     let fbPageToken = ''
     try {
@@ -122,6 +146,22 @@ export async function GET() {
           .maybeSingle()
         fbPageToken = chanData?.metadata?.access_token || chanData?.metadata?.accessToken || ''
       } catch {}
+    }
+
+    if (!fbPageToken) {
+      try {
+        const { data: anyChan } = await admin
+          .from('channel_connections')
+          .select('metadata')
+          .eq('channel_type', 'messenger')
+          .limit(1)
+          .maybeSingle()
+        fbPageToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
+      } catch {}
+    }
+
+    if (fbPageToken) {
+      fbPageToken = await resolvePageAccessToken(fbPageToken)
     }
 
     // Collect all contact IDs
