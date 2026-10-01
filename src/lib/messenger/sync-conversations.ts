@@ -2,11 +2,14 @@ import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
-  return createClient(url, key)
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (serviceKey && serviceKey.trim().length > 0) {
+    return createClient(url, serviceKey.trim(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  }
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  return createClient(url, anonKey)
 }
 
 async function resolveOwnerUserId(db: any, accountId: string, explicitUserId?: string): Promise<string> {
@@ -63,8 +66,11 @@ export async function syncFacebookMessengerConversations(
   supabase?: any,
   explicitUserId?: string
 ): Promise<SyncResult> {
-  // Always use admin client to bypass RLS and guarantee full write/read access
-  const db = getAdminClient()
+  // CRITICAL: When called from an authenticated session (/api/channels/messenger/sync),
+  // supabase is the authenticated SSR client with auth.uid() and valid account membership.
+  // Prefer supabase to respect user auth, with adminClient as fallback.
+  const adminClient = getAdminClient()
+  const db = supabase || adminClient
 
   try {
     // 1. Resolve guaranteed valid account ID and record from accounts table
@@ -78,7 +84,16 @@ export async function syncFacebookMessengerConversations(
       const { data: acc } = await db
         .from('accounts')
         .select('*')
-        .or(`id.eq.${accountId},owner_user_id.eq.${accountId}`)
+        .eq('id', accountId)
+        .maybeSingle()
+      accountRecord = acc
+    }
+
+    if (!accountRecord && accountId) {
+      const { data: acc } = await db
+        .from('accounts')
+        .select('*')
+        .eq('owner_user_id', accountId)
         .maybeSingle()
       accountRecord = acc
     }
@@ -99,7 +114,8 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    if (!accountRecord) {
+    // Only if accountId was NOT provided at all should we fallback to other accounts
+    if (!accountRecord && !accountId) {
       const { data: anyAcc } = await db
         .from('accounts')
         .select('*')
@@ -109,7 +125,7 @@ export async function syncFacebookMessengerConversations(
       accountRecord = anyAcc
     }
 
-    if (!accountRecord) {
+    if (!accountRecord && !accountId) {
       const { data: anyFirstAcc } = await db
         .from('accounts')
         .select('*')
@@ -119,7 +135,9 @@ export async function syncFacebookMessengerConversations(
     }
 
     if (accountRecord) {
-      actualAccountId = accountRecord.id
+      if (!actualAccountId) {
+        actualAccountId = accountRecord.id
+      }
       pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
       pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
@@ -432,17 +450,32 @@ export async function syncFacebookMessengerConversations(
             .eq('id', existingContact.id)
         }
       } else {
-        const { data: newContact, error: createContactErr } = await db
+        const contactPayload = {
+          account_id: actualAccountId,
+          user_id: ownerUserId,
+          phone: customerPsid,
+          name: customerName,
+          email: customerEmail,
+        }
+
+        let { data: newContact, error: createContactErr } = await db
           .from('contacts')
-          .insert({
-            account_id: actualAccountId,
-            user_id: ownerUserId,
-            phone: customerPsid,
-            name: customerName,
-            email: customerEmail,
-          })
+          .insert(contactPayload)
           .select('id')
           .maybeSingle()
+
+        // Fallback retry with adminClient if db had an error and adminClient is different
+        if ((createContactErr || !newContact) && adminClient && adminClient !== db) {
+          const adminInsertRes = await adminClient
+            .from('contacts')
+            .insert(contactPayload)
+            .select('id')
+            .maybeSingle()
+          if (adminInsertRes.data) {
+            newContact = adminInsertRes.data
+            createContactErr = null
+          }
+        }
 
         if (createContactErr || !newContact) {
           console.warn('[Sync contacts insert error]:', createContactErr?.message)
@@ -490,19 +523,33 @@ export async function syncFacebookMessengerConversations(
           })
           .eq('id', existingConv.id)
       } else {
-        const { data: newConv, error: createConvErr } = await db
+        const convPayload = {
+          account_id: actualAccountId,
+          contact_id: contactId,
+          user_id: ownerUserId,
+          status: 'open',
+          last_message_text: latestMsg,
+          last_message_at: latestTime,
+          unread_count: 0,
+        }
+
+        let { data: newConv, error: createConvErr } = await db
           .from('conversations')
-          .insert({
-            account_id: actualAccountId,
-            contact_id: contactId,
-            user_id: ownerUserId,
-            status: 'open',
-            last_message_text: latestMsg,
-            last_message_at: latestTime,
-            unread_count: 0,
-          })
+          .insert(convPayload)
           .select('id')
           .maybeSingle()
+
+        if ((createConvErr || !newConv) && adminClient && adminClient !== db) {
+          const adminConvRes = await adminClient
+            .from('conversations')
+            .insert(convPayload)
+            .select('id')
+            .maybeSingle()
+          if (adminConvRes.data) {
+            newConv = adminConvRes.data
+            createConvErr = null
+          }
+        }
 
         if (createConvErr || !newConv) {
           console.warn('[Sync conversations insert error]:', createConvErr?.message)
@@ -543,7 +590,7 @@ export async function syncFacebookMessengerConversations(
         const isFromPage = msg.from?.id === pageId
         const senderType = isFromPage ? 'agent' : 'customer'
 
-        const { error: msgInsertErr } = await db.from('messages').insert({
+        const msgPayload = {
           conversation_id: conversationId,
           sender_type: senderType,
           content_type: 'text',
@@ -551,7 +598,14 @@ export async function syncFacebookMessengerConversations(
           message_id: msg.id || null,
           status: 'delivered',
           created_at: msg.created_time || new Date().toISOString(),
-        })
+        }
+
+        let { error: msgInsertErr } = await db.from('messages').insert(msgPayload)
+
+        if (msgInsertErr && adminClient && adminClient !== db) {
+          const adminMsgRes = await adminClient.from('messages').insert(msgPayload)
+          msgInsertErr = adminMsgRes.error
+        }
 
         if (!msgInsertErr) {
           totalMessages++
