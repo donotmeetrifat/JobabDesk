@@ -361,12 +361,25 @@ export function ConversationList({
             </DropdownMenu>
           )}
 
+          {onOpenTokenModal && (
+            <button
+              onClick={onOpenTokenModal}
+              title="Set or update Facebook Page Access Token"
+              className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors ml-auto"
+            >
+              <KeyRound className="h-3 w-3 text-blue-500" />
+              <span className="hidden sm:inline">Token</span>
+            </button>
+          )}
           {onSyncMessenger && (
             <button
               onClick={onSyncMessenger}
               disabled={isSyncingMessenger}
               title="Sync Facebook Messenger Chats"
-              className="ml-auto inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+              className={cn(
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors disabled:opacity-50",
+                !onOpenTokenModal && "ml-auto"
+              )}
             >
               <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
               <span className="hidden sm:inline">Sync</span>
@@ -428,22 +441,21 @@ export function ConversationList({
             <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
             {messengerConnected && (
               <div className="mt-3 flex flex-col items-center gap-2">
-                {tokenMissing ? (
+                <button
+                  onClick={onSyncMessenger}
+                  disabled={isSyncingMessenger}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3.5 py-1.5 text-xs font-semibold text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
+                  {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+                </button>
+                {onOpenTokenModal && (
                   <button
-                    onClick={onOpenTokenModal || onSyncMessenger}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3.5 py-1.5 text-xs font-semibold text-amber-500 hover:bg-amber-500/20 transition-colors shadow-xs"
+                    onClick={onOpenTokenModal}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-2xs"
                   >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Enter Page Token to Sync
-                  </button>
-                ) : (
-                  <button
-                    onClick={onSyncMessenger}
-                    disabled={isSyncingMessenger}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
-                    {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
+                    <KeyRound className="h-3 w-3 text-blue-500" />
+                    Enter / Update Page Token
                   </button>
                 )}
               </div>

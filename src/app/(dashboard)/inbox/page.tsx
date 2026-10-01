@@ -784,15 +784,14 @@ function InboxPageInner() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {tokenMissing && (
-              <button
-                onClick={() => setShowTokenModal(true)}
-                className="flex items-center gap-1.5 rounded bg-amber-600 hover:bg-amber-700 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors shadow-xs"
-              >
-                <KeyRound className="h-3 w-3" />
-                Enter Page Token
-              </button>
-            )}
+            <button
+              onClick={() => setShowTokenModal(true)}
+              className="flex items-center gap-1.5 rounded border border-blue-500/40 bg-background/90 hover:bg-background px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 transition-colors shadow-xs"
+              title="Set or update Facebook Page Access Token"
+            >
+              <KeyRound className="h-3 w-3" />
+              Set / Update Token
+            </button>
             <button
               onClick={() => handleSyncMessenger()}
               disabled={isSyncingMessenger}
