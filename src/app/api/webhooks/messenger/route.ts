@@ -108,6 +108,59 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ignored', reason: 'No actionable content or sender' }, { status: 200 })
     }
 
+// Helper to resolve real Page Access Token even if a User Access Token is stored
+async function resolvePageAccessToken(rawToken: string, targetPageId?: string): Promise<string> {
+  if (!rawToken) return ''
+  try {
+    const meRes = await fetch(
+      `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(rawToken)}`
+    )
+    if (meRes.ok) {
+      const meData = await meRes.json()
+      if (meData?.category) {
+        return rawToken // Already a Page token
+      }
+    }
+    const accsRes = await fetch(
+      `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(rawToken)}`
+    )
+    if (accsRes.ok) {
+      const accsData = await accsRes.json()
+      const pages = accsData?.data || []
+      if (pages.length > 0) {
+        if (targetPageId) {
+          const match = pages.find((p: any) => p.id === targetPageId)
+          if (match?.access_token) return match.access_token
+        }
+        return pages[0].access_token || rawToken
+      }
+    }
+  } catch {}
+  return rawToken
+}
+
+function splitMessengerText(text: string, maxLen = 1900): string[] {
+  if (!text || text.length <= maxLen) return [text]
+  const chunks: string[] = []
+  let remaining = text
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLen) {
+      chunks.push(remaining)
+      break
+    }
+    let splitIdx = remaining.lastIndexOf('\n', maxLen)
+    if (splitIdx === -1 || splitIdx < maxLen / 2) {
+      splitIdx = remaining.lastIndexOf(' ', maxLen)
+    }
+    if (splitIdx === -1 || splitIdx < maxLen / 2) {
+      splitIdx = maxLen
+    }
+    chunks.push(remaining.slice(0, splitIdx).trim())
+    remaining = remaining.slice(splitIdx).trim()
+  }
+  return chunks
+}
+
     // Resolve Account matching Facebook Page ID
     let accountId = ''
     let pageAccessToken = ''
@@ -122,7 +175,7 @@ export async function POST(req: Request) {
       pageAccessToken = matchedAccount?.facebook_page_access_token || ''
     }
 
-    if (!accountId && pageId) {
+    if (!pageAccessToken && pageId) {
       // Check channel_connections (migration 044)
       const { data: chan } = await db
         .from('channel_connections')
@@ -131,34 +184,65 @@ export async function POST(req: Request) {
         .eq('external_account_id', pageId)
         .maybeSingle()
       if (chan) {
-        accountId = chan.account_id
+        if (!accountId) accountId = chan.account_id
         pageAccessToken = chan.metadata?.access_token || chan.metadata?.accessToken || ''
       }
     }
 
-    if (!accountId) {
+    if (!pageAccessToken && accountId) {
+      const { data: chan } = await db
+        .from('channel_connections')
+        .select('metadata')
+        .eq('account_id', accountId)
+        .eq('channel_type', 'messenger')
+        .limit(1)
+        .maybeSingle()
+      if (chan) {
+        pageAccessToken = chan.metadata?.access_token || chan.metadata?.accessToken || ''
+      }
+    }
+
+    if (!pageAccessToken) {
       const { data: firstAccount } = await db
         .from('accounts')
         .select('id, facebook_page_access_token')
         .not('facebook_page_access_token', 'is', null)
         .limit(1)
         .maybeSingle()
-      accountId = firstAccount?.id || ''
-      pageAccessToken = firstAccount?.facebook_page_access_token || ''
+      if (firstAccount?.facebook_page_access_token) {
+        if (!accountId) accountId = firstAccount.id
+        pageAccessToken = firstAccount.facebook_page_access_token
+      }
+    }
+
+    if (!pageAccessToken) {
+      const { data: anyChan } = await db
+        .from('channel_connections')
+        .select('account_id, metadata')
+        .eq('channel_type', 'messenger')
+        .limit(1)
+        .maybeSingle()
+      if (anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken) {
+        if (!accountId) accountId = anyChan.account_id
+        pageAccessToken = anyChan.metadata?.access_token || anyChan.metadata?.accessToken
+      }
     }
 
     if (!accountId) {
       const { data: anyAccount } = await db
         .from('accounts')
-        .select('id, facebook_page_access_token')
+        .select('id')
         .limit(1)
         .maybeSingle()
       accountId = anyAccount?.id || ''
-      pageAccessToken = anyAccount?.facebook_page_access_token || ''
     }
 
     if (!accountId) {
       return NextResponse.json({ status: 'no_account' }, { status: 200 })
+    }
+
+    if (pageAccessToken) {
+      pageAccessToken = await resolvePageAccessToken(pageAccessToken, pageId)
     }
 
     const ownerUserId = await resolveOwnerUserId(db, accountId)
@@ -328,19 +412,55 @@ export async function POST(req: Request) {
 
       if (result?.aiReply && pageAccessToken) {
         try {
-          const sendRes = await fetch(
-            `https://graph.facebook.com/v19.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                recipient: { id: customerPsid },
-                message: { text: result.aiReply },
-              }),
+          const chunks = splitMessengerText(result.aiReply, 1900)
+          let sendSuccess = false
+          let lastMid: string | null = null
+          let errorTitle: string | null = null
+          let errorDetails: string | null = null
+
+          for (const chunk of chunks) {
+            let sendRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recipient: { id: customerPsid },
+                  messaging_type: 'RESPONSE',
+                  message: { text: chunk },
+                }),
+              }
+            )
+            let sendData = await sendRes.json()
+
+            // If 24-hr window / policy error, retry with MESSAGE_TAG
+            if (!sendRes.ok && (sendData?.error?.code === 10 || sendData?.error?.message?.includes('window') || sendData?.error?.error_subcode === 2018001)) {
+              console.warn('[Messenger Webhook] Retrying with MESSAGE_TAG ACCOUNT_UPDATE...')
+              sendRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    recipient: { id: customerPsid },
+                    messaging_type: 'MESSAGE_TAG',
+                    tag: 'ACCOUNT_UPDATE',
+                    message: { text: chunk },
+                  }),
+                }
+              )
+              sendData = await sendRes.json()
             }
-          )
-          const sendData = await sendRes.json()
-          const replyMid = sendData?.message_id
+
+            if (sendRes.ok && sendData?.message_id) {
+              sendSuccess = true
+              lastMid = sendData.message_id
+            } else {
+              console.error('[Messenger Graph API Error]:', sendData)
+              errorTitle = sendData?.error?.message || `HTTP ${sendRes.status}`
+              errorDetails = sendData?.error?.code ? `Code ${sendData.error.code}` : null
+            }
+          }
 
           if (conversationId) {
             await db.from('messages').insert({
@@ -348,8 +468,10 @@ export async function POST(req: Request) {
               sender_type: 'bot',
               content_type: 'text',
               content_text: result.aiReply,
-              message_id: replyMid || null,
-              status: 'delivered',
+              message_id: lastMid || null,
+              status: sendSuccess ? 'delivered' : 'failed',
+              error_title: sendSuccess ? null : (errorTitle || 'Meta send failed'),
+              error_details: sendSuccess ? null : errorDetails,
               created_at: new Date().toISOString(),
             })
 

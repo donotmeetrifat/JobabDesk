@@ -131,12 +131,19 @@ export async function GET() {
 
     let contactsMap = new Map<string, Contact>()
     if (contactIds.length > 0) {
-      const { data: contactsData } = await admin
+      let contactsData: any[] = []
+      const { data: rawContacts, error: ctErr } = await admin
         .from('contacts')
-        .select('*, contact_tags(tags(*))')
+        .select('*')
         .in('id', contactIds)
 
-      if (contactsData) {
+      if (rawContacts && rawContacts.length > 0) {
+        contactsData = rawContacts
+      } else if (ctErr) {
+        console.error('[api/inbox/conversations] Contacts select error:', ctErr)
+      }
+
+      if (contactsData.length > 0) {
         for (const ct of contactsData) {
           let updatedName = ct.name
           let updatedAvatar = ct.avatar_url
@@ -149,6 +156,8 @@ export async function GET() {
           if (
             isMessengerContact &&
             fbPageToken &&
+            ct.phone &&
+            !ct.phone.includes('-') &&
             (!ct.name || ct.name === 'Unknown' || ct.name.startsWith('Messenger User') || !ct.avatar_url)
           ) {
             try {
@@ -198,8 +207,8 @@ export async function GET() {
           id: fallbackId,
           user_id: c.user_id,
           account_id: c.account_id || accountId,
-          phone: c.contact_id || '',
-          name: `Messenger User (${fallbackId.slice(-4)})`,
+          phone: '',
+          name: 'Messenger User',
           company: 'Facebook Messenger',
           created_at: c.created_at,
           updated_at: c.updated_at,

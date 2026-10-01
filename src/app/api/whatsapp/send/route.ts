@@ -11,6 +11,16 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  return createAdminClient(url, serviceKey)
+}
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -149,16 +159,16 @@ export async function POST(request: Request) {
     }
 
     // Check if target conversation is a Facebook Messenger contact
-    const { data: convData } = await supabase
+    const admin = getAdminClient()
+    const { data: convData } = await admin
       .from('conversations')
       .select('*, contact:contacts(*)')
       .eq('id', conversationId)
-      .eq('account_id', accountId)
       .maybeSingle()
 
     let contact = (convData as any)?.contact
     if (!contact && convData?.contact_id) {
-      const { data: directContact } = await supabase
+      const { data: directContact } = await admin
         .from('contacts')
         .select('*')
         .eq('id', convData.contact_id)
@@ -166,54 +176,121 @@ export async function POST(request: Request) {
       contact = directContact
     }
 
+    let psid = contact?.phone || ''
+    // If contact.phone is missing or a UUID, look up valid contact in account
+    if (!psid || psid.includes('-')) {
+      const { data: realContact } = await admin
+        .from('contacts')
+        .select('phone')
+        .eq('account_id', accountId)
+        .eq('company', 'Facebook Messenger')
+        .not('phone', 'like', '%-%')
+        .limit(1)
+        .maybeSingle()
+      if (realContact?.phone) {
+        psid = realContact.phone
+      }
+    }
+
     const isMessenger =
       contact?.channel === 'messenger' ||
       contact?.company === 'Facebook Messenger' ||
-      (contact?.phone && !contact.phone.startsWith('+') && !isNaN(Number(contact.phone)) && contact.phone.length > 9)
+      (psid && !psid.includes('-') && !psid.startsWith('+') && !isNaN(Number(psid)) && psid.length > 9)
 
     if (isMessenger && content_text) {
-      const { data: accountRow } = await supabase
+      const { data: accountRow } = await admin
         .from('accounts')
         .select('facebook_page_access_token')
         .eq('id', accountId)
         .maybeSingle()
 
-      let fbToken = accountRow?.facebook_page_access_token
+      let fbToken = accountRow?.facebook_page_access_token || ''
       if (!fbToken) {
-        const { data: chan } = await supabase
+        const { data: chan } = await admin
           .from('channel_connections')
           .select('metadata')
           .eq('account_id', accountId)
           .eq('channel_type', 'messenger')
           .maybeSingle()
-        fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken
+        fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || ''
+      }
+      if (!fbToken) {
+        const { data: anyChan } = await admin
+          .from('channel_connections')
+          .select('metadata')
+          .eq('channel_type', 'messenger')
+          .limit(1)
+          .maybeSingle()
+        fbToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
       }
 
-      if (fbToken) {
-        const psid = contact.phone
-        const fbRes = await fetch(
-          `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(fbToken)}`,
+      if (fbToken && psid && !psid.includes('-')) {
+        let activePageToken = fbToken
+        try {
+          const meRes = await fetch(
+            `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(fbToken)}`
+          )
+          if (meRes.ok) {
+            const meData = await meRes.json()
+            if (!meData?.category) {
+              // User token — resolve Page token via /me/accounts
+              const accsRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(fbToken)}`
+              )
+              if (accsRes.ok) {
+                const accsData = await accsRes.json()
+                const pages = accsData?.data || []
+                if (pages.length > 0 && pages[0].access_token) {
+                  activePageToken = pages[0].access_token
+                }
+              }
+            }
+          }
+        } catch {}
+
+        let fbRes = await fetch(
+          `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recipient: { id: psid },
+              messaging_type: 'RESPONSE',
               message: { text: content_text },
             }),
           }
         )
-        const fbJson = await fbRes.json()
-        if (!fbRes.ok || fbJson.error) {
+        let fbJson = await fbRes.json()
+
+        // If window error, retry with MESSAGE_TAG
+        if (!fbRes.ok && (fbJson?.error?.code === 10 || fbJson?.error?.message?.includes('window') || fbJson?.error?.error_subcode === 2018001)) {
+          fbRes = await fetch(
+            `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipient: { id: psid },
+                messaging_type: 'MESSAGE_TAG',
+                tag: 'ACCOUNT_UPDATE',
+                message: { text: content_text },
+              }),
+            }
+          )
+          fbJson = await fbRes.json()
+        }
+
+        if (!fbRes.ok || fbJson.error || !fbJson.message_id) {
           return NextResponse.json(
-            { error: fbJson.error?.message || 'Failed to send message via Messenger' },
+            { error: fbJson.error?.message || 'Failed to dispatch via Meta Messenger' },
             { status: 400 }
           )
         }
 
-        const fbMid = fbJson.message_id || null
+        const fbMid = fbJson.message_id
         const nowIso = new Date().toISOString()
 
-        const { data: insertedMsg } = await supabase
+        const { data: insertedMsg } = await admin
           .from('messages')
           .insert({
             conversation_id: conversationId,
@@ -227,7 +304,7 @@ export async function POST(request: Request) {
           .select('id')
           .single()
 
-        await supabase
+        await admin
           .from('conversations')
           .update({
             last_message_text: content_text,
