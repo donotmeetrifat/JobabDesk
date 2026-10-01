@@ -120,6 +120,16 @@ async function resolvePageAccessToken(rawToken: string): Promise<string> {
         return pages[0].access_token
       }
     }
+    const assignedRes = await fetch(
+      `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,access_token&access_token=${encodeURIComponent(rawToken)}`
+    )
+    if (assignedRes.ok) {
+      const assignedData = await assignedRes.json()
+      const pages = assignedData?.data || []
+      if (pages.length > 0 && pages[0].access_token) {
+        return pages[0].access_token
+      }
+    }
   } catch {}
   return rawToken
 }

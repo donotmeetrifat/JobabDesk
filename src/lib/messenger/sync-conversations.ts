@@ -241,41 +241,187 @@ export async function syncFacebookMessengerConversations(
           }
         }
 
-        // If not a Page token, it is a User token. Look up the user's managed pages via /me/accounts
+        // If not a Page token, it is a User or System User token.
+        // Try multiple methods to resolve the managed or assigned Facebook Page.
         if (!isPage) {
-          const accsRes = await fetch(
-            `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
-          )
-          if (accsRes.ok) {
-            const accsData = await accsRes.json()
-            const pages: any[] = accsData.data || []
-            if (pages.length > 0) {
-              const matched =
-                pages.find(
-                  (p) =>
-                    p.id === pageId ||
-                    (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
-                    p.name?.toLowerCase().includes('digiplus')
-                ) || pages[0]
+          // Method A: Check /me/accounts (Standard User and some System Users)
+          try {
+            const accsRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+            )
+            if (accsRes.ok) {
+              const accsData = await accsRes.json()
+              const pages: any[] = accsData.data || []
+              if (pages.length > 0) {
+                const matched =
+                  pages.find(
+                    (p) =>
+                      (pageId && p.id === pageId) ||
+                      (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
+                      p.name?.toLowerCase().includes('digiplus')
+                  ) || pages[0]
 
-              if (matched) {
-                pageId = matched.id
-                pageName = matched.name
-                if (matched.access_token) {
-                  pageToken = matched.access_token
+                if (matched) {
+                  pageId = matched.id
+                  pageName = matched.name
+                  if (matched.access_token) {
+                    pageToken = matched.access_token
+                  }
                   isPage = true
                 }
               }
-            } else {
-              // The user token does not have access to any pages (missing pages_show_list or not an admin)
-              const userName = meData?.name || 'User'
-              return {
-                success: false,
-                tokenMissing: true,
-                conversationsCount: 0,
-                messagesCount: 0,
-                error: `The provided token is a User token for "${userName}", not a Page token for Digiplus. In Meta Graph API Explorer, select "@Digiplus" under User or Page and click "Generate Access Token".`,
+            }
+          } catch {}
+
+          // Method B: Check /me/assigned_pages (System Users in Meta Business Suite)
+          if (!isPage) {
+            try {
+              const assignedRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+              )
+              if (assignedRes.ok) {
+                const assignedData = await assignedRes.json()
+                const pages: any[] = assignedData.data || []
+                if (pages.length > 0) {
+                  const matched =
+                    pages.find(
+                      (p) =>
+                        (pageId && p.id === pageId) ||
+                        (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
+                        p.name?.toLowerCase().includes('digiplus')
+                    ) || pages[0]
+
+                  if (matched) {
+                    pageId = matched.id
+                    pageName = matched.name
+                    if (matched.access_token) {
+                      pageToken = matched.access_token
+                    }
+                    isPage = true
+                  }
+                }
               }
+            } catch {}
+          }
+
+          // Method C: Check /me/businesses (Business Manager owned/client pages)
+          if (!isPage) {
+            try {
+              const bizRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/businesses?fields=id,name,owned_pages{id,name,access_token},client_pages{id,name,access_token}&access_token=${encodeURIComponent(pageToken)}`
+              )
+              if (bizRes.ok) {
+                const bizData = await bizRes.json()
+                const bizList: any[] = bizData.data || []
+                const pages: any[] = []
+                for (const b of bizList) {
+                  if (b.owned_pages?.data) pages.push(...b.owned_pages.data)
+                  if (b.client_pages?.data) pages.push(...b.client_pages.data)
+                }
+                if (pages.length > 0) {
+                  const matched =
+                    pages.find(
+                      (p) =>
+                        (pageId && p.id === pageId) ||
+                        (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
+                        p.name?.toLowerCase().includes('digiplus')
+                    ) || pages[0]
+
+                  if (matched) {
+                    pageId = matched.id
+                    pageName = matched.name
+                    if (matched.access_token) {
+                      pageToken = matched.access_token
+                    }
+                    isPage = true
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          // Fallback: If pageId was not set, try to resolve from database channel_connections
+          if (!pageId && actualAccountId) {
+            try {
+              const { data: chan } = await db
+                .from('channel_connections')
+                .select('external_account_id, display_name')
+                .eq('account_id', actualAccountId)
+                .eq('channel_type', 'messenger')
+                .limit(1)
+                .maybeSingle()
+              if (chan?.external_account_id) {
+                pageId = chan.external_account_id
+                pageName = pageName || chan.display_name || 'Digiplus'
+              }
+            } catch {}
+          }
+          if (!pageId) {
+            try {
+              const { data: anyChan } = await db
+                .from('channel_connections')
+                .select('external_account_id, display_name')
+                .eq('channel_type', 'messenger')
+                .limit(1)
+                .maybeSingle()
+              if (anyChan?.external_account_id) {
+                pageId = anyChan.external_account_id
+                pageName = pageName || anyChan.display_name || 'Digiplus'
+              }
+            } catch {}
+          }
+
+          // Method D: If pageId is known, query the Page directly for access_token
+          if (!isPage && pageId) {
+            try {
+              const pageDirectRes = await fetch(
+                `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+              )
+              if (pageDirectRes.ok) {
+                const pageDirectData = await pageDirectRes.json()
+                if (pageDirectData?.id) {
+                  pageId = pageDirectData.id
+                  pageName = pageDirectData.name || pageName || 'Digiplus'
+                  if (pageDirectData.access_token) {
+                    pageToken = pageDirectData.access_token
+                  }
+                  isPage = true
+                }
+              }
+            } catch {}
+          }
+
+          // Method E: Test if the token has direct access to read conversations for pageId
+          if (!isPage && pageId) {
+            try {
+              const convTestRes = await fetch(
+                `https://graph.facebook.com/v20.0/${pageId}/conversations?limit=1&access_token=${encodeURIComponent(pageToken)}`
+              )
+              if (convTestRes.ok) {
+                // Token has direct authorization to manage conversations for this page!
+                isPage = true
+              }
+            } catch {}
+          }
+
+          // If still unresolved after all checks, return an actionable diagnostic error
+          if (!isPage) {
+            const userName = meData?.name || 'User'
+            return {
+              success: false,
+              tokenMissing: true,
+              conversationsCount: 0,
+              messagesCount: 0,
+              error:
+                `The provided token belongs to System User "${userName}", but no Facebook Page (Digiplus) is attached to it.\n\n` +
+                `👉 How to attach Digiplus in Meta Business Suite (Method 2):\n` +
+                `1. Open Meta Business Settings → System Users (https://business.facebook.com/settings/system-users)\n` +
+                `2. Select "${userName}" and click "Assign Assets" (or "Add Assets")\n` +
+                `3. Select "Pages" → click "Digiplus" → turn ON "Manage Page" (Full Control) → click "Save Changes"\n` +
+                `4. IMPORTANT: Click "Generate New Token" again (Expiration: Never) with permissions: pages_messaging, pages_manage_metadata, pages_show_list, pages_read_engagement\n` +
+                `5. Paste the newly generated token here and click "Save & Sync".\n\n` +
+                `👉 If using Method 1 (Graph API Explorer):\n` +
+                `In Meta Graph API Explorer, select "Page: Digiplus" under "User or Page" before clicking Generate Access Token.`,
             }
           }
         }
@@ -354,7 +500,7 @@ export async function syncFacebookMessengerConversations(
         tokenMissing: true,
         conversationsCount: 0,
         messagesCount: 0,
-        error: `Permission "pages_messaging" is not granted on this token. In Meta Graph API Explorer, add "pages_messaging" under Permissions and click "Generate Access Token".`,
+        error: `Permission "pages_messaging" is not granted on this token. When generating your token (in Meta Business Settings → System Users or Graph API Explorer), please ensure "pages_messaging" is checked.`,
         debug: {
           pageId,
           pageName,

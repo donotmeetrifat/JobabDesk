@@ -61,6 +61,7 @@ function InboxPageInner() {
   const [showTokenModal, setShowTokenModal] = useState<boolean>(false);
   const [inputToken, setInputToken] = useState<string>("");
   const [savingToken, setSavingToken] = useState<boolean>(false);
+  const [tokenModalError, setTokenModalError] = useState<string>("");
   const [isSyncingMessenger, setIsSyncingMessenger] = useState(false);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
@@ -392,6 +393,7 @@ function InboxPageInner() {
         const data = await res.json();
 
         if (data.success) {
+          setTokenModalError("");
           if (tokenToSend && typeof window !== "undefined") {
             try {
               const stored = localStorage.getItem("jobabdesk_fb_session");
@@ -435,6 +437,7 @@ function InboxPageInner() {
           }
           setResyncToken((prev) => prev + 1);
         } else {
+          setTokenModalError(data.error || "Failed to sync Messenger conversations");
           if (
             data.tokenMissing ||
             data.error?.toLowerCase().includes("token") ||
@@ -446,6 +449,7 @@ function InboxPageInner() {
           toast.error(data.error || "Failed to sync Messenger conversations");
         }
       } catch (err: any) {
+        setTokenModalError(err.message || "Network error syncing Messenger");
         toast.error(err.message || "Network error syncing Messenger");
       } finally {
         setIsSyncingMessenger(false);
@@ -1013,6 +1017,12 @@ function InboxPageInner() {
               To fetch and sync customer conversations for <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span>, enter your Facebook Page Access Token below.
             </p>
 
+            {tokenModalError && (
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-[11px] text-destructive whitespace-pre-line leading-relaxed max-h-48 overflow-y-auto">
+                {tokenModalError}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold text-foreground">
                 Page Access Token (EAAG...)
@@ -1020,23 +1030,32 @@ function InboxPageInner() {
               <textarea
                 rows={3}
                 value={inputToken}
-                onChange={(e) => setInputToken(e.target.value)}
+                onChange={(e) => {
+                  setInputToken(e.target.value);
+                  if (tokenModalError) setTokenModalError("");
+                }}
                 placeholder="Paste Page Access Token (EAAG...) here..."
                 className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
             </div>
 
-            <div className="rounded-xl border bg-muted/40 p-3 text-[11px] space-y-1.5 text-muted-foreground">
+            <div className="rounded-xl border bg-muted/40 p-3 text-[11px] space-y-2 text-muted-foreground">
               <span className="font-semibold text-foreground flex items-center gap-1">
                 <ExternalLink className="h-3 w-3 text-blue-500" />
                 Where to get this token?
               </span>
-              <p>1. Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a></p>
-              <p>2. Under User or Page, select Page: <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span> with permissions <code className="rounded bg-muted px-1">pages_messaging</code> and <code className="rounded bg-muted px-1">pages_manage_metadata</code>.</p>
-              <p>3. Generate Access Token &gt; Paste it here &gt; Click <strong>Save &amp; Sync</strong>.</p>
-              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-2 text-[10px] text-amber-700 dark:text-amber-300 mt-2 space-y-1">
-                <span className="font-bold">⚠️ Avoid 1-Hour Expiration (Code 190):</span>
-                <p>Default Graph API Explorer tokens expire after 1 hour. For a <strong>permanent (never-expiring) token</strong>: Go to <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Meta Business Settings → System Users</a>, create a System User, assign your Page, and generate a token with <strong>Never Expire</strong>.</p>
+              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 text-[11px] text-emerald-900 dark:text-emerald-200 space-y-1">
+                <span className="font-bold flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                  ⚡ Method 2 (Recommended — Never Expires):
+                </span>
+                <p>1. Open <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-emerald-700 dark:text-emerald-300">Meta Business Settings → System Users</a>.</p>
+                <p>2. Select your System User → click <strong>Assign Assets</strong> → select <strong>Pages</strong> → select <strong>{messengerPageName || "Digiplus"}</strong> → turn ON <strong>Manage Page (Full Control)</strong> → Save Changes.</p>
+                <p>3. Click <strong>Generate New Token</strong> (Expiration: <strong>Never</strong>) with permissions: <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_messaging</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_manage_metadata</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_show_list</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_read_engagement</code>.</p>
+                <p>4. Paste the token below and click <strong>Save &amp; Sync</strong>.</p>
+              </div>
+              <div className="rounded-lg bg-muted/70 border p-2 text-[10px] space-y-1">
+                <span className="font-bold text-foreground">Method 1 (Testing — 1-Hour Expiration):</span>
+                <p>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a> → under <em>User or Page</em> select <strong>Page: {messengerPageName || "Digiplus"}</strong> → click <strong>Generate Access Token</strong>.</p>
               </div>
             </div>
 

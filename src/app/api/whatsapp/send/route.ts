@@ -244,6 +244,18 @@ export async function POST(request: Request) {
                   activePageToken = pages[0].access_token
                 }
               }
+              if (activePageToken === fbToken) {
+                const assignedRes = await fetch(
+                  `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,access_token&access_token=${encodeURIComponent(fbToken)}`
+                )
+                if (assignedRes.ok) {
+                  const assignedData = await assignedRes.json()
+                  const pages = assignedData?.data || []
+                  if (pages.length > 0 && pages[0].access_token) {
+                    activePageToken = pages[0].access_token
+                  }
+                }
+              }
             }
           }
         } catch {}
