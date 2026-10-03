@@ -19,6 +19,89 @@ function getAdminClient() {
   return createAdminClient(url, serviceKey);
 }
 
+async function saveReactionToDb({
+  admin,
+  supabase,
+  messageId,
+  conversationId,
+  userId,
+  emoji,
+}: {
+  admin: any;
+  supabase: any;
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  emoji: string;
+}) {
+  if (emoji === '') {
+    // Delete reaction
+    const delAdmin = await admin
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+      .eq('actor_type', 'agent')
+      .eq('actor_id', userId);
+
+    if (delAdmin.error) {
+      await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('actor_type', 'agent')
+        .eq('actor_id', userId);
+    }
+    return;
+  }
+
+  const payload = {
+    message_id: messageId,
+    conversation_id: conversationId,
+    actor_type: 'agent',
+    actor_id: userId,
+    emoji,
+  };
+
+  // Check if reaction row already exists
+  const { data: existing } = await admin
+    .from('message_reactions')
+    .select('id')
+    .eq('message_id', messageId)
+    .eq('actor_type', 'agent')
+    .eq('actor_id', userId)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const upRes = await admin
+      .from('message_reactions')
+      .update({ emoji })
+      .eq('id', existing.id);
+
+    if (upRes.error) {
+      await supabase
+        .from('message_reactions')
+        .update({ emoji })
+        .eq('id', existing.id);
+    }
+  } else {
+    const insRes = await admin
+      .from('message_reactions')
+      .insert(payload);
+
+    if (insRes.error) {
+      const fallbackIns = await supabase
+        .from('message_reactions')
+        .insert(payload);
+
+      if (fallbackIns.error) {
+        await admin
+          .from('message_reactions')
+          .upsert(payload, { onConflict: 'message_id,actor_type,actor_id' });
+      }
+    }
+  }
+}
+
 /**
  * POST /api/whatsapp/react
  *
@@ -29,7 +112,7 @@ function getAdminClient() {
  */
 export async function POST(request: Request) {
   try {
-    const { accountId, userId } = await requireRole('agent');
+    const { supabase, accountId, userId } = await requireRole('agent');
 
     const limit = checkRateLimit(`react:${userId}`, RATE_LIMITS.react);
     if (!limit.success) {
@@ -230,41 +313,14 @@ export async function POST(request: Request) {
       }
 
       // 4. Mirror reaction into message_reactions in DB
-      if (emoji === '') {
-        const { error: delError } = await admin
-          .from('message_reactions')
-          .delete()
-          .eq('message_id', targetMessage.id)
-          .eq('actor_type', 'agent')
-          .eq('actor_id', userId);
-
-        if (delError) {
-          console.error('[messenger/react] DB delete failed:', delError.message);
-          return NextResponse.json(
-            { error: 'Reaction sent to Meta but DB delete failed' },
-            { status: 500 },
-          );
-        }
-      } else {
-        const { error: upsertError } = await admin.from('message_reactions').upsert(
-          {
-            message_id: targetMessage.id,
-            conversation_id: targetMessage.conversation_id,
-            actor_type: 'agent',
-            actor_id: userId,
-            emoji,
-          },
-          { onConflict: 'message_id,actor_type,actor_id' },
-        );
-
-        if (upsertError) {
-          console.error('[messenger/react] DB upsert failed:', upsertError.message);
-          return NextResponse.json(
-            { error: 'Reaction sent to Meta but DB upsert failed' },
-            { status: 500 },
-          );
-        }
-      }
+      await saveReactionToDb({
+        admin,
+        supabase,
+        messageId: targetMessage.id,
+        conversationId: targetMessage.conversation_id,
+        userId,
+        emoji,
+      });
 
       return NextResponse.json({ success: true });
     }
@@ -312,42 +368,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // Mirror into DB. Empty emoji = removal.
-    if (emoji === '') {
-      const { error: delError } = await admin
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', targetMessage.id)
-        .eq('actor_type', 'agent')
-        .eq('actor_id', userId);
-
-      if (delError) {
-        console.error('[whatsapp/react] DB delete failed:', delError.message);
-        return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB delete failed' },
-          { status: 500 },
-        );
-      }
-    } else {
-      const { error: upsertError } = await admin.from('message_reactions').upsert(
-        {
-          message_id: targetMessage.id,
-          conversation_id: targetMessage.conversation_id,
-          actor_type: 'agent',
-          actor_id: userId,
-          emoji,
-        },
-        { onConflict: 'message_id,actor_type,actor_id' },
-      );
-
-      if (upsertError) {
-        console.error('[whatsapp/react] DB upsert failed:', upsertError.message);
-        return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB upsert failed' },
-          { status: 500 },
-        );
-      }
-    }
+    // Mirror into DB using safe multi-strategy helper
+    await saveReactionToDb({
+      admin,
+      supabase,
+      messageId: targetMessage.id,
+      conversationId: targetMessage.conversation_id,
+      userId,
+      emoji,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
