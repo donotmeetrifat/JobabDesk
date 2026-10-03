@@ -73,7 +73,7 @@ export async function handleIncomingCustomerMessage({
   try {
     const { data: acctData } = await client
       .from('accounts')
-      .select('id, name, business_tagline, product_categories_sold, target_audience, customer_relation_style, ai_auto_reply_enabled, whatsapp_auto_reply_enabled, messenger_auto_reply_enabled, ai_primary_language, ai_business_description, ai_delivery_policy, ai_return_policy, ai_auto_reply_tone, ai_store_instructions, delivery_policy, return_policy, special_instructions, ai_persona')
+      .select('*')
       .eq('id', accountId)
       .maybeSingle()
     account = acctData
@@ -239,10 +239,51 @@ export async function handleIncomingCustomerMessage({
     ? 'Address the customer formally as "Sir" or "Madam".'
     : 'Maintain a warm, casual, and polite conversation.'
 
+  // Fetch Recent Conversation History for Context & Memory
+  let conversationHistoryText = ''
+  if (contactId || customerPhone) {
+    try {
+      let convId = ''
+      if (contactId) {
+        const { data: convRow } = await client
+          .from('conversations')
+          .select('id')
+          .eq('account_id', account?.id || accountId)
+          .eq('contact_id', contactId)
+          .maybeSingle()
+        convId = convRow?.id || ''
+      }
+
+      if (convId) {
+        const { data: historyMsgs } = await client
+          .from('messages')
+          .select('sender_type, content_text, created_at')
+          .eq('conversation_id', convId)
+          .order('created_at', { ascending: false })
+          .limit(8)
+
+        if (historyMsgs && historyMsgs.length > 0) {
+          const chronological = [...historyMsgs].reverse()
+          conversationHistoryText = chronological
+            .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
+            .join('\n')
+        }
+      }
+    } catch (histErr) {
+      console.warn('[AI Router Engine] Failed to fetch conversation history:', histErr)
+    }
+  }
+
+  const resolvedStoreName =
+    (account.name && account.name.trim().toLowerCase() !== 'rifat' && account.name.trim() !== 'User' ? account.name.trim() : null) ||
+    account.facebook_page_name ||
+    account.name ||
+    'Digiplus'
+
   const businessContext = `
-Store Name: ${account.name}
+Store Name: ${resolvedStoreName}
 Tagline: ${account.business_tagline || 'N/A'}
-Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
+Store Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
 Categories Sold: ${account.product_categories_sold || 'N/A'}
 Target Customer Profile: ${account.target_audience || 'Customers in Bangladesh'}
 Customer Communication Style: ${communicationGuidance}
@@ -251,55 +292,58 @@ Return Policy: ${account.return_policy || account.ai_return_policy || 'Standard 
 Payment Info: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
 `.trim()
 
-  const systemPrompt = `You are an AI customer support agent for "${account.name}".
-Language Requirement: ${langGuidance}
-Response Tone: ${toneGuidance}
+  const systemPrompt = `You are an expert, friendly, and persuasive human sales representative and store assistant for "${resolvedStoreName}".
+You are chatting live with a customer on Facebook Messenger / WhatsApp.
 
-=== BUSINESS CONTEXT & SETUP RULES ===
+=== STORE IDENTITY & SETTINGS ===
 ${businessContext}
 
-Instructions:
-1. Intent Classification:
-   Classify customer message into EXACTLY ONE:
-   - "product_inquiry": Questions about available items, prices, brands, stock, or recommendations.
-   - "order_status": Questions about existing orders, delivery status, or order numbers.
-   - "general_faq": Greetings, location, payment methods, delivery charge, general chat.
-   - "human_escalation": Complaints, urgent issues needing a human agent.
+=== CRITICAL HUMAN SALESMAN RULES (MUST FOLLOW) ===
+1. SPEAK LIKE A REAL HUMAN SALESMAN, NEVER A ROBOT:
+   - Talk naturally, warmly, and helpfully.
+   - NEVER repeat robotic template phrases like "Hello Bhaiya/Apu! We have [Product] available in our store. It is priced at just...".
+   - NO REPETITIVE GREETINGS: If you or the customer have ALREADY greeted earlier in the Conversation History, DO NOT greet again! Answer their question directly.
 
-2. Ground Truth Rules:
-   - ONLY use the provided Product List and Customer Recent Orders.
-   - NEVER invent non-existent products, prices, or orders.
-   - Format prices with BDT (৳).
+2. ANSWER THE ACTUAL QUESTION WITH EXPERT DETAIL:
+   - When a customer asks for details about a product (e.g. "give me some detail about canva", "what are the features?", "how does it work?"):
+     * Thoroughly explain what the product is, its key benefits, and why it's great for them!
+     * For example, for Canva Pro: explain that it gives unlimited access to millions of premium graphic templates, 100M+ stock photos, AI background remover, brand kits, magic resize, and high-resolution exports without watermarks.
+     * For software/subscriptions, explain that they get full access on their own email with instant delivery.
+     * For physical products (skincare, gadgets, clothing), explain the benefits, ingredients/specs, and results.
+     * Do NOT just mindlessly repeat "the price is ৳50 and it is in stock". Address what they asked!
 
-Product List:
+3. CLOSE THE SALE (CALL TO ACTION):
+   - Always conclude with a natural, gentle question to help them buy, e.g.:
+     "Do you want me to process your order now, Bhaiya?" or "Which email should we activate it on?" or "Would you like to order today?"
+
+4. LANGUAGE & TONE:
+   - Language: ${langGuidance}
+   - Persona: ${toneGuidance}
+   - Addressing: ${communicationGuidance}
+
+=== CATALOG & INVENTORY ===
 ${
   products.length === 0
     ? 'No products available.'
     : products
         .map(
           (p) =>
-            `- Name: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Category: ${p.category || 'N/A'}${p.description ? `, Desc: ${p.description}` : ''}`
+            `- Product: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Category: ${p.category || 'General'}${p.description ? `, Info: ${p.description}` : ''}`
         )
         .join('\n')
 }
 
-Customer Orders:
-${
-  recentOrders.length === 0
-    ? 'No previous orders.'
-    : recentOrders
-        .map(
-          (o) =>
-            `- Order #: ${o.order_number}, Status: ${o.status}, Payment: ${o.payment_status}, Total: ৳${o.total}, Date: ${new Date(o.created_at).toLocaleDateString()}`
-        )
-        .join('\n')
-}
+=== RECENT CONVERSATION HISTORY ===
+${conversationHistoryText ? conversationHistoryText : '(Start of new conversation)'}
 
-Return ONLY valid JSON:
+Current Customer Message:
+"${messageText}"
+
+Return ONLY a valid JSON object:
 {
   "intent": "product_inquiry" | "order_status" | "general_faq" | "human_escalation",
-  "reply": "string",
-  "confidence": number
+  "reply": "string (your natural, persuasive human salesman reply)",
+  "confidence": 0.95
 }`
 
   // 3-TIER UNSTOPPABLE FALLBACK CHAIN
@@ -321,7 +365,7 @@ Return ONLY valid JSON:
           contents: [
             { role: 'user', parts: [{ text: systemPrompt }, { text: `Customer Message:\n"${messageText}"` }] },
           ],
-          config: { temperature: 0.2 },
+          config: { temperature: 0.65 },
         })
         const txt = resp.text?.trim()
         if (txt) {
@@ -351,7 +395,7 @@ Return ONLY valid JSON:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: messageText },
           ],
-          temperature: 0.2,
+          temperature: 0.65,
         }),
       })
       const groqJson = await groqResp.json()
@@ -443,11 +487,11 @@ Return ONLY valid JSON:
     } else {
       intent = 'general_faq'
       if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad ${account.name} e jogajog korar jonno! Kivabe shahajjo korte pari?`
+        aiReply = `Dhonnobad ${resolvedStoreName} e jogajog korar jonno! Kivabe shahajjo korte pari?`
       } else if (detectedLang === 'bn') {
-        aiReply = `${account.name}-এ যোগাযোগের জন্য ধন্যবাদ! কীভাবে সাহায্য করতে পারি?`
+        aiReply = `${resolvedStoreName}-এ যোগাযোগের জন্য ধন্যবাদ! কীভাবে সাহায্য করতে পারি?`
       } else {
-        aiReply = `Thank you for reaching out to ${account.name}! How can we assist you today?`
+        aiReply = `Thank you for reaching out to ${resolvedStoreName}! How can we assist you today?`
       }
     }
   } else {

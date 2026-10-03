@@ -1,13 +1,28 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (serviceKey && serviceKey.trim().length > 0) {
+    return createSupabaseClient(url, serviceKey.trim(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  }
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  return createSupabaseClient(url, anonKey)
+}
 
 export async function GET() {
   try {
     const { supabase, accountId } = await requireRole('agent')
+    const admin = getAdminClient()
+    const db = admin || supabase
 
-    const { data: account, error } = await supabase
+    const { data: account, error } = await db
       .from('accounts')
       .select('*')
       .eq('id', accountId)
@@ -27,6 +42,8 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const { supabase, accountId } = await requireRole('agent')
+    const admin = getAdminClient()
+    const db = admin || supabase
     const body = await req.json()
 
     const allowedFields = [
@@ -69,8 +86,8 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: true })
     }
 
-    // Try full update first
-    const { data, error } = await supabase
+    // Try full update first with adminClient
+    const { data, error } = await db
       .from('accounts')
       .update(updates)
       .eq('id', accountId)
@@ -82,7 +99,7 @@ export async function PATCH(req: Request) {
       // Retry by filtering fields one by one if column missing in Supabase
       const safeUpdates: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(updates)) {
-        const { error: singleErr } = await supabase
+        const { error: singleErr } = await db
           .from('accounts')
           .update({ [k]: v })
           .eq('id', accountId)
