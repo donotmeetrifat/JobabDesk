@@ -373,6 +373,7 @@ function splitMessengerText(text: string, maxLen = 1900): string[] {
       const result = await handleIncomingCustomerMessage({
         accountId,
         contactId,
+        conversationId,
         customerPhone: customerPsid,
         channel: 'messenger',
         messageText,

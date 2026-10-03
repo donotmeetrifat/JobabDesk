@@ -17,6 +17,7 @@ export type DetectedIntent = 'product_inquiry' | 'order_status' | 'general_faq' 
 export interface RouterInput {
   accountId: string
   supabase?: any
+  conversationId?: string | null
   contactId?: string | null
   customerPhone?: string | null
   channel?: SupportedChannel
@@ -58,6 +59,7 @@ export function detectLanguage(text: string, preferredSetting = 'auto_detect'): 
 export async function handleIncomingCustomerMessage({
   accountId,
   supabase,
+  conversationId,
   contactId,
   customerPhone,
   channel = 'sandbox',
@@ -241,36 +243,62 @@ export async function handleIncomingCustomerMessage({
 
   // Fetch Recent Conversation History for Context & Memory
   let conversationHistoryText = ''
-  if (contactId || customerPhone) {
+  let convId = conversationId || ''
+  if (!convId && (contactId || customerPhone)) {
     try {
-      let convId = ''
       if (contactId) {
-        const { data: convRow } = await client
+        const { data: convRows } = await client
           .from('conversations')
           .select('id')
           .eq('account_id', account?.id || accountId)
           .eq('contact_id', contactId)
-          .maybeSingle()
-        convId = convRow?.id || ''
+          .order('last_message_at', { ascending: false })
+          .limit(1)
+        convId = convRows?.[0]?.id || ''
       }
+    } catch (histErr) {
+      console.warn('[AI Router Engine] Failed to fetch conversation row:', histErr)
+    }
+  }
 
-      if (convId) {
-        const { data: historyMsgs } = await client
-          .from('messages')
-          .select('sender_type, content_text, created_at')
-          .eq('conversation_id', convId)
-          .order('created_at', { ascending: false })
-          .limit(8)
+  if (convId) {
+    try {
+      const { data: historyMsgs } = await client
+        .from('messages')
+        .select('sender_type, content_text, created_at')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: false })
+        .limit(12)
 
-        if (historyMsgs && historyMsgs.length > 0) {
-          const chronological = [...historyMsgs].reverse()
-          conversationHistoryText = chronological
-            .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
-            .join('\n')
-        }
+      if (historyMsgs && historyMsgs.length > 0) {
+        const chronological = [...historyMsgs].reverse()
+        conversationHistoryText = chronological
+          .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
+          .join('\n')
       }
     } catch (histErr) {
       console.warn('[AI Router Engine] Failed to fetch conversation history:', histErr)
+    }
+  }
+
+  // Fallback: If no convId found, query by contact_id directly
+  if (!conversationHistoryText && contactId) {
+    try {
+      const { data: contactMsgs } = await client
+        .from('messages')
+        .select('sender_type, content_text, created_at')
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: false })
+        .limit(12)
+
+      if (contactMsgs && contactMsgs.length > 0) {
+        const chronological = [...contactMsgs].reverse()
+        conversationHistoryText = chronological
+          .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
+          .join('\n')
+      }
+    } catch (fallbackHistErr) {
+      console.warn('[AI Router Engine] Failed to fetch contact message history:', fallbackHistErr)
     }
   }
 
@@ -301,10 +329,18 @@ ${businessContext}
 === CRITICAL HUMAN SALESMAN RULES (MUST FOLLOW) ===
 1. SPEAK LIKE A REAL HUMAN SALESMAN, NEVER A ROBOT:
    - Talk naturally, warmly, and helpfully.
-   - NEVER repeat robotic template phrases like "Hello Bhaiya/Apu! We have [Product] available in our store. It is priced at just...".
-   - NO REPETITIVE GREETINGS: If you or the customer have ALREADY greeted earlier in the Conversation History, DO NOT greet again! Answer their question directly.
+   - ABSOLUTELY NO REPETITIVE GREETINGS OR WELCOME PHRASES:
+     * NEVER say "Thank you for reaching out to [Store]! How can we assist you today?".
+     * NEVER greet the customer again if there is prior conversation history or if they asked a specific question.
+     * When a customer asks about payment methods, delivery rates, return policy, or products, ANSWER THEIR QUESTION IMMEDIATELY AND DIRECTLY!
+   - NO ROBOTIC TEMPLATES: Never repeat phrases like "Hello Bhaiya/Apu! We have [Product] available in our store...".
 
 2. ANSWER THE ACTUAL QUESTION WITH EXPERT DETAIL:
+   - If they ask about Payment Methods (e.g. "Payment Methods?", "kivabe pay korbo?", "bKash ache?"):
+     * Directly list the accepted payment options: Cash on Delivery (COD) all over Bangladesh, bKash, and Nagad.
+     * Conclude with a helpful question to assist with their order!
+   - If they ask about Delivery Rates / Return Policy:
+     * Clearly state the rates and policies from Store Settings.
    - When a customer asks for details about a product (e.g. "give me some detail about canva", "what are the features?", "how does it work?"):
      * Thoroughly explain what the product is, its key benefits, and why it's great for them!
      * For example, for Canva Pro: explain that it gives unlimited access to millions of premium graphic templates, 100M+ stock photos, AI background remover, brand kits, magic resize, and high-resolution exports without watermarks.
@@ -352,11 +388,20 @@ Return ONLY a valid JSON object:
   let modelUsed = 'gemini-3.8-flash'
   let rawResponse: string | null = null
 
-  // TIER 1: Gemini API Fallback Chain
+  // TIER 1: Gemini API Fallback Chain (Prioritize fast active models with separate free quotas)
   const geminiApiKey = process.env.GEMINI_API_KEY
   if (geminiApiKey) {
     const ai = new GoogleGenAI({ apiKey: geminiApiKey })
-    const geminiModels = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
+    const geminiModels = [
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-3.5-flash',
+      'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+    ]
 
     for (const gModel of geminiModels) {
       try {
@@ -374,7 +419,8 @@ Return ONLY a valid JSON object:
           modelUsed = gModel
           break
         }
-      } catch {
+      } catch (err: any) {
+        console.warn(`[AI Router Engine] Gemini model ${gModel} failed:`, err?.message || err)
         // try next model
       }
     }
@@ -449,7 +495,7 @@ Return ONLY a valid JSON object:
     }
   }
 
-  // TIER 4: Offline Dictionary & Product Matcher Engine
+  // TIER 4: Offline Rule Matcher Engine (Directly answers inquiries without repetitive welcome greetings)
   let intent: DetectedIntent = 'general_faq'
   let aiReply = ''
 
@@ -457,41 +503,134 @@ Return ONLY a valid JSON object:
     providerUsed = 'offline_dictionary'
     modelUsed = 'offline-rule-matcher'
 
-    // Simple offline keyword matcher
-    const textLower = messageText.toLowerCase()
+    const textLower = messageText.toLowerCase().trim()
     const matchedProduct = products.find((p) => textLower.includes(p.name.toLowerCase()))
 
+    // 1. Matched Product Inquiry
     if (matchedProduct) {
       intent = 'product_inquiry'
       if (detectedLang === 'banglish') {
-        aiReply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'}`
+        aiReply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
       } else if (detectedLang === 'bn') {
-        aiReply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'}`
+        aiReply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
       } else {
-        aiReply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'}`
+        aiReply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
       }
-    } else if (textLower.includes('order') || textLower.includes('delivery') || textLower.includes('status')) {
+    }
+    // 2. Payment Methods Inquiry
+    else if (
+      textLower.includes('payment') ||
+      textLower.includes('pay') ||
+      textLower.includes('bkash') ||
+      textLower.includes('nagad') ||
+      textLower.includes('rocket') ||
+      textLower.includes('cash') ||
+      textLower.includes('cod') ||
+      textLower.includes('bikas') ||
+      textLower.includes('taka pathabo') ||
+      textLower.includes('টাকা') ||
+      textLower.includes('পেমেন্ট')
+    ) {
+      intent = 'general_faq'
+      const paymentInfo = account.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
+      if (detectedLang === 'banglish') {
+        aiReply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan, Bhaiya?`
+      } else if (detectedLang === 'bn') {
+        aiReply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান?`
+      } else {
+        aiReply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
+      }
+    }
+    // 3. Delivery Rates & Shipping Policy
+    else if (
+      textLower.includes('delivery') ||
+      textLower.includes('shipping') ||
+      textLower.includes('charge') ||
+      textLower.includes('rate') ||
+      textLower.includes('courier') ||
+      textLower.includes('pathao') ||
+      textLower.includes('ডেলিভারি')
+    ) {
+      intent = 'general_faq'
+      const deliveryInfo = account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150 (Free delivery on select orders)'
+      if (detectedLang === 'banglish') {
+        aiReply = `Amader delivery charge o policy: ${deliveryInfo}. Sara Bangladesh e amra home delivery dei!`
+      } else if (detectedLang === 'bn') {
+        aiReply = `আমাদের ডেলিভারি পলিসি ও চার্জ: ${deliveryInfo}। সারাদেশে হোম ডেলিভারি সুবিধা রয়েছে!`
+      } else {
+        aiReply = `Our delivery policy: ${deliveryInfo}. We deliver safely all over Bangladesh!`
+      }
+    }
+    // 4. Return & Exchange Policy
+    else if (
+      textLower.includes('return') ||
+      textLower.includes('refund') ||
+      textLower.includes('exchange') ||
+      textLower.includes('warranty') ||
+      textLower.includes('guarantee') ||
+      textLower.includes('policy') ||
+      textLower.includes('রিটার্ন')
+    ) {
+      intent = 'general_faq'
+      const returnInfo = account.return_policy || account.ai_return_policy || 'Standard exchange and return policy available'
+      if (detectedLang === 'banglish') {
+        aiReply = `Amader return policy: ${returnInfo}. Kono somossa hole amra druto somadhan kori.`
+      } else if (detectedLang === 'bn') {
+        aiReply = `আমাদের রিটার্ন পলিসি: ${returnInfo}। যেকোনো সমস্যায় আমরা দ্রুত সহায়তা প্রদান করি।`
+      } else {
+        aiReply = `Our return & exchange policy: ${returnInfo}. We ensure authentic products and full customer satisfaction.`
+      }
+    }
+    // 5. Order Status & Tracking
+    else if (
+      textLower.includes('order status') ||
+      textLower.includes('track') ||
+      textLower.includes('kobe pabo') ||
+      textLower.includes('amar order') ||
+      textLower.includes('order number')
+    ) {
       intent = 'order_status'
       if (recentOrders.length > 0) {
         const lastOrder = recentOrders[0]
         if (detectedLang === 'banglish') {
-          aiReply = `Apnar porer order (${lastOrder.order_number}) er status: ${lastOrder.status}. Total bill: ৳${lastOrder.total}.`
+          aiReply = `Apnar order (${lastOrder.order_number}) er status: ${lastOrder.status}. Total bill: ৳${lastOrder.total}.`
         } else if (detectedLang === 'bn') {
           aiReply = `আপনার সর্বশেষ অর্ডারের (${lastOrder.order_number}) স্ট্যাটাস: ${lastOrder.status}। মোট বিল: ৳${lastOrder.total}।`
         } else {
           aiReply = `Your recent order (${lastOrder.order_number}) status is ${lastOrder.status}. Total: ৳${lastOrder.total}.`
         }
       } else {
-        aiReply = detectedLang === 'banglish' ? 'Apnar kono rasta order khuje pawa jayni.' : 'আপনার কোনো অর্ডার খুঁজে পাওয়া যায়নি।'
+        if (detectedLang === 'banglish') {
+          aiReply = 'Apnar phone number ba order number ta dile ami ekhoni status check kore dicchi!'
+        } else if (detectedLang === 'bn') {
+          aiReply = 'অনুগ্রহ করে আপনার ফোন নম্বর বা অর্ডার নম্বরটি দিলে আমি এখনই স্ট্যাটাস চেক করে দিচ্ছি!'
+        } else {
+          aiReply = 'Please provide your order number or phone number so I can check your order status immediately!'
+        }
       }
-    } else {
+    }
+    // 6. Generic Fallback — NEVER output canned "Thank you for reaching out..."
+    else {
       intent = 'general_faq'
-      if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad ${resolvedStoreName} e jogajog korar jonno! Kivabe shahajjo korte pari?`
-      } else if (detectedLang === 'bn') {
-        aiReply = `${resolvedStoreName}-এ যোগাযোগের জন্য ধন্যবাদ! কীভাবে সাহায্য করতে পারি?`
+      const isGreeting = /^(hi|hello|hey|salam|slm|assalamu alaikum|hlw|হাই|হ্যালো|সালাম)[\s!.]*$/i.test(textLower)
+      if (isGreeting && !conversationHistoryText) {
+        // Fresh start with a pure greeting
+        if (detectedLang === 'banglish') {
+          aiReply = `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+        } else if (detectedLang === 'bn') {
+          aiReply = `আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+        } else {
+          aiReply = `Hello! How can we assist you today? Are you looking for any particular product or service?`
+        }
       } else {
-        aiReply = `Thank you for reaching out to ${resolvedStoreName}! How can we assist you today?`
+        // Ongoing conversation or direct question fallback
+        if (detectedLang === 'banglish') {
+          aiReply = `Ji Bhaiya, ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
+        } else if (detectedLang === 'bn') {
+          aiReply = `জি, আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনি কোন পণ্য বা সেবা সম্পর্কে জানতে চান বলুন, আমি বিস্তারিত জানাচ্ছি!`
+        } else {
+          aiReply = `Understood! Please tell me which product or details you would like to know about, and I will assist you right away.`
+        }
       }
     }
   } else {
@@ -507,6 +646,18 @@ Return ONLY a valid JSON object:
     } catch {
       intent = 'general_faq'
       aiReply = rawResponse
+    }
+  }
+
+  // Sanitization: Strip repetitive canned welcome prefixes if generated in ongoing chats
+  if (aiReply) {
+    const cleanedReply = aiReply
+      .replace(/^Thank you for reaching out to [^.!?\n]+[.!?]\s*(How can we assist you today\??\s*)?/i, '')
+      .replace(/^Dhonnobad [^.!?\n]+ e jogajog korar jonno[!.]?\s*(Kivabe shahajjo korte pari\??\s*)?/i, '')
+      .replace(/^[^\s]+-এ যোগাযোগের জন্য ধন্যবাদ[!.]?\s*(কীভাবে সাহায্য করতে পারি\??\s*)?/i, '')
+      .trim()
+    if (cleanedReply.length > 0) {
+      aiReply = cleanedReply
     }
   }
 
