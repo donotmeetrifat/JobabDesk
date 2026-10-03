@@ -426,38 +426,61 @@ Return ONLY a valid JSON object:
     }
   }
 
-  // TIER 2: Groq Free API Fallback
-  if (!rawResponse && process.env.GROQ_API_KEY) {
-    try {
-      const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: messageText },
-          ],
-          temperature: 0.65,
-        }),
-      })
-      const groqJson = await groqResp.json()
-      const content = groqJson?.choices?.[0]?.message?.content?.trim()
-      if (content) {
-        rawResponse = content
-        providerUsed = 'groq'
-        modelUsed = 'llama-3.3-70b-versatile'
+  // TIER 2: Groq Free API Fallback (Multiple models for guaranteed backup if Gemini fails)
+  const groqApiKey = (
+    process.env.GROQ_API_KEY ||
+    (process.env.OPENROUTER_API_KEY?.startsWith('gsk_') ? process.env.OPENROUTER_API_KEY : '') ||
+    ''
+  ).trim()
+
+  if (!rawResponse && groqApiKey) {
+    const groqModels = [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'gemma2-9b-it',
+    ]
+
+    for (const groqModel of groqModels) {
+      try {
+        const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: groqModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: messageText },
+            ],
+            temperature: 0.65,
+          }),
+        })
+        const groqJson = await groqResp.json()
+        const content = groqJson?.choices?.[0]?.message?.content?.trim()
+        if (content) {
+          rawResponse = content
+          providerUsed = 'groq'
+          modelUsed = groqModel
+          break
+        } else {
+          console.warn(`[AI Router Engine] Groq model ${groqModel} returned empty:`, groqJson?.error?.message || groqJson)
+        }
+      } catch (groqErr: any) {
+        console.warn(`[AI Router Engine] Groq model ${groqModel} failed:`, groqErr?.message || groqErr)
       }
-    } catch {
-      // try tier 3
     }
   }
 
   // TIER 3: OpenRouter API Fallback (Verified Bengali-Capable Free Models)
-  if (!rawResponse && process.env.OPENROUTER_API_KEY) {
+  const openRouterApiKey = (
+    process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith('gsk_')
+      ? process.env.OPENROUTER_API_KEY
+      : ''
+  ).trim()
+
+  if (!rawResponse && openRouterApiKey) {
     const openRouterModels = [
       'qwen/qwen-2.5-72b-instruct:free',
       'meta-llama/llama-3.3-70b-instruct:free',
@@ -469,7 +492,7 @@ Return ONLY a valid JSON object:
         const openRouterResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            Authorization: `Bearer ${openRouterApiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
