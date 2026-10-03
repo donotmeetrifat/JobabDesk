@@ -499,6 +499,7 @@ export async function syncFacebookMessengerConversations(
             facebook_page_name: pageName || 'Digiplus',
             facebook_page_access_token: pageToken,
             messenger_status: 'connected',
+            messenger_auto_reply_enabled: true,
           })
           .eq('id', actualAccountId)
       } catch (saveErr) {

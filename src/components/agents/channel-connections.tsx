@@ -511,7 +511,7 @@ export function ChannelConnections() {
 
   const [fbPagesList, setFbPagesList] = useState<Array<{ id: string; name: string; accessToken: string; category?: string; picture?: string }>>([])
   const [fetchingFbPages, setFetchingFbPages] = useState(false)
-  const [showManualFbInput, setShowManualFbInput] = useState(false)
+  const [showManualFbInput, setShowManualFbInput] = useState(true)
 
   function handle1ClickFbConnect() {
     setFbError('')
