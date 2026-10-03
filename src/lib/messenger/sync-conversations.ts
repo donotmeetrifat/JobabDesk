@@ -222,6 +222,10 @@ export async function syncFacebookMessengerConversations(
       } catch {}
     }
 
+    // The intended page for this workspace is Digiplus (Page ID: 956902827514434)
+    const expectedWorkspaceName = 'Digiplus'
+    const expectedWorkspaceId = '956902827514434'
+
     // If we have a pageToken, automatically verify and resolve the real Page ID and Page Name
     // directly from Meta via /me and /me/accounts.
     if (pageToken) {
@@ -235,9 +239,36 @@ export async function syncFacebookMessengerConversations(
           meData = await meRes.json()
           if (meData?.category) {
             // Definitively a Facebook Page token
+            const tokenPageId = meData.id
+            const tokenPageName = meData.name || ''
+
+            // Verification: Reject if this token is for a completely different page like "UK Brand Lover"
+            const isTargetPage =
+              tokenPageName.toLowerCase().includes('digiplus') ||
+              (pageId && tokenPageId === pageId) ||
+              tokenPageId === expectedWorkspaceId
+
+            if (!isTargetPage && tokenPageName) {
+              return {
+                success: false,
+                tokenMissing: true,
+                conversationsCount: 0,
+                messagesCount: 0,
+                error:
+                  `Wrong Page Token: The token you pasted is for "${tokenPageName}" (Page ID: ${tokenPageId}), NOT for "${expectedWorkspaceName}".\n\n` +
+                  `👉 Why this happened:\n` +
+                  `In your Meta App Dashboard under Messenger API Setup, your Facebook profile manages multiple pages. You generated the token for "${tokenPageName}".\n\n` +
+                  `👉 How to fix:\n` +
+                  `1. Go to your Meta App Dashboard → Messenger → Messenger API Setup.\n` +
+                  `2. In Section 2 ("Generate access tokens"), look for the row for "${expectedWorkspaceName}" (ID: ${expectedWorkspaceId}).\n` +
+                  `3. Click "Generate token" specifically next to "${expectedWorkspaceName}".\n` +
+                  `4. Copy and paste that token into JobabDesk.`,
+              }
+            }
+
             isPage = true
-            pageId = meData.id
-            pageName = meData.name || pageName || 'Digiplus'
+            pageId = tokenPageId
+            pageName = tokenPageName || expectedWorkspaceName
           }
         }
 
@@ -253,13 +284,12 @@ export async function syncFacebookMessengerConversations(
               const accsData = await accsRes.json()
               const pages: any[] = accsData.data || []
               if (pages.length > 0) {
-                const matched =
-                  pages.find(
-                    (p) =>
-                      (pageId && p.id === pageId) ||
-                      (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
-                      p.name?.toLowerCase().includes('digiplus')
-                  ) || pages[0]
+                const matched = pages.find(
+                  (p) =>
+                    p.id === expectedWorkspaceId ||
+                    (pageId && p.id === pageId) ||
+                    p.name?.toLowerCase().includes('digiplus')
+                )
 
                 if (matched) {
                   pageId = matched.id
@@ -268,6 +298,9 @@ export async function syncFacebookMessengerConversations(
                     pageToken = matched.access_token
                   }
                   isPage = true
+                } else {
+                  const foreignNames = pages.map((p) => `"${p.name}"`).join(', ')
+                  console.warn(`[Sync conversations]: User token only has pages [${foreignNames}], not Digiplus`)
                 }
               }
             }
@@ -283,13 +316,12 @@ export async function syncFacebookMessengerConversations(
                 const assignedData = await assignedRes.json()
                 const pages: any[] = assignedData.data || []
                 if (pages.length > 0) {
-                  const matched =
-                    pages.find(
-                      (p) =>
-                        (pageId && p.id === pageId) ||
-                        (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
-                        p.name?.toLowerCase().includes('digiplus')
-                    ) || pages[0]
+                  const matched = pages.find(
+                    (p) =>
+                      p.id === expectedWorkspaceId ||
+                      (pageId && p.id === pageId) ||
+                      p.name?.toLowerCase().includes('digiplus')
+                  )
 
                   if (matched) {
                     pageId = matched.id
@@ -319,13 +351,12 @@ export async function syncFacebookMessengerConversations(
                   if (b.client_pages?.data) pages.push(...b.client_pages.data)
                 }
                 if (pages.length > 0) {
-                  const matched =
-                    pages.find(
-                      (p) =>
-                        (pageId && p.id === pageId) ||
-                        (pageName && p.name?.toLowerCase().includes(pageName.toLowerCase())) ||
-                        p.name?.toLowerCase().includes('digiplus')
-                    ) || pages[0]
+                  const matched = pages.find(
+                    (p) =>
+                      p.id === expectedWorkspaceId ||
+                      (pageId && p.id === pageId) ||
+                      p.name?.toLowerCase().includes('digiplus')
+                  )
 
                   if (matched) {
                     pageId = matched.id
@@ -427,6 +458,34 @@ export async function syncFacebookMessengerConversations(
         }
       } catch (tokenInspectErr) {
         console.warn('[Sync conversations token inspection warning]:', tokenInspectErr)
+      }
+    }
+
+    // Clean up any conversations, contacts, and messages that belong to a wrong/previous page (e.g. UK Brand Lover)
+    if (pageId && actualAccountId) {
+      try {
+        const prevPageName = accountRecord?.facebook_page_name || ''
+        const prevPageId = accountRecord?.facebook_page_id || ''
+        const wasWrongPage =
+          (prevPageName && !prevPageName.toLowerCase().includes('digiplus')) ||
+          (prevPageId && prevPageId !== pageId && prevPageId !== expectedWorkspaceId)
+
+        if (wasWrongPage) {
+          const { data: convsToClean } = await db
+            .from('conversations')
+            .select('id')
+            .eq('account_id', actualAccountId)
+
+          if (convsToClean && convsToClean.length > 0) {
+            const convIds = convsToClean.map((c: any) => c.id)
+            await db.from('messages').delete().in('conversation_id', convIds)
+            await db.from('conversations').delete().eq('account_id', actualAccountId)
+            await db.from('contacts').delete().eq('account_id', actualAccountId)
+            console.log(`[Sync conversations]: Cleaned up ${convIds.length} conversations from wrong previous page: ${prevPageName || prevPageId}`)
+          }
+        }
+      } catch (cleanErr) {
+        console.warn('[Sync conversations clean old page error]:', cleanErr)
       }
     }
 

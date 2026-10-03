@@ -260,6 +260,22 @@ export async function disconnectFacebookPage(targetId: string, supabase?: any): 
           .eq('account_id', targetId)
           .eq('channel_type', 'messenger')
       } catch {}
+
+      // Clean up any conversations, messages, and contacts that were synced under this disconnected page
+      try {
+        const { data: convs } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+        if (convs && convs.length > 0) {
+          const cIds = convs.map((c: any) => c.id)
+          await supabase.from('messages').delete().in('conversation_id', cIds)
+          await supabase.from('conversations').delete().or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+          await supabase.from('contacts').delete().or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+        }
+      } catch (cleanErr) {
+        console.warn('[disconnectFacebookPage clean conversations warning]:', cleanErr)
+      }
     }
 
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -267,6 +283,19 @@ export async function disconnectFacebookPage(targetId: string, supabase?: any): 
       await db.from('accounts').update(coreUpdates).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
       try {
         await db.from('accounts').update({ messenger_connection_status: 'disconnected' }).or(`id.eq.${targetId},owner_user_id.eq.${targetId}`)
+      } catch {}
+
+      try {
+        const { data: convs } = await db
+          .from('conversations')
+          .select('id')
+          .or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+        if (convs && convs.length > 0) {
+          const cIds = convs.map((c: any) => c.id)
+          await db.from('messages').delete().in('conversation_id', cIds)
+          await db.from('conversations').delete().or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+          await db.from('contacts').delete().or(`account_id.eq.${targetId},user_id.eq.${targetId}`)
+        }
       } catch {}
     }
 
