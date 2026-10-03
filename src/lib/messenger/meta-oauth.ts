@@ -135,7 +135,7 @@ export async function connectFacebookPage(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subscribed_fields: ['messages', 'messaging_postbacks'],
+          subscribed_fields: ['messages', 'messaging_postbacks', 'message_reactions', 'message_reads', 'messaging_optins'],
           access_token: token,
         }),
       })

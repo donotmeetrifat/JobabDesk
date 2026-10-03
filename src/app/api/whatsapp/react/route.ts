@@ -59,14 +59,14 @@ export async function POST(request: Request) {
       // No Meta ID yet — usually a sending/failed agent message. We can't
       // tell Meta to react to a message it never received.
       return NextResponse.json(
-        { error: 'Cannot react to a message that has not been sent to WhatsApp' },
+        { error: 'Cannot react to a message that has not been sent to Meta' },
         { status: 400 },
       );
     }
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, contact:contacts(phone, wa_user_id)')
+      .select('id, account_id, channel, contact:contacts(phone, wa_user_id, company, channel)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -81,6 +81,179 @@ export async function POST(request: Request) {
     const contact = Array.isArray(conversation.contact)
       ? conversation.contact[0]
       : conversation.contact;
+
+    const psid = contact?.phone || '';
+    const isMessenger =
+      conversation?.channel === 'messenger' ||
+      contact?.channel === 'messenger' ||
+      contact?.company === 'Facebook Messenger' ||
+      (psid && !psid.includes('-') && !psid.startsWith('+') && !isNaN(Number(psid)) && psid.length > 9);
+
+    if (isMessenger) {
+      if (!psid || psid.includes('-')) {
+        return NextResponse.json(
+          { error: 'Contact has no valid Facebook Messenger PSID' },
+          { status: 400 },
+        );
+      }
+
+      // 1. Fetch Facebook Page Access Token
+      const { data: accountRow } = await supabase
+        .from('accounts')
+        .select('facebook_page_access_token, facebook_page_id')
+        .eq('id', accountId)
+        .maybeSingle();
+
+      let fbToken = accountRow?.facebook_page_access_token || '';
+      let fbPageId = accountRow?.facebook_page_id || '';
+
+      if (!fbToken) {
+        const { data: chan } = await supabase
+          .from('channel_connections')
+          .select('metadata, external_account_id')
+          .eq('account_id', accountId)
+          .eq('channel_type', 'messenger')
+          .maybeSingle();
+        fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || '';
+        if (!fbPageId) fbPageId = chan?.external_account_id || '';
+      }
+
+      if (!fbToken) {
+        const { data: anyChan } = await supabase
+          .from('channel_connections')
+          .select('metadata, external_account_id')
+          .eq('channel_type', 'messenger')
+          .limit(1)
+          .maybeSingle();
+        fbToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || '';
+        if (!fbPageId) fbPageId = anyChan?.external_account_id || '';
+      }
+
+      if (!fbToken) {
+        return NextResponse.json(
+          { error: 'Facebook Page Access Token not configured for this account' },
+          { status: 400 },
+        );
+      }
+
+      // 2. Resolve real Page Token if a User Token was stored
+      let activePageToken = fbToken;
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(fbToken)}`
+        );
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (!meData?.category) {
+            const accsRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(fbToken)}`
+            );
+            if (accsRes.ok) {
+              const accsData = await accsRes.json();
+              const pages = accsData?.data || [];
+              if (pages.length > 0) {
+                if (fbPageId) {
+                  const match = pages.find((p: any) => p.id === fbPageId);
+                  if (match?.access_token) activePageToken = match.access_token;
+                }
+                if (activePageToken === fbToken && pages[0].access_token) {
+                  activePageToken = pages[0].access_token;
+                }
+              }
+            }
+            if (activePageToken === fbToken) {
+              const assignedRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,access_token&access_token=${encodeURIComponent(fbToken)}`
+              );
+              if (assignedRes.ok) {
+                const assignedData = await assignedRes.json();
+                const pages = assignedData?.data || [];
+                if (pages.length > 0 && pages[0].access_token) {
+                  activePageToken = pages[0].access_token;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+
+      // 3. Dispatch reaction to Facebook Messenger Send API
+      const actionPayload = emoji
+        ? {
+            recipient: { id: psid },
+            sender_action: 'react',
+            payload: {
+              message_id: targetMessage.message_id,
+              reaction: emoji,
+            },
+          }
+        : {
+            recipient: { id: psid },
+            sender_action: 'unreact',
+            payload: {
+              message_id: targetMessage.message_id,
+            },
+          };
+
+      const fbRes = await fetch(
+        `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(actionPayload),
+        }
+      );
+
+      const fbJson = await fbRes.json().catch(() => ({}));
+      if (!fbRes.ok || fbJson.error) {
+        console.error('[messenger/react] Meta error:', fbJson?.error);
+        return NextResponse.json(
+          { error: fbJson?.error?.message || 'Meta Messenger API error while sending reaction' },
+          { status: 502 },
+        );
+      }
+
+      // 4. Mirror reaction into message_reactions in DB
+      if (emoji === '') {
+        const { error: delError } = await supabase
+          .from('message_reactions')
+          .delete()
+          .eq('message_id', targetMessage.id)
+          .eq('actor_type', 'agent')
+          .eq('actor_id', userId);
+
+        if (delError) {
+          console.error('[messenger/react] DB delete failed:', delError.message);
+          return NextResponse.json(
+            { error: 'Reaction sent to Meta but DB delete failed' },
+            { status: 500 },
+          );
+        }
+      } else {
+        const { error: upsertError } = await supabase.from('message_reactions').upsert(
+          {
+            message_id: targetMessage.id,
+            conversation_id: targetMessage.conversation_id,
+            actor_type: 'agent',
+            actor_id: userId,
+            emoji,
+          },
+          { onConflict: 'message_id,actor_type,actor_id' },
+        );
+
+        if (upsertError) {
+          console.error('[messenger/react] DB upsert failed:', upsertError.message);
+          return NextResponse.json(
+            { error: 'Reaction sent to Meta but DB upsert failed' },
+            { status: 500 },
+          );
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // WhatsApp flow
     // Phone number, or the business-scoped user ID for a contact Meta
     // never gave us a number for (issue #519).
     const sendTarget = resolveContactSendTarget(contact);

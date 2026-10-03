@@ -61,53 +61,6 @@ async function resolveOwnerUserId(db: any, accountId: string): Promise<string> {
   return anyProf?.user_id || ''
 }
 
-// Meta Messenger Webhook Inbound POST
-export async function POST(req: Request) {
-  try {
-    const body = await req.json()
-    const db = getAdminClient()
-
-    const entry = body?.entry?.[0]
-    const messaging = entry?.messaging?.[0]
-    if (!messaging) {
-      return NextResponse.json({ status: 'ignored', reason: 'No messaging payload' }, { status: 200 })
-    }
-
-    const isEcho = Boolean(messaging?.message?.is_echo)
-    const pageId = entry?.id || (isEcho ? messaging?.sender?.id : messaging?.recipient?.id) || ''
-    const customerPsid = isEcho ? messaging?.recipient?.id : messaging?.sender?.id
-    const messageText = messaging?.message?.text?.trim() || ''
-    const messageId = messaging?.message?.mid
-
-    // Support attachments (photos, voice notes, audio, videos, files)
-    const attachments = messaging?.message?.attachments || []
-    const firstAttachment = attachments[0]
-    const rawType = firstAttachment?.type // "image" | "audio" | "video" | "file"
-    const mediaUrl = firstAttachment?.payload?.url || null
-    const contentType = rawType === 'image'
-      ? 'image'
-      : rawType === 'audio'
-      ? 'audio'
-      : rawType === 'video'
-      ? 'video'
-      : rawType === 'file'
-      ? 'document'
-      : 'text'
-
-    const displayText =
-      messageText ||
-      (contentType === 'image'
-        ? 'Photo'
-        : contentType === 'audio'
-        ? 'Voice Message'
-        : contentType === 'video'
-        ? 'Video'
-        : 'Attachment')
-
-    if (!customerPsid || (!messageText && !mediaUrl)) {
-      return NextResponse.json({ status: 'ignored', reason: 'No actionable content or sender' }, { status: 200 })
-    }
-
 // Helper to resolve real Page Access Token even if a User Access Token is stored
 async function resolvePageAccessToken(rawToken: string, targetPageId?: string): Promise<string> {
   if (!rawToken) return ''
@@ -160,6 +113,161 @@ function splitMessengerText(text: string, maxLen = 1900): string[] {
   }
   return chunks
 }
+
+// Meta Messenger Webhook Inbound POST
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const db = getAdminClient()
+
+    const entry = body?.entry?.[0]
+    const messaging = entry?.messaging?.[0]
+    if (!messaging) {
+      return NextResponse.json({ status: 'ignored', reason: 'No messaging payload' }, { status: 200 })
+    }
+
+    // Handle inbound Facebook Messenger reaction (emoji reaction or unreact)
+    const reaction = messaging?.reaction
+    if (reaction && reaction.mid) {
+      const reactionMid = reaction.mid
+      const action = reaction.action // 'react' | 'unreact'
+      const emoji = reaction.emoji || ''
+      const senderPsid = messaging?.sender?.id
+      const pageId = entry?.id || messaging?.recipient?.id || ''
+
+      // 1. Locate target message by Meta message_id
+      const { data: targetMessage } = await db
+        .from('messages')
+        .select('id, conversation_id')
+        .eq('message_id', reactionMid)
+        .maybeSingle()
+
+      if (!targetMessage) {
+        console.warn('[messenger/webhook] Reaction target message not found for mid:', reactionMid)
+        return NextResponse.json({ status: 'ignored', reason: 'Target message not found' }, { status: 200 })
+      }
+
+      // 2. Resolve conversation & contact
+      const { data: conv } = await db
+        .from('conversations')
+        .select('id, contact_id, account_id, user_id')
+        .eq('id', targetMessage.conversation_id)
+        .maybeSingle()
+
+      let contactId = conv?.contact_id || null
+
+      if (!contactId && senderPsid) {
+        const { data: ct } = await db
+          .from('contacts')
+          .select('id')
+          .or(`phone.eq.${senderPsid},phone_normalized.eq.${senderPsid.replace(/\D/g, '')}`)
+          .maybeSingle()
+        if (ct?.id) contactId = ct.id
+      }
+
+      const isPageSender = senderPsid === pageId
+      const actorType = isPageSender ? 'agent' : 'customer'
+      const actorId = isPageSender ? (conv?.user_id || null) : contactId
+
+      if (action === 'unreact' || !emoji) {
+        let query = db
+          .from('message_reactions')
+          .delete()
+          .eq('message_id', targetMessage.id)
+          .eq('actor_type', actorType)
+
+        if (actorId) {
+          query = query.eq('actor_id', actorId)
+        }
+
+        const { error: delErr } = await query
+        if (delErr) {
+          console.error('[messenger/webhook] Reaction delete error:', delErr.message)
+        }
+        return NextResponse.json({ status: 'reaction_deleted' }, { status: 200 })
+      }
+
+      // Upsert reaction into message_reactions
+      if (actorId) {
+        const { error: upsertErr } = await db
+          .from('message_reactions')
+          .upsert(
+            {
+              message_id: targetMessage.id,
+              conversation_id: targetMessage.conversation_id,
+              actor_type: actorType,
+              actor_id: actorId,
+              emoji,
+            },
+            { onConflict: 'message_id,actor_type,actor_id' }
+          )
+
+        if (upsertErr) {
+          console.error('[messenger/webhook] Reaction upsert error:', upsertErr.message)
+        }
+      } else {
+        const { data: existingReaction } = await db
+          .from('message_reactions')
+          .select('id')
+          .eq('message_id', targetMessage.id)
+          .eq('actor_type', actorType)
+          .maybeSingle()
+
+        if (existingReaction) {
+          await db
+            .from('message_reactions')
+            .update({ emoji })
+            .eq('id', existingReaction.id)
+        } else {
+          await db
+            .from('message_reactions')
+            .insert({
+              message_id: targetMessage.id,
+              conversation_id: targetMessage.conversation_id,
+              actor_type: actorType,
+              actor_id: null,
+              emoji,
+            })
+        }
+      }
+
+      return NextResponse.json({ status: 'reaction_handled' }, { status: 200 })
+    }
+
+    const isEcho = Boolean(messaging?.message?.is_echo)
+    const pageId = entry?.id || (isEcho ? messaging?.sender?.id : messaging?.recipient?.id) || ''
+    const customerPsid = isEcho ? messaging?.recipient?.id : messaging?.sender?.id
+    const messageText = messaging?.message?.text?.trim() || ''
+    const messageId = messaging?.message?.mid
+
+    // Support attachments (photos, voice notes, audio, videos, files)
+    const attachments = messaging?.message?.attachments || []
+    const firstAttachment = attachments[0]
+    const rawType = firstAttachment?.type // "image" | "audio" | "video" | "file"
+    const mediaUrl = firstAttachment?.payload?.url || null
+    const contentType = rawType === 'image'
+      ? 'image'
+      : rawType === 'audio'
+      ? 'audio'
+      : rawType === 'video'
+      ? 'video'
+      : rawType === 'file'
+      ? 'document'
+      : 'text'
+
+    const displayText =
+      messageText ||
+      (contentType === 'image'
+        ? 'Photo'
+        : contentType === 'audio'
+        ? 'Voice Message'
+        : contentType === 'video'
+        ? 'Video'
+        : 'Attachment')
+
+    if (!customerPsid || (!messageText && !mediaUrl)) {
+      return NextResponse.json({ status: 'ignored', reason: 'No actionable content or sender' }, { status: 200 })
+    }
 
     // Resolve Account matching Facebook Page ID
     let accountId = ''

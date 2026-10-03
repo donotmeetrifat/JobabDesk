@@ -642,7 +642,7 @@ export async function syncFacebookMessengerConversations(
     if (pageId) {
       try {
         await fetch(
-          `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reads,messaging_optins&access_token=${encodeURIComponent(pageToken)}`,
+          `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reactions,message_reads,messaging_optins&access_token=${encodeURIComponent(pageToken)}`,
           { method: 'POST' }
         )
       } catch {}
