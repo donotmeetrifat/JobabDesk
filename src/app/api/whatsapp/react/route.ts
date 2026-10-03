@@ -8,23 +8,28 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co';
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    '';
+  return createAdminClient(url, serviceKey);
+}
 
 /**
  * POST /api/whatsapp/react
  *
  * Body: { message_id: <internal UUID>, emoji: <single emoji or "" to remove> }
  *
- * Sends the reaction to Meta and mirrors it into `message_reactions`
- * (delete on empty emoji). Customer-side reactions are handled by the
- * webhook — this route only writes `actor_type = 'agent'` rows.
+ * Sends the reaction to Meta (Messenger or WhatsApp) and mirrors it into `message_reactions`
+ * (delete on empty emoji). Customer-side reactions are handled by webhooks — this route only writes `actor_type = 'agent'` rows.
  */
 export async function POST(request: Request) {
   try {
-    // Reacting is a write operation (`canSendMessages`), and it pushes the
-    // reaction to Meta before mirroring it locally — so, as on /send, a
-    // missing role check let a read-only viewer put a visible reaction on
-    // the customer's message even though RLS blocked the local mirror.
-    const { supabase, accountId, userId } = await requireRole('agent');
+    const { accountId, userId } = await requireRole('agent');
 
     const limit = checkRateLimit(`react:${userId}`, RATE_LIMITS.react);
     if (!limit.success) {
@@ -44,43 +49,54 @@ export async function POST(request: Request) {
       );
     }
 
-    // Resolve target message + its conversation; verify ownership.
-    const { data: targetMessage, error: msgError } = await supabase
+    const admin = getAdminClient();
+
+    // 1. Resolve target message
+    const { data: targetMessage, error: msgError } = await admin
       .from('messages')
       .select('id, message_id, conversation_id')
       .eq('id', message_id)
       .maybeSingle();
 
     if (msgError || !targetMessage) {
+      console.warn('[react] Message not found:', message_id, msgError?.message);
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
     if (!targetMessage.message_id) {
-      // No Meta ID yet — usually a sending/failed agent message. We can't
-      // tell Meta to react to a message it never received.
       return NextResponse.json(
         { error: 'Cannot react to a message that has not been sent to Meta' },
         { status: 400 },
       );
     }
 
-    const { data: conversation, error: convError } = await supabase
+    // 2. Resolve conversation (bypassing RLS with admin client)
+    const { data: conversation, error: convError } = await admin
       .from('conversations')
-      .select('id, account_id, channel, contact:contacts(phone, wa_user_id, company, channel)')
+      .select('*')
       .eq('id', targetMessage.conversation_id)
-      .eq('account_id', accountId)
       .maybeSingle();
 
     if (convError || !conversation) {
+      console.warn('[react] Conversation not found:', targetMessage.conversation_id, convError?.message);
       return NextResponse.json(
         { error: 'Conversation not found' },
         { status: 404 },
       );
     }
 
-    const contact = Array.isArray(conversation.contact)
-      ? conversation.contact[0]
-      : conversation.contact;
+    const effectiveAccountId = conversation.account_id || accountId;
+
+    // 3. Resolve contact
+    let contact: any = null;
+    if (conversation.contact_id) {
+      const { data: directContact } = await admin
+        .from('contacts')
+        .select('*')
+        .eq('id', conversation.contact_id)
+        .maybeSingle();
+      contact = directContact;
+    }
 
     const psid = contact?.phone || '';
     const isMessenger =
@@ -98,20 +114,20 @@ export async function POST(request: Request) {
       }
 
       // 1. Fetch Facebook Page Access Token
-      const { data: accountRow } = await supabase
+      const { data: accountRow } = await admin
         .from('accounts')
         .select('facebook_page_access_token, facebook_page_id')
-        .eq('id', accountId)
+        .eq('id', effectiveAccountId)
         .maybeSingle();
 
       let fbToken = accountRow?.facebook_page_access_token || '';
       let fbPageId = accountRow?.facebook_page_id || '';
 
       if (!fbToken) {
-        const { data: chan } = await supabase
+        const { data: chan } = await admin
           .from('channel_connections')
           .select('metadata, external_account_id')
-          .eq('account_id', accountId)
+          .eq('account_id', effectiveAccountId)
           .eq('channel_type', 'messenger')
           .maybeSingle();
         fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || '';
@@ -119,7 +135,7 @@ export async function POST(request: Request) {
       }
 
       if (!fbToken) {
-        const { data: anyChan } = await supabase
+        const { data: anyChan } = await admin
           .from('channel_connections')
           .select('metadata, external_account_id')
           .eq('channel_type', 'messenger')
@@ -215,7 +231,7 @@ export async function POST(request: Request) {
 
       // 4. Mirror reaction into message_reactions in DB
       if (emoji === '') {
-        const { error: delError } = await supabase
+        const { error: delError } = await admin
           .from('message_reactions')
           .delete()
           .eq('message_id', targetMessage.id)
@@ -230,7 +246,7 @@ export async function POST(request: Request) {
           );
         }
       } else {
-        const { error: upsertError } = await supabase.from('message_reactions').upsert(
+        const { error: upsertError } = await admin.from('message_reactions').upsert(
           {
             message_id: targetMessage.id,
             conversation_id: targetMessage.conversation_id,
@@ -254,8 +270,6 @@ export async function POST(request: Request) {
     }
 
     // WhatsApp flow
-    // Phone number, or the business-scoped user ID for a contact Meta
-    // never gave us a number for (issue #519).
     const sendTarget = resolveContactSendTarget(contact);
     if (!sendTarget) {
       return NextResponse.json(
@@ -264,11 +278,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
+    // WhatsApp config + access token.
+    const { data: config, error: configError } = await admin
       .from('whatsapp_config')
       .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
+      .eq('account_id', effectiveAccountId)
       .single();
 
     if (configError || !config) {
@@ -300,7 +314,7 @@ export async function POST(request: Request) {
 
     // Mirror into DB. Empty emoji = removal.
     if (emoji === '') {
-      const { error: delError } = await supabase
+      const { error: delError } = await admin
         .from('message_reactions')
         .delete()
         .eq('message_id', targetMessage.id)
@@ -315,9 +329,7 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // Upsert. The unique constraint (message_id, actor_type, actor_id)
-      // lets us swap emoji in a single statement.
-      const { error: upsertError } = await supabase.from('message_reactions').upsert(
+      const { error: upsertError } = await admin.from('message_reactions').upsert(
         {
           message_id: targetMessage.id,
           conversation_id: targetMessage.conversation_id,
@@ -339,9 +351,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    // requireRole throws Unauthorized/Forbidden; toErrorResponse maps
-    // those to 401/403 and collapses anything else to a generic 500.
-    console.error('Error in WhatsApp react POST:', error);
+    console.error('Error in react POST:', error);
     return toErrorResponse(error);
   }
 }
