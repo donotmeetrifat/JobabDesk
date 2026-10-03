@@ -22,6 +22,8 @@ export interface RouterInput {
   customerPhone?: string | null
   channel?: SupportedChannel
   messageText: string
+  mediaUrl?: string | null
+  pageAccessToken?: string | null
 }
 
 export interface RouterOutput {
@@ -56,6 +58,31 @@ export function detectLanguage(text: string, preferredSetting = 'auto_detect'): 
   return 'en'
 }
 
+async function fetchImageAsBase64(url: string, pageToken?: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    const headers: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
+    let res = await fetch(url, { headers })
+    if (!res.ok && pageToken) {
+      headers['Authorization'] = `Bearer ${pageToken}`
+      res = await fetch(url, { headers })
+    }
+    if (!res.ok) {
+      console.warn('[AI Router Engine] Failed to download image from URL:', url, res.status)
+      return null
+    }
+    const contentType = res.headers.get('content-type') || 'image/jpeg'
+    const mimeType = contentType.split(';')[0].trim() || 'image/jpeg'
+    const arrayBuffer = await res.arrayBuffer()
+    const base64 = Buffer.from(arrayBuffer).toString('base64')
+    return { data: base64, mimeType }
+  } catch (err: any) {
+    console.warn('[AI Router Engine] Error fetching image as base64:', err?.message || err)
+    return null
+  }
+}
+
 export async function handleIncomingCustomerMessage({
   accountId,
   supabase,
@@ -64,8 +91,14 @@ export async function handleIncomingCustomerMessage({
   customerPhone,
   channel = 'sandbox',
   messageText,
+  mediaUrl,
+  pageAccessToken,
 }: RouterInput): Promise<RouterOutput | null> {
-  if (!messageText?.trim()) return null
+  if (!messageText?.trim() && !mediaUrl) return null
+
+  if (!messageText?.trim() && mediaUrl) {
+    messageText = 'Customer sent a product photo. Please inspect the image, identify the product/brand, and let them know if we have it in stock or recommend the best matching alternative from our store.'
+  }
 
   const db = getAdminClient()
   const client = supabase || db
@@ -243,6 +276,7 @@ export async function handleIncomingCustomerMessage({
 
   // Fetch Recent Conversation History for Context & Memory
   let conversationHistoryText = ''
+  let historyMsgs: any[] = []
   let convId = conversationId || ''
   if (!convId && (contactId || customerPhone)) {
     try {
@@ -263,17 +297,24 @@ export async function handleIncomingCustomerMessage({
 
   if (convId) {
     try {
-      const { data: historyMsgs } = await client
+      const { data: convMsgs } = await client
         .from('messages')
-        .select('sender_type, content_text, created_at')
+        .select('sender_type, content_type, content_text, media_url, created_at')
         .eq('conversation_id', convId)
         .order('created_at', { ascending: false })
         .limit(12)
 
-      if (historyMsgs && historyMsgs.length > 0) {
-        const chronological = [...historyMsgs].reverse()
+      if (convMsgs && convMsgs.length > 0) {
+        historyMsgs = convMsgs
+        const chronological = [...convMsgs].reverse()
         conversationHistoryText = chronological
-          .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
+          .map((m) => {
+            const role = m.sender_type === 'customer' ? 'Customer' : 'Salesman'
+            if (m.media_url && (m.content_type === 'image' || m.content_text === 'Photo')) {
+              return `${role}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
+            }
+            return `${role}: ${m.content_text || ''}`
+          })
           .join('\n')
       }
     } catch (histErr) {
@@ -286,20 +327,50 @@ export async function handleIncomingCustomerMessage({
     try {
       const { data: contactMsgs } = await client
         .from('messages')
-        .select('sender_type, content_text, created_at')
+        .select('sender_type, content_type, content_text, media_url, created_at')
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false })
         .limit(12)
 
       if (contactMsgs && contactMsgs.length > 0) {
+        if (!historyMsgs.length) historyMsgs = contactMsgs
         const chronological = [...contactMsgs].reverse()
         conversationHistoryText = chronological
-          .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text || ''}`)
+          .map((m) => {
+            const role = m.sender_type === 'customer' ? 'Customer' : 'Salesman'
+            if (m.media_url && (m.content_type === 'image' || m.content_text === 'Photo')) {
+              return `${role}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
+            }
+            return `${role}: ${m.content_text || ''}`
+          })
           .join('\n')
       }
     } catch (fallbackHistErr) {
       console.warn('[AI Router Engine] Failed to fetch contact message history:', fallbackHistErr)
     }
+  }
+
+  // Resolve active image from current message or recent conversation history
+  let activeMediaUrl = mediaUrl || null
+  if (!activeMediaUrl && historyMsgs && historyMsgs.length > 0) {
+    const recentImageMsg = historyMsgs.find(
+      (m: any) =>
+        m.sender_type === 'customer' &&
+        m.media_url &&
+        (m.content_type === 'image' || m.content_text === 'Photo' || m.content_text?.toLowerCase().includes('photo'))
+    )
+    if (recentImageMsg?.media_url) {
+      activeMediaUrl = recentImageMsg.media_url
+    }
+  }
+
+  // Download active image as base64 for multimodal vision
+  let imageBase64: { data: string; mimeType: string } | null = null
+  if (activeMediaUrl) {
+    imageBase64 = await fetchImageAsBase64(
+      activeMediaUrl,
+      pageAccessToken || account?.facebook_page_access_token || undefined
+    )
   }
 
   const resolvedStoreName =
@@ -335,7 +406,16 @@ ${businessContext}
      * When a customer asks about payment methods, delivery rates, return policy, or products, ANSWER THEIR QUESTION IMMEDIATELY AND DIRECTLY!
    - NO ROBOTIC TEMPLATES: Never repeat phrases like "Hello Bhaiya/Apu! We have [Product] available in our store...".
 
-2. ANSWER THE ACTUAL QUESTION WITH EXPERT DETAIL:
+2. MULTIMODAL & PRODUCT PHOTO RULES:
+   - YOU CAN DIRECTLY VIEW AND INSPECT PHOTOS/IMAGES! NEVER say "I am unable to view the photo directly in the chat" or ask the customer to type the product name because you can't see pictures.
+   - When a customer sends or asks about a product photo:
+     1. Inspect the photo carefully: Identify the exact brand, product name, variant, volume/size, packaging, and purpose.
+     2. Cross-reference with our CATALOG & INVENTORY above:
+        - If we have this exact item in stock: Enthusiastically confirm! Quote the price (৳), confirm stock, highlight benefits, and ask if they would like to place an order now!
+        - If we do NOT carry that exact brand or product: Name what product is in their photo (e.g. "Eita holo No7 Radiant Results Purifying Foaming Cleanser..."), politely let them know we don't have this exact brand right now, but enthusiastically recommend our best matching alternative from our store catalog (e.g. our cleansers or skincare in stock with prices and benefits)!
+        - If they just sent a photo with no text, warmly identify what product it is and ask how you can help or if they'd like to order!
+
+3. ANSWER THE ACTUAL QUESTION WITH EXPERT DETAIL:
    - If they ask about Payment Methods (e.g. "Payment Methods?", "kivabe pay korbo?", "bKash ache?"):
      * Directly list the accepted payment options: Cash on Delivery (COD) all over Bangladesh, bKash, and Nagad.
      * Conclude with a helpful question to assist with their order!
@@ -348,11 +428,11 @@ ${businessContext}
      * For physical products (skincare, gadgets, clothing), explain the benefits, ingredients/specs, and results.
      * Do NOT just mindlessly repeat "the price is ৳50 and it is in stock". Address what they asked!
 
-3. CLOSE THE SALE (CALL TO ACTION):
+4. CLOSE THE SALE (CALL TO ACTION):
    - Always conclude with a natural, gentle question to help them buy, e.g.:
      "Do you want me to process your order now, Bhaiya?" or "Which email should we activate it on?" or "Would you like to order today?"
 
-4. LANGUAGE & TONE:
+5. LANGUAGE & TONE:
    - Language: ${langGuidance}
    - Persona: ${toneGuidance}
    - Addressing: ${communicationGuidance}
@@ -405,11 +485,25 @@ Return ONLY a valid JSON object:
 
     for (const gModel of geminiModels) {
       try {
+        const parts: any[] = []
+        if (imageBase64) {
+          parts.push({
+            inlineData: {
+              mimeType: imageBase64.mimeType,
+              data: imageBase64.data,
+            },
+          })
+        }
+        parts.push({ text: systemPrompt })
+        parts.push({
+          text: imageBase64
+            ? `Customer Message:\n"${messageText}"\n\n[NOTE: Customer attached or referenced the product photo above. Inspect it thoroughly. Identify the exact brand, product name, and formula. Cross-reference with our Catalog & Inventory. If available, offer it. If not, recommend our best matching alternative from our store catalog. Never say you cannot view photos!]`
+            : `Customer Message:\n"${messageText}"`,
+        })
+
         const resp = await ai.models.generateContent({
           model: gModel,
-          contents: [
-            { role: 'user', parts: [{ text: systemPrompt }, { text: `Customer Message:\n"${messageText}"` }] },
-          ],
+          contents: [{ role: 'user', parts }],
           config: { temperature: 0.65 },
         })
         const txt = resp.text?.trim()
@@ -495,6 +589,30 @@ Return ONLY a valid JSON object:
 
     for (const orModel of openRouterModels) {
       try {
+        const messages: any[] = [
+          { role: 'system', content: systemPrompt },
+        ]
+
+        if (imageBase64) {
+          messages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `${messageText}\n\n[NOTE: Customer attached a product photo. Inspect it, identify the brand/product, check our catalog, and assist them. Never say you cannot view photos!]`,
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${imageBase64.mimeType};base64,${imageBase64.data}`,
+                },
+              },
+            ],
+          })
+        } else {
+          messages.push({ role: 'user', content: messageText })
+        }
+
         const openRouterResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -505,10 +623,7 @@ Return ONLY a valid JSON object:
           },
           body: JSON.stringify({
             model: orModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: messageText },
-            ],
+            messages,
             temperature: 0.65,
           }),
         })
@@ -539,8 +654,19 @@ Return ONLY a valid JSON object:
     const textLower = messageText.toLowerCase().trim()
     const matchedProduct = products.find((p) => textLower.includes(p.name.toLowerCase()))
 
+    // 0. If an image was sent but offline fallback is active
+    if (activeMediaUrl && !rawResponse) {
+      intent = 'product_inquiry'
+      if (detectedLang === 'banglish') {
+        aiReply = 'Apnar pathano chobi ti ami peyechi! Amader team ekhoni chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
+      } else if (detectedLang === 'bn') {
+        aiReply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের প্রতিনিধি এখনই ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, অনুগ্রহ করে একটু অপেক্ষা করুন।'
+      } else {
+        aiReply = 'I have received your product photo! Our team is reviewing the image right now to check availability and price for you.'
+      }
+    }
     // 1. Matched Product Inquiry
-    if (matchedProduct) {
+    else if (matchedProduct) {
       intent = 'product_inquiry'
       if (detectedLang === 'banglish') {
         aiReply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`

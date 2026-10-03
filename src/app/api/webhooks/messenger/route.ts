@@ -370,13 +370,21 @@ function splitMessengerText(text: string, maxLen = 1900): string[] {
 
     // 4. Process AI auto-reply if not an echo message
     if (!isEcho) {
+      const effectiveMessageText =
+        messageText ||
+        (contentType === 'image'
+          ? 'Customer sent a product photo. Please inspect the image, identify the product/brand, and let them know if we have it in stock or recommend the best matching alternative from our store.'
+          : displayText)
+
       const result = await handleIncomingCustomerMessage({
         accountId,
         contactId,
         conversationId,
         customerPhone: customerPsid,
         channel: 'messenger',
-        messageText,
+        messageText: effectiveMessageText,
+        mediaUrl: contentType === 'image' ? mediaUrl : null,
+        pageAccessToken,
         supabase: db,
       })
 
