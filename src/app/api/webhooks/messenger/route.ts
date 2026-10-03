@@ -188,46 +188,43 @@ export async function POST(req: Request) {
       }
 
       // Upsert reaction into message_reactions
+      const reactionPayload = {
+        message_id: targetMessage.id,
+        conversation_id: targetMessage.conversation_id,
+        actor_type: actorType,
+        actor_id: actorId || null,
+        emoji,
+      }
+
+      let existingQuery = db
+        .from('message_reactions')
+        .select('id')
+        .eq('message_id', targetMessage.id)
+        .eq('actor_type', actorType)
+
       if (actorId) {
-        const { error: upsertErr } = await db
-          .from('message_reactions')
-          .upsert(
-            {
-              message_id: targetMessage.id,
-              conversation_id: targetMessage.conversation_id,
-              actor_type: actorType,
-              actor_id: actorId,
-              emoji,
-            },
-            { onConflict: 'message_id,actor_type,actor_id' }
-          )
+        existingQuery = existingQuery.eq('actor_id', actorId)
+      }
 
-        if (upsertErr) {
-          console.error('[messenger/webhook] Reaction upsert error:', upsertErr.message)
-        }
+      const { data: existingReaction } = await existingQuery.maybeSingle()
+
+      if (existingReaction?.id) {
+        await db
+          .from('message_reactions')
+          .update({ emoji })
+          .eq('id', existingReaction.id)
       } else {
-        const { data: existingReaction } = await db
+        const { error: insErr } = await db
           .from('message_reactions')
-          .select('id')
-          .eq('message_id', targetMessage.id)
-          .eq('actor_type', actorType)
-          .maybeSingle()
+          .insert(reactionPayload)
 
-        if (existingReaction) {
+        if (insErr) {
+          // If conflict or unique error, try updating matching row
           await db
             .from('message_reactions')
             .update({ emoji })
-            .eq('id', existingReaction.id)
-        } else {
-          await db
-            .from('message_reactions')
-            .insert({
-              message_id: targetMessage.id,
-              conversation_id: targetMessage.conversation_id,
-              actor_type: actorType,
-              actor_id: null,
-              emoji,
-            })
+            .eq('message_id', targetMessage.id)
+            .eq('actor_type', actorType)
         }
       }
 

@@ -51,7 +51,7 @@ async function saveReactionToDb({
         .eq('actor_type', 'agent')
         .eq('actor_id', userId);
     }
-    return;
+    return null;
   }
 
   const payload = {
@@ -72,33 +72,47 @@ async function saveReactionToDb({
     .maybeSingle();
 
   if (existing?.id) {
-    const upRes = await admin
+    const { data: upData, error: upErr } = await admin
       .from('message_reactions')
       .update({ emoji })
-      .eq('id', existing.id);
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle();
 
-    if (upRes.error) {
-      await supabase
-        .from('message_reactions')
-        .update({ emoji })
-        .eq('id', existing.id);
-    }
-  } else {
-    const insRes = await admin
+    if (upData && !upErr) return upData;
+
+    const { data: fbData } = await supabase
       .from('message_reactions')
-      .insert(payload);
+      .update({ emoji })
+      .eq('id', existing.id)
+      .select('*')
+      .maybeSingle();
 
-    if (insRes.error) {
-      const fallbackIns = await supabase
-        .from('message_reactions')
-        .insert(payload);
+    return fbData || { id: existing.id, ...payload, created_at: new Date().toISOString() };
+  } else {
+    const { data: insData, error: insErr } = await admin
+      .from('message_reactions')
+      .insert(payload)
+      .select('*')
+      .maybeSingle();
 
-      if (fallbackIns.error) {
-        await admin
-          .from('message_reactions')
-          .upsert(payload, { onConflict: 'message_id,actor_type,actor_id' });
-      }
-    }
+    if (insData && !insErr) return insData;
+
+    const { data: fbIns } = await supabase
+      .from('message_reactions')
+      .insert(payload)
+      .select('*')
+      .maybeSingle();
+
+    if (fbIns) return fbIns;
+
+    const { data: upsertData } = await admin
+      .from('message_reactions')
+      .upsert(payload, { onConflict: 'message_id,actor_type,actor_id' })
+      .select('*')
+      .maybeSingle();
+
+    return upsertData || { id: `agent-${Date.now()}`, ...payload, created_at: new Date().toISOString() };
   }
 }
 
@@ -313,7 +327,7 @@ export async function POST(request: Request) {
       }
 
       // 4. Mirror reaction into message_reactions in DB
-      await saveReactionToDb({
+      const savedReaction = await saveReactionToDb({
         admin,
         supabase,
         messageId: targetMessage.id,
@@ -322,7 +336,7 @@ export async function POST(request: Request) {
         emoji,
       });
 
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, reaction: savedReaction });
     }
 
     // WhatsApp flow
@@ -369,7 +383,7 @@ export async function POST(request: Request) {
     }
 
     // Mirror into DB using safe multi-strategy helper
-    await saveReactionToDb({
+    const savedReaction = await saveReactionToDb({
       admin,
       supabase,
       messageId: targetMessage.id,
@@ -378,7 +392,7 @@ export async function POST(request: Request) {
       emoji,
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, reaction: savedReaction });
   } catch (error) {
     console.error('Error in react POST:', error);
     return toErrorResponse(error);

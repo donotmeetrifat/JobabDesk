@@ -338,6 +338,9 @@ export function MessageThread({
             if (Array.isArray(json.messages) && json.messages.length > 0) {
               msgs = json.messages;
             }
+            if (Array.isArray(json.reactions) && json.reactions.length > 0) {
+              setReactions(json.reactions);
+            }
           }
         } catch (apiErr) {
           console.error("API messages fetch failed:", apiErr);
@@ -354,10 +357,7 @@ export function MessageThread({
     };
   }, [conversationId, resyncToken]);
 
-  // Reactions fetch — pulls the current state from the DB. Kept separate
-  // from the channel subscription below so a `resyncToken` bump just
-  // refetches the rows without also tearing down and rebuilding the
-  // realtime channel.
+  // Reactions fetch — pulls the current state from DB or API fallback.
   useEffect(() => {
     if (!conversationId) {
       setReactions([]);
@@ -367,16 +367,60 @@ export function MessageThread({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("message_reactions")
-        .select("*")
-        .eq("conversation_id", conversationId);
-      if (cancelled) return;
-      if (error) {
-        console.error("Failed to fetch reactions:", error);
-        return;
+      let fetched: MessageReaction[] = [];
+      let success = false;
+
+      // 1. Try direct Supabase query
+      try {
+        const { data, error } = await supabase
+          .from("message_reactions")
+          .select("*")
+          .eq("conversation_id", conversationId);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          fetched = data as MessageReaction[];
+          success = true;
+        }
+      } catch (err) {
+        console.warn("Direct reactions fetch error:", err);
       }
-      setReactions((data as MessageReaction[]) ?? []);
+
+      // 2. Fallback to API route (uses server admin client to bypass browser RLS)
+      if (!success && !cancelled) {
+        try {
+          const res = await fetch(`/api/inbox/conversations/${conversationId}/reactions`);
+          if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json.reactions)) {
+              fetched = json.reactions as MessageReaction[];
+              success = true;
+            }
+          }
+        } catch (apiErr) {
+          console.warn("API reactions fetch failed:", apiErr);
+        }
+      }
+
+      if (cancelled) return;
+
+      setReactions((prev) => {
+        // Keep any active optimistic reactions that haven't been confirmed yet
+        const pendingTemp = prev.filter((r) => r.id.startsWith("temp-"));
+        if (pendingTemp.length === 0) return fetched;
+
+        const merged = [...fetched];
+        for (const temp of pendingTemp) {
+          const alreadyPresent = merged.some(
+            (r) =>
+              r.message_id === temp.message_id &&
+              r.actor_type === temp.actor_type &&
+              r.actor_id === temp.actor_id,
+          );
+          if (!alreadyPresent) {
+            merged.push(temp);
+          }
+        }
+        return merged;
+      });
     })();
 
     return () => {
@@ -867,6 +911,19 @@ export function MessageThread({
         if (!res.ok) {
           const payload = await res.json().catch(() => ({}));
           throw new Error(payload?.error || `HTTP ${res.status}`);
+        }
+        const data = await res.json().catch(() => ({}));
+        if (data?.reaction) {
+          setReactions((prev) =>
+            prev.map((r) =>
+              r.id.startsWith("temp-") &&
+              r.message_id === messageId &&
+              r.actor_type === "agent" &&
+              r.actor_id === userId
+                ? (data.reaction as MessageReaction)
+                : r
+            )
+          );
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : "network error";

@@ -52,22 +52,23 @@ export function MessageReactions({
   if (groups.length === 0) return null;
 
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
+    <div className="mt-1 flex flex-wrap gap-1 z-10">
       {groups.map((g) => (
         <button
           key={g.emoji}
           type="button"
           onClick={() => onToggle(g.emoji)}
           aria-pressed={g.byCurrentUser}
+          title={g.byCurrentUser ? "Click to remove your reaction" : `React with ${g.emoji}`}
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] leading-none transition-colors",
+            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium shadow-sm backdrop-blur-sm transition-all hover:scale-105 active:scale-95 cursor-pointer select-none",
             g.byCurrentUser
-              ? "border-primary/60 bg-primary/15 text-primary hover:bg-primary/25"
-              : "border-border bg-muted/80 text-foreground hover:bg-muted",
+              ? "border-primary/60 bg-primary/20 text-primary dark:bg-primary/30"
+              : "border-border/80 bg-background/90 text-foreground dark:bg-muted/90 hover:bg-muted",
           )}
         >
           <span className="text-sm leading-none">{g.emoji}</span>
-          {g.count > 1 && <span>{g.count}</span>}
+          {g.count > 1 && <span className="text-[11px] font-semibold">{g.count}</span>}
         </button>
       ))}
     </div>

@@ -36,43 +36,39 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 1. Try querying messages via SSR client (respects RLS)
+    // 1. Try querying message_reactions via SSR client (respects RLS)
     try {
       const { data, error } = await supabase
-        .from('messages')
+        .from('message_reactions')
         .select('*')
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
 
       if (!error && Array.isArray(data) && data.length > 0) {
-        return NextResponse.json({ success: true, messages: data })
+        return NextResponse.json({ success: true, reactions: data })
       }
     } catch (e) {
-      console.warn('[api/inbox/messages] SSR query failed, falling back to admin:', e)
+      console.warn('[api/inbox/reactions] SSR query failed, falling back to admin:', e)
     }
 
     // 2. Fallback using Admin client
     const admin = getAdminClient()
-    const { data: adminMsgs, error: adminErr } = await admin
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-
-    const { data: convReactions } = await admin
+    const { data: adminReactions, error: adminErr } = await admin
       .from('message_reactions')
       .select('*')
       .eq('conversation_id', conversationId)
 
+    if (adminErr) {
+      console.error('[api/inbox/reactions] Admin query error:', adminErr)
+    }
+
     return NextResponse.json({
       success: true,
-      messages: adminMsgs || [],
-      reactions: convReactions || [],
+      reactions: adminReactions || [],
     })
   } catch (err: any) {
-    console.error('[api/inbox/messages] Exception:', err)
+    console.error('[api/inbox/reactions] Exception:', err)
     return NextResponse.json(
-      { error: err?.message || 'Internal server error', messages: [] },
+      { error: err?.message || 'Internal server error', reactions: [] },
       { status: 500 }
     )
   }
