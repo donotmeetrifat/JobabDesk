@@ -475,7 +475,7 @@ Return ONLY a valid JSON object:
     }
   }
 
-  // TIER 3: OpenRouter API Fallback (Verified Bengali-Capable Free Models)
+  // TIER 3: OpenRouter API Fallback (Verified Bengali-Capable & Free Models)
   const openRouterApiKey = (
     process.env.OPENROUTER_API_KEY && !process.env.OPENROUTER_API_KEY.startsWith('gsk_')
       ? process.env.OPENROUTER_API_KEY
@@ -483,10 +483,14 @@ Return ONLY a valid JSON object:
   ).trim()
 
   if (!rawResponse && openRouterApiKey) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jobabdesk.vercel.app'
     const openRouterModels = [
-      'qwen/qwen-2.5-72b-instruct:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemini-2.0-flash-exp:free',
+      'openrouter/free',
+      'qwen/qwen3.8-27b:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'openai/gpt-4o',
+      'openai/gpt-4o-mini',
+      'meta-llama/llama-3.3-70b-instruct',
     ]
 
     for (const orModel of openRouterModels) {
@@ -495,6 +499,8 @@ Return ONLY a valid JSON object:
           method: 'POST',
           headers: {
             Authorization: `Bearer ${openRouterApiKey}`,
+            'HTTP-Referer': siteUrl,
+            'X-Title': 'JobabDesk',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -503,7 +509,7 @@ Return ONLY a valid JSON object:
               { role: 'system', content: systemPrompt },
               { role: 'user', content: messageText },
             ],
-            temperature: 0.2,
+            temperature: 0.65,
           }),
         })
         const orJson = await openRouterResp.json()
@@ -513,9 +519,11 @@ Return ONLY a valid JSON object:
           providerUsed = 'openrouter'
           modelUsed = orModel
           break
+        } else {
+          console.warn(`[AI Router Engine] OpenRouter model ${orModel} returned empty:`, orJson?.error?.message || orJson)
         }
-      } catch {
-        // try next openrouter model
+      } catch (orErr: any) {
+        console.warn(`[AI Router Engine] OpenRouter model ${orModel} failed:`, orErr?.message || orErr)
       }
     }
   }
