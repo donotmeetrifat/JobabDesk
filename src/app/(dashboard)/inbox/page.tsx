@@ -15,7 +15,7 @@ import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import Link from "next/link";
 import { toast } from "sonner";
-import { WifiOff, RefreshCw, KeyRound, ExternalLink, X, MessageCircle } from "lucide-react";
+import { WifiOff, RefreshCw, KeyRound, ExternalLink, X, MessageCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
@@ -63,6 +63,7 @@ function InboxPageInner() {
   const [savingToken, setSavingToken] = useState<boolean>(false);
   const [tokenModalError, setTokenModalError] = useState<string>("");
   const [isSyncingMessenger, setIsSyncingMessenger] = useState(false);
+  const [isCleaningInbox, setIsCleaningInbox] = useState(false);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -458,6 +459,36 @@ function InboxPageInner() {
     },
     [messengerPageId, messengerPageName, tokenMissing]
   );
+
+  const handleCleanInbox = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Are you sure you want to clean foreign/stale conversations from your inbox? This will remove UK Brand Lover / old messages and reload fresh Digiplus chats."
+      )
+    ) {
+      return;
+    }
+    setIsCleaningInbox(true);
+    try {
+      const res = await fetch("/api/channels/messenger/purge", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "Inbox cleared successfully!");
+        setConversations([]);
+        setActiveConversation(null);
+        setActiveContact(null);
+        setMessages([]);
+        setResyncToken((prev) => prev + 1);
+        await handleSyncMessenger();
+      } else {
+        toast.error(data.error || "Failed to clear inbox");
+      }
+    } catch {
+      toast.error("Network error while clearing inbox");
+    } finally {
+      setIsCleaningInbox(false);
+    }
+  }, [handleSyncMessenger]);
 
   // Handle realtime message events
   const handleMessageEvent = useCallback(
@@ -885,11 +916,20 @@ function InboxPageInner() {
           </button>
           <button
             onClick={() => handleSyncMessenger()}
-            disabled={isSyncingMessenger}
+            disabled={isSyncingMessenger || isCleaningInbox}
             className="flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-semibold text-white transition-colors disabled:opacity-50"
           >
             <RefreshCw className={cn("h-3 w-3", isSyncingMessenger && "animate-spin")} />
             {isSyncingMessenger ? "Syncing..." : "Sync"}
+          </button>
+          <button
+            onClick={handleCleanInbox}
+            disabled={isSyncingMessenger || isCleaningInbox}
+            className="flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 text-[11px] font-semibold text-red-500 transition-colors disabled:opacity-50 shadow-2xs"
+            title="Clean foreign chats (like UK Brand Lover) from Digiplus inbox"
+          >
+            <Trash2 className={cn("h-3 w-3", isCleaningInbox && "animate-spin")} />
+            {isCleaningInbox ? "Cleaning..." : "Clean Foreign Chats"}
           </button>
         </div>
 

@@ -202,43 +202,12 @@ function splitMessengerText(text: string, maxLen = 1900): string[] {
       }
     }
 
-    if (!pageAccessToken) {
-      const { data: firstAccount } = await db
-        .from('accounts')
-        .select('id, facebook_page_access_token')
-        .not('facebook_page_access_token', 'is', null)
-        .limit(1)
-        .maybeSingle()
-      if (firstAccount?.facebook_page_access_token) {
-        if (!accountId) accountId = firstAccount.id
-        pageAccessToken = firstAccount.facebook_page_access_token
-      }
-    }
-
-    if (!pageAccessToken) {
-      const { data: anyChan } = await db
-        .from('channel_connections')
-        .select('account_id, metadata')
-        .eq('channel_type', 'messenger')
-        .limit(1)
-        .maybeSingle()
-      if (anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken) {
-        if (!accountId) accountId = anyChan.account_id
-        pageAccessToken = anyChan.metadata?.access_token || anyChan.metadata?.accessToken
-      }
-    }
-
+    // Strict Page Isolation: The incoming Facebook Page ID must explicitly match
+    // an account or channel connection in JobabDesk.
+    // NEVER fall back to another account/workspace if the page ID does not match!
     if (!accountId) {
-      const { data: anyAccount } = await db
-        .from('accounts')
-        .select('id')
-        .limit(1)
-        .maybeSingle()
-      accountId = anyAccount?.id || ''
-    }
-
-    if (!accountId) {
-      return NextResponse.json({ status: 'no_account' }, { status: 200 })
+      console.warn(`[Messenger Webhook]: Dropping event for unconnected Facebook Page ID: ${pageId}. No matching workspace found.`)
+      return NextResponse.json({ status: 'ignored_unconnected_page', pageId }, { status: 200 })
     }
 
     if (pageAccessToken) {

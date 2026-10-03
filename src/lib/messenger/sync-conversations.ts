@@ -64,7 +64,8 @@ export async function syncFacebookMessengerConversations(
   explicitPageId?: string,
   explicitPageToken?: string,
   supabase?: any,
-  explicitUserId?: string
+  explicitUserId?: string,
+  purgeExisting?: boolean
 ): Promise<SyncResult> {
   // CRITICAL: When called from an authenticated session (/api/channels/messenger/sync),
   // supabase is the authenticated SSR client with auth.uid() and valid account membership.
@@ -466,11 +467,12 @@ export async function syncFacebookMessengerConversations(
       try {
         const prevPageName = accountRecord?.facebook_page_name || ''
         const prevPageId = accountRecord?.facebook_page_id || ''
-        const wasWrongPage =
+        const shouldPurge =
+          Boolean(purgeExisting) ||
           (prevPageName && !prevPageName.toLowerCase().includes('digiplus')) ||
           (prevPageId && prevPageId !== pageId && prevPageId !== expectedWorkspaceId)
 
-        if (wasWrongPage) {
+        if (shouldPurge) {
           const { data: convsToClean } = await db
             .from('conversations')
             .select('id')
@@ -481,7 +483,7 @@ export async function syncFacebookMessengerConversations(
             await db.from('messages').delete().in('conversation_id', convIds)
             await db.from('conversations').delete().eq('account_id', actualAccountId)
             await db.from('contacts').delete().eq('account_id', actualAccountId)
-            console.log(`[Sync conversations]: Cleaned up ${convIds.length} conversations from wrong previous page: ${prevPageName || prevPageId}`)
+            console.log(`[Sync conversations]: Cleaned up ${convIds.length} conversations (purgeExisting: ${purgeExisting}, prevPage: ${prevPageName || prevPageId})`)
           }
         }
       } catch (cleanErr) {
