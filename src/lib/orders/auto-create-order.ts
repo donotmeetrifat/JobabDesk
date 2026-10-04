@@ -62,7 +62,7 @@ export interface AutoOrderPayload {
 }
 
 // Regex to detect order intent in Bengali, Banglish, and English
-const ORDER_INTENT_REGEX = /(?:order|confirm|nite\s*chai|nite\s*chi|nebo|nibo|pathan|pathiye\s*din|bheje\s*din|dispatch|delivery|thikana|address|adreass|adress|parcel|checkout|buy|purchase|book|booking|kinte\s*chai|kinbo|lagbe|dorkar|দিতে\s*পারবেন|কুরিয়ার|অর্ডার|পাঠান|পৌঁছে\s*দিন|পাঠিয়ে\s*দিন)/i
+const ORDER_INTENT_REGEX = /(?:order|confirm|want|need|buy|purchase|book|booking|get|send|dispatch|delivery|parcel|checkout|address|adreass|adress|thikana|nite\s*chai|nite\s*chi|nebo|nibo|kinte\s*chai|kinbo|lagbe|dorkar|pathan|pathiye\s*din|bheje\s*din|দিতে\s*পারবেন|কুরিয়ার|অর্ডার|পাঠান|পৌঁছে\s*দিন|পাঠিয়ে\s*দিন|নিব|নেব|চাই|লাগবে|কিনতে|কিনবো)/i
 
 export async function detectAndCreateOrderFromChat({
   accountId,
@@ -318,20 +318,20 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  // 6. Deduplication Check: Look for an existing 'new' order created in the last 1 hour
+  // 6. Deduplication Check: Look for an existing 'new' order created in the last 15 minutes
+  // Only update an existing order if customer is supplying missing contact/delivery details
+  // If the customer is ordering a DIFFERENT product, create a fresh new order!
   try {
     let existingQuery = db
       .from('orders')
       .select('id, customer_phone, customer_address, notes, subtotal, total, created_at, order_items(id, product_name, quantity, unit_price)')
       .eq('account_id', accountId)
       .eq('status', 'new')
-      .gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+      .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (conversationId) {
-      existingQuery = existingQuery.eq('conversation_id', conversationId)
-    } else if (contactId) {
+    if (contactId) {
       existingQuery = existingQuery.eq('contact_id', contactId)
     }
 
@@ -341,49 +341,68 @@ export async function detectAndCreateOrderFromChat({
     if (existingOrder) {
       const existingItems = existingOrder.order_items || []
       const hasPlaceholder = existingItems.length === 0 || existingItems.some((i: any) => i.product_name === 'Customer Order')
+      
+      // Check if new items are identical to existing items
+      const isSameItems = existingItems.length > 0 && items.length > 0 &&
+        existingItems.every((ei: any) => items.some(ni => ni.product_name.toLowerCase() === ei.product_name.toLowerCase()))
 
-      const updates: Record<string, any> = {
-        updated_at: new Date().toISOString(),
+      // If customer is just providing their phone or address for the existing order:
+      if (hasPlaceholder || isSameItems || (!isLlmConfirmed && (phone || address))) {
+        const updates: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        }
+        if (address) updates.customer_address = address
+        if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
+        if (resolvedName && resolvedName !== 'Messenger Customer') updates.customer_name = resolvedName
+        if (paymentMethod && paymentMethod !== 'cod') updates.payment_method = paymentMethod
+
+        if (items.length > 0 && hasPlaceholder) {
+          updates.subtotal = subtotal
+          updates.total = total
+          updates.delivery_charge = deliveryCharge
+
+          await db.from('order_items').delete().eq('order_id', existingOrder.id)
+          const itemsToInsert = items.map((item) => ({
+            order_id: existingOrder.id,
+            product_id: item.product_id || null,
+            product_name: item.product_name,
+            product_sku: item.product_sku || null,
+            unit_price: item.unit_price,
+            quantity: item.quantity,
+            total: item.total,
+          }))
+          await db.from('order_items').insert(itemsToInsert)
+        }
+
+        await db.from('orders').update(updates).eq('id', existingOrder.id)
+        console.log(`[auto-create-order] Updated existing new order ${existingOrder.id}`)
+        return existingOrder
       }
-      if (address) updates.customer_address = address
-      if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
-      if (resolvedName && resolvedName !== 'Messenger Customer') updates.customer_name = resolvedName
-      if (paymentMethod && paymentMethod !== 'cod') updates.payment_method = paymentMethod
-
-      // If new order items are detected and existing order had placeholders or LLM confirmed new items:
-      if (items.length > 0 && (hasPlaceholder || isLlmConfirmed)) {
-        updates.subtotal = subtotal
-        updates.total = total
-        updates.delivery_charge = deliveryCharge
-
-        await db.from('order_items').delete().eq('order_id', existingOrder.id)
-        const itemsToInsert = items.map((item) => ({
-          order_id: existingOrder.id,
-          product_id: item.product_id || null,
-          product_name: item.product_name,
-          product_sku: item.product_sku || null,
-          unit_price: item.unit_price,
-          quantity: item.quantity,
-          total: item.total,
-        }))
-        await db.from('order_items').insert(itemsToInsert)
-      }
-
-      await db.from('orders').update(updates).eq('id', existingOrder.id)
-      console.log(`[auto-create-order] Updated existing new order ${existingOrder.id}`)
-      return existingOrder
     }
   } catch (dedupeErr) {
     console.warn('[auto-create-order] Deduplication check failed:', dedupeErr)
   }
 
-  // 7. Insert New Order with status 'new' (Pending Shop Owner Approval)
+  // 7. Verify Contact ID exists in contacts table to prevent Foreign Key constraint violation
+  let validContactId: string | null = null
+  if (contactId) {
+    try {
+      const { data: cRow } = await db.from('contacts').select('id').eq('id', contactId).maybeSingle()
+      if (cRow?.id) {
+        validContactId = cRow.id
+      }
+    } catch {
+      // safe fallback
+    }
+  }
+
+  // 8. Insert New Order with status 'new' (Pending Shop Owner Approval)
   const finalCustomerName = resolvedName || (phone ? `Customer (${phone.slice(-4)})` : 'Messenger Customer')
   const orderNotes = llmOrderData?.notes || `Automatically captured by AI Assistant via ${channel}`
 
   const orderPayload: Record<string, any> = {
     account_id: accountId,
-    contact_id: contactId || null,
+    contact_id: validContactId,
     customer_name: finalCustomerName,
     customer_phone: phone || null,
     customer_address: address || null,
@@ -402,18 +421,44 @@ export async function detectAndCreateOrderFromChat({
     orderPayload.conversation_id = conversationId
   }
 
-  const { data: order, error: orderErr } = await db
+  let { data: order, error: orderErr } = await db
     .from('orders')
     .insert(orderPayload)
-    .select('*, contact:contacts(id, name, phone)')
+    .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
     .single()
 
+  // Fallback 1: If insert failed because conversation_id column doesn't exist in Supabase schema:
+  if (orderErr && orderPayload.conversation_id) {
+    console.warn('[auto-create-order] Retrying insert without conversation_id:', orderErr.message)
+    delete orderPayload.conversation_id
+    const retry = await db
+      .from('orders')
+      .insert(orderPayload)
+      .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
+      .single()
+    order = retry.data
+    orderErr = retry.error
+  }
+
+  // Fallback 2: If insert failed because contact_id foreign key constraint failed:
+  if (orderErr && orderPayload.contact_id) {
+    console.warn('[auto-create-order] Retrying insert without contact_id:', orderErr.message)
+    delete orderPayload.contact_id
+    const retry = await db
+      .from('orders')
+      .insert(orderPayload)
+      .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
+      .single()
+    order = retry.data
+    orderErr = retry.error
+  }
+
   if (orderErr || !order) {
-    console.error('[auto-create-order] Failed to insert order:', orderErr)
+    console.error('[auto-create-order] Failed to insert order after all retries:', orderErr)
     return null
   }
 
-  // 8. Insert Order Items
+  // 9. Insert Order Items
   const itemsToInsert = items.map((item) => ({
     order_id: order.id,
     product_id: item.product_id || null,

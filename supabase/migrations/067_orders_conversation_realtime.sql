@@ -32,4 +32,7 @@ BEGIN
   END;
 END $$;
 
+GRANT ALL ON TABLE public.orders TO authenticated, service_role, anon;
+GRANT ALL ON TABLE public.order_items TO authenticated, service_role, anon;
+
 NOTIFY pgrst, 'reload schema';

@@ -72,8 +72,21 @@ export function OrdersShell() {
       )
       .subscribe()
 
+    // 5-second automatic polling fallback (guarantees updates even if Supabase Realtime publication is not configured)
+    const interval = setInterval(() => {
+      fetchOrders()
+    }, 5000)
+
+    // Window focus refresh (instantly reloads orders when switching back to this tab)
+    const handleFocus = () => {
+      fetchOrders()
+    }
+    window.addEventListener('focus', handleFocus)
+
     return () => {
       supabase.removeChannel(channel)
+      clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
     }
   }, [fetchOrders])
 
