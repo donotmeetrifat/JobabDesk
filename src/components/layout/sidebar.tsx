@@ -99,7 +99,6 @@ const navItems: NavItem[] = [
   { href: "/products", labelKey: "products", icon: Package },
   { href: "/orders", labelKey: "orders", icon: ShoppingCart },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-  { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
 ];
 

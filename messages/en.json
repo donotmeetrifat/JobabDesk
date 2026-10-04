@@ -88,8 +88,9 @@
     "quickActions": {
       "newContact": "New Contact",
       "orders": "Orders",
-      "newDeal": "New Deal",
       "newBroadcast": "New Broadcast",
+      "aiAgents": "AI Agents",
+      "newDeal": "New Deal",
       "newAutomation": "New Automation"
     },
     "activityFeed": {
