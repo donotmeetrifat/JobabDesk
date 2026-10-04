@@ -75,7 +75,7 @@ export function OrderTable({
 }: OrderTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id))
 
-  if (loading) {
+  if (loading && orders.length === 0) {
     return (
       <div className="flex h-48 items-center justify-center rounded-xl border bg-card text-muted-foreground text-sm animate-pulse">
         Loading orders...

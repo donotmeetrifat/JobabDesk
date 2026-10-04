@@ -29,9 +29,13 @@ export function OrdersShell() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true)
+  const fetchOrders = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+    }
+    setIsSyncing(true)
     try {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
@@ -44,17 +48,23 @@ export function OrdersShell() {
       setTotal(data.total ?? 0)
       if (data.stats) setStats(data.stats)
     } catch {
-      toast.error('Failed to load orders')
+      if (!silent) {
+        toast.error('Failed to load orders')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
+      setIsSyncing(false)
     }
   }, [search, statusFilter, paymentFilter])
 
+  // Initial load
   useEffect(() => {
-    fetchOrders()
+    fetchOrders(false)
   }, [fetchOrders])
 
-  // Realtime listener for incoming orders from chat or status changes
+  // Realtime listener and silent background sync
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
@@ -67,19 +77,19 @@ export function OrdersShell() {
           table: 'orders',
         },
         () => {
-          fetchOrders()
+          fetchOrders(true)
         }
       )
       .subscribe()
 
-    // 5-second automatic polling fallback (guarantees updates even if Supabase Realtime publication is not configured)
+    // 5-second automatic silent polling (never wipes or flickers the table!)
     const interval = setInterval(() => {
-      fetchOrders()
+      fetchOrders(true)
     }, 5000)
 
-    // Window focus refresh (instantly reloads orders when switching back to this tab)
+    // Window focus refresh (silent)
     const handleFocus = () => {
-      fetchOrders()
+      fetchOrders(true)
     }
     window.addEventListener('focus', handleFocus)
 
@@ -240,10 +250,13 @@ export function OrdersShell() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchOrders}
-            className="flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium hover:bg-accent transition-colors"
+            onClick={() => fetchOrders(false)}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-70"
+            title="Refresh orders"
           >
-            <RefreshCw className="size-4" /> Refresh
+            <RefreshCw className={`size-4 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Refresh'}</span>
           </button>
           <button
             onClick={handleAdd}
