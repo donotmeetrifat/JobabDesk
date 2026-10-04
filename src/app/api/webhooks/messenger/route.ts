@@ -114,62 +114,176 @@ function splitMessengerText(text: string, maxLen = 1900): string[] {
   return chunks
 }
 
+const META_REACTION_EMOJIS: Record<string, string> = {
+  love: '❤️',
+  heart: '❤️',
+  like: '👍',
+  thumbsup: '👍',
+  thumbs_up: '👍',
+  yes: '👍',
+  dislike: '👎',
+  thumbsdown: '👎',
+  thumbs_down: '👎',
+  no: '👎',
+  wow: '😮',
+  surprised: '😮',
+  sad: '😢',
+  cry: '😢',
+  crying: '😢',
+  angry: '😡',
+  anger: '😡',
+  smile: '😄',
+  happy: '😄',
+  laugh: '😂',
+  laughing: '😂',
+  haha: '😂',
+  pray: '🙏',
+  prayer: '🙏',
+  fire: '🔥',
+  clap: '👏',
+  celebrate: '🎉',
+  tada: '🎉',
+}
+
+function resolveMetaEmoji(reactionObj: any): string {
+  if (!reactionObj) return ''
+  // 1. Direct emoji field if provided
+  if (reactionObj.emoji && typeof reactionObj.emoji === 'string' && reactionObj.emoji.trim()) {
+    return reactionObj.emoji.trim()
+  }
+  // 2. reaction string (named keyword like 'love' or literal emoji '❤️')
+  const raw = (reactionObj.reaction || '').toString().trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  if (META_REACTION_EMOJIS[lower]) {
+    return META_REACTION_EMOJIS[lower]
+  }
+  return raw
+}
+
 // Meta Messenger Webhook Inbound POST
 export async function POST(req: Request) {
   try {
     const body = await req.json()
     const db = getAdminClient()
 
-    const entry = body?.entry?.[0]
-    const messaging = entry?.messaging?.[0]
+    const entries = Array.isArray(body?.entry) ? body.entry : body?.entry ? [body.entry] : []
+    const entry = entries[0]
+    let messaging = entry?.messaging?.[0] || entry?.standby?.[0]
+
+    // If payload contains multiple items, look for reaction event first
+    for (const e of entries) {
+      const items = [...(e.messaging || []), ...(e.standby || [])]
+      const foundReaction = items.find((item: any) => item.reaction || item.message_reaction || item.message_reactions)
+      if (foundReaction) {
+        messaging = foundReaction
+        break
+      }
+    }
+
     if (!messaging) {
       return NextResponse.json({ status: 'ignored', reason: 'No messaging payload' }, { status: 200 })
     }
 
     // Handle inbound Facebook Messenger reaction (emoji reaction or unreact)
-    const reaction = messaging?.reaction
-    if (reaction && reaction.mid) {
-      const reactionMid = reaction.mid
-      const action = reaction.action // 'react' | 'unreact'
-      const emoji = reaction.emoji || ''
+    const reaction = messaging?.reaction || messaging?.message_reaction || messaging?.message_reactions
+    if (reaction && (reaction.mid || reaction.message_id)) {
+      const reactionMid = reaction.mid || reaction.message_id || ''
+      const rawAction = (reaction.action || '').toLowerCase()
+      const resolvedEmoji = resolveMetaEmoji(reaction)
+      const action = rawAction || (resolvedEmoji ? 'react' : 'unreact')
       const senderPsid = messaging?.sender?.id
       const pageId = entry?.id || messaging?.recipient?.id || ''
 
-      // 1. Locate target message by Meta message_id
-      const { data: targetMessage } = await db
-        .from('messages')
-        .select('id, conversation_id')
-        .eq('message_id', reactionMid)
-        .maybeSingle()
+      // 1. Locate target message by Meta message_id (safe against prefix differences)
+      let targetMessage: { id: string; conversation_id: string } | null = null
+
+      if (reactionMid) {
+        const candidates = new Set<string>()
+        candidates.add(reactionMid)
+        if (reactionMid.startsWith('mid.')) candidates.add(reactionMid.slice(4))
+        else candidates.add(`mid.${reactionMid}`)
+        if (reactionMid.startsWith('m_')) candidates.add(reactionMid.slice(2))
+        else candidates.add(`m_${reactionMid}`)
+        const stripped = reactionMid.replace(/^(m_|mid\.)+/g, '')
+        if (stripped) {
+          candidates.add(stripped)
+          candidates.add(`mid.${stripped}`)
+          candidates.add(`m_${stripped}`)
+          candidates.add(`m_mid.${stripped}`)
+        }
+
+        const { data: directMsg } = await db
+          .from('messages')
+          .select('id, conversation_id')
+          .in('message_id', Array.from(candidates))
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (directMsg) {
+          targetMessage = directMsg
+        }
+      }
+
+      // 2. Resolve conversation & contact
+      let contactId: string | null = null
+      let convId = targetMessage?.conversation_id || null
+
+      if (senderPsid) {
+        const { data: ct } = await db
+          .from('contacts')
+          .select('id')
+          .eq('phone', senderPsid)
+          .maybeSingle()
+        if (ct?.id) contactId = ct.id
+      }
+
+      if (targetMessage && !contactId) {
+        const { data: conv } = await db
+          .from('conversations')
+          .select('id, contact_id')
+          .eq('id', targetMessage.conversation_id)
+          .maybeSingle()
+        if (conv?.contact_id) contactId = conv.contact_id
+      }
+
+      // If target message wasn't found by mid, find active conversation by customer PSID
+      if (!targetMessage && contactId) {
+        const { data: convByContact } = await db
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', contactId)
+          .order('last_message_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (convByContact?.id) {
+          convId = convByContact.id
+          const { data: latestMsg } = await db
+            .from('messages')
+            .select('id, conversation_id')
+            .eq('conversation_id', convId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (latestMsg) {
+            targetMessage = latestMsg
+          }
+        }
+      }
 
       if (!targetMessage) {
         console.warn('[messenger/webhook] Reaction target message not found for mid:', reactionMid)
         return NextResponse.json({ status: 'ignored', reason: 'Target message not found' }, { status: 200 })
       }
 
-      // 2. Resolve conversation & contact
-      const { data: conv } = await db
-        .from('conversations')
-        .select('id, contact_id, account_id, user_id')
-        .eq('id', targetMessage.conversation_id)
-        .maybeSingle()
-
-      let contactId = conv?.contact_id || null
-
-      if (!contactId && senderPsid) {
-        const { data: ct } = await db
-          .from('contacts')
-          .select('id')
-          .or(`phone.eq.${senderPsid},phone_normalized.eq.${senderPsid.replace(/\D/g, '')}`)
-          .maybeSingle()
-        if (ct?.id) contactId = ct.id
-      }
-
       const isPageSender = senderPsid === pageId
       const actorType = isPageSender ? 'agent' : 'customer'
-      const actorId = isPageSender ? (conv?.user_id || null) : contactId
+      const actorId = isPageSender ? null : contactId
 
-      if (action === 'unreact' || !emoji) {
+      if (action === 'unreact') {
         let query = db
           .from('message_reactions')
           .delete()
@@ -180,11 +294,12 @@ export async function POST(req: Request) {
           query = query.eq('actor_id', actorId)
         }
 
-        const { error: delErr } = await query
-        if (delErr) {
-          console.error('[messenger/webhook] Reaction delete error:', delErr.message)
-        }
+        await query
         return NextResponse.json({ status: 'reaction_deleted' }, { status: 200 })
+      }
+
+      if (!resolvedEmoji) {
+        return NextResponse.json({ status: 'ignored_empty_emoji' }, { status: 200 })
       }
 
       // Upsert reaction into message_reactions
@@ -193,7 +308,7 @@ export async function POST(req: Request) {
         conversation_id: targetMessage.conversation_id,
         actor_type: actorType,
         actor_id: actorId || null,
-        emoji,
+        emoji: resolvedEmoji,
       }
 
       let existingQuery = db
@@ -211,7 +326,7 @@ export async function POST(req: Request) {
       if (existingReaction?.id) {
         await db
           .from('message_reactions')
-          .update({ emoji })
+          .update({ emoji: resolvedEmoji })
           .eq('id', existingReaction.id)
       } else {
         const { error: insErr } = await db
@@ -219,16 +334,26 @@ export async function POST(req: Request) {
           .insert(reactionPayload)
 
         if (insErr) {
-          // If conflict or unique error, try updating matching row
-          await db
+          console.warn('[messenger/webhook] Reaction insert failed, updating existing:', insErr.message)
+          let fallbackUpdate = db
             .from('message_reactions')
-            .update({ emoji })
+            .update({ emoji: resolvedEmoji })
             .eq('message_id', targetMessage.id)
             .eq('actor_type', actorType)
+          if (actorId) {
+            fallbackUpdate = fallbackUpdate.eq('actor_id', actorId)
+          }
+          await fallbackUpdate
         }
       }
 
-      return NextResponse.json({ status: 'reaction_handled' }, { status: 200 })
+      // Touch the conversation so Realtime / resync triggers in UI
+      await db
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', targetMessage.conversation_id)
+
+      return NextResponse.json({ status: 'reaction_handled', emoji: resolvedEmoji }, { status: 200 })
     }
 
     const isEcho = Boolean(messaging?.message?.is_echo)

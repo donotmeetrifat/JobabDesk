@@ -366,37 +366,37 @@ export function MessageThread({
     const supabase = createClient();
     let cancelled = false;
 
-    (async () => {
+    const fetchReactions = async () => {
       let fetched: MessageReaction[] = [];
       let success = false;
 
-      // 1. Try direct Supabase query
+      // 1. Fetch via API route first (uses server admin client to guarantee full visibility)
       try {
-        const { data, error } = await supabase
-          .from("message_reactions")
-          .select("*")
-          .eq("conversation_id", conversationId);
-        if (!error && Array.isArray(data) && data.length > 0) {
-          fetched = data as MessageReaction[];
-          success = true;
+        const res = await fetch(`/api/inbox/conversations/${conversationId}/reactions`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.reactions)) {
+            fetched = json.reactions as MessageReaction[];
+            success = true;
+          }
         }
-      } catch (err) {
-        console.warn("Direct reactions fetch error:", err);
+      } catch (apiErr) {
+        console.warn("API reactions fetch failed, falling back to direct:", apiErr);
       }
 
-      // 2. Fallback to API route (uses server admin client to bypass browser RLS)
+      // 2. Direct Supabase query as fallback if API route failed
       if (!success && !cancelled) {
         try {
-          const res = await fetch(`/api/inbox/conversations/${conversationId}/reactions`);
-          if (res.ok) {
-            const json = await res.json();
-            if (Array.isArray(json.reactions)) {
-              fetched = json.reactions as MessageReaction[];
-              success = true;
-            }
+          const { data, error } = await supabase
+            .from("message_reactions")
+            .select("*")
+            .eq("conversation_id", conversationId);
+          if (!error && Array.isArray(data)) {
+            fetched = data as MessageReaction[];
+            success = true;
           }
-        } catch (apiErr) {
-          console.warn("API reactions fetch failed:", apiErr);
+        } catch (err) {
+          console.warn("Direct reactions fetch error:", err);
         }
       }
 
@@ -421,10 +421,16 @@ export function MessageThread({
         }
         return merged;
       });
-    })();
+    };
+
+    fetchReactions();
+
+    // Poll every 4 seconds so customer reactions sync live without waiting for page reload
+    const interval = setInterval(fetchReactions, 4000);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [conversationId, resyncToken]);
 
