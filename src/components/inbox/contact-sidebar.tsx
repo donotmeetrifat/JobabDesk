@@ -56,6 +56,23 @@ export function ContactSidebar({
     };
   }, [contact, conversation]);
 
+  // Fallback: If contact record has a PSID or no phone/address, extract from loaded customer messages
+  const fallbackInfo = useMemo(() => {
+    if (!propMessages || propMessages.length === 0) return null;
+    let p: string | undefined;
+    let a: string | undefined;
+    for (let i = propMessages.length - 1; i >= 0; i--) {
+      const m = propMessages[i];
+      if (m.sender_type === "customer" && m.content_text) {
+        const info = extractCustomerInfoFromMessage(m.content_text);
+        if (!p && info.phone) p = info.phone;
+        if (!a && info.address) a = info.address;
+        if (p && a) break;
+      }
+    }
+    return { phone: p, address: a };
+  }, [propMessages]);
+
   const { accountId } = useAuth();
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
@@ -310,23 +327,6 @@ export function ContactSidebar({
 
   // Format phone display: hide raw Facebook PSID numbers from Phone field
   const isPhoneRawPsid = Boolean(effectiveContact.phone && isFacebookPsid(effectiveContact.phone));
-
-  // Fallback: If contact record has a PSID or no phone/address, extract from loaded customer messages
-  const fallbackInfo = useMemo(() => {
-    if (!propMessages || propMessages.length === 0) return null;
-    let p: string | undefined;
-    let a: string | undefined;
-    for (let i = propMessages.length - 1; i >= 0; i--) {
-      const m = propMessages[i];
-      if (m.sender_type === "customer" && m.content_text) {
-        const info = extractCustomerInfoFromMessage(m.content_text);
-        if (!p && info.phone) p = info.phone;
-        if (!a && info.address) a = info.address;
-        if (p && a) break;
-      }
-    }
-    return { phone: p, address: a };
-  }, [propMessages]);
 
   const displayPhone = !isPhoneRawPsid && effectiveContact.phone
     ? effectiveContact.phone
