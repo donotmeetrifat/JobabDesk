@@ -62,7 +62,7 @@ export interface AutoOrderPayload {
 }
 
 // Regex to detect order intent in Bengali, Banglish, and English
-const ORDER_INTENT_REGEX = /(?:order|confirm|nite\s*chai|nite\s*chi|nebo|nibo|pathan|pathiye\s*din|bheje\s*din|dispatch|delivery|thikana|address|adreass|adress|parcel|checkout|কুরিয়ার|অর্ডার|পাঠান|পৌঁছে\s*দিন|পাঠিয়ে\s*দিন)/i
+const ORDER_INTENT_REGEX = /(?:order|confirm|nite\s*chai|nite\s*chi|nebo|nibo|pathan|pathiye\s*din|bheje\s*din|dispatch|delivery|thikana|address|adreass|adress|parcel|checkout|buy|purchase|book|booking|kinte\s*chai|kinbo|lagbe|dorkar|দিতে\s*পারবেন|কুরিয়ার|অর্ডার|পাঠান|পৌঁছে\s*দিন|পাঠিয়ে\s*দিন)/i
 
 export async function detectAndCreateOrderFromChat({
   accountId,
@@ -119,13 +119,16 @@ export async function detectAndCreateOrderFromChat({
     resolvedName = llmOrderData.customer_name
   }
 
-  // 2. Check if this is an order confirmation or order intent
+  // 2. Check if this turn represents an order intent
   const isLlmConfirmed = Boolean(llmOrderData?.is_order && llmOrderData?.items && llmOrderData.items.length > 0)
-  const hasDeliveryDetails = Boolean(phone || address)
   const matchesOrderKeywords = ORDER_INTENT_REGEX.test(messageText) || ORDER_INTENT_REGEX.test(conversationHistoryText)
+  const hasDeliveryDetails = Boolean(phone || address)
 
-  // Must have at least delivery details or LLM order confirmation
-  if (!isLlmConfirmed && (!hasDeliveryDetails || !matchesOrderKeywords)) {
+  // Trigger order creation if:
+  // - LLM confirmed an order, OR
+  // - Message/history contains order keywords (e.g. "i want to order Simple Skincare"), OR
+  // - Customer provided delivery contact details in conversation
+  if (!isLlmConfirmed && !matchesOrderKeywords && !hasDeliveryDetails) {
     return null
   }
 
@@ -319,7 +322,7 @@ export async function detectAndCreateOrderFromChat({
   try {
     let existingQuery = db
       .from('orders')
-      .select('id, customer_phone, customer_address, notes')
+      .select('id, customer_phone, customer_address, notes, subtotal, total, created_at, order_items(id, product_name, quantity, unit_price)')
       .eq('account_id', accountId)
       .eq('status', 'new')
       .gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString())
@@ -336,17 +339,37 @@ export async function detectAndCreateOrderFromChat({
     const existingOrder = existingOrders?.[0]
 
     if (existingOrder) {
-      // Update existing order with newly supplied address / phone / notes
+      const existingItems = existingOrder.order_items || []
+      const hasPlaceholder = existingItems.length === 0 || existingItems.some((i: any) => i.product_name === 'Customer Order')
+
       const updates: Record<string, any> = {
         updated_at: new Date().toISOString(),
       }
-      if (address && !existingOrder.customer_address) updates.customer_address = address
-      if (phone && !existingOrder.customer_phone) updates.customer_phone = phone
-      if (resolvedName) updates.customer_name = resolvedName
+      if (address) updates.customer_address = address
+      if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
+      if (resolvedName && resolvedName !== 'Messenger Customer') updates.customer_name = resolvedName
+      if (paymentMethod && paymentMethod !== 'cod') updates.payment_method = paymentMethod
 
-      if (Object.keys(updates).length > 1) {
-        await db.from('orders').update(updates).eq('id', existingOrder.id)
+      // If new order items are detected and existing order had placeholders or LLM confirmed new items:
+      if (items.length > 0 && (hasPlaceholder || isLlmConfirmed)) {
+        updates.subtotal = subtotal
+        updates.total = total
+        updates.delivery_charge = deliveryCharge
+
+        await db.from('order_items').delete().eq('order_id', existingOrder.id)
+        const itemsToInsert = items.map((item) => ({
+          order_id: existingOrder.id,
+          product_id: item.product_id || null,
+          product_name: item.product_name,
+          product_sku: item.product_sku || null,
+          unit_price: item.unit_price,
+          quantity: item.quantity,
+          total: item.total,
+        }))
+        await db.from('order_items').insert(itemsToInsert)
       }
+
+      await db.from('orders').update(updates).eq('id', existingOrder.id)
       console.log(`[auto-create-order] Updated existing new order ${existingOrder.id}`)
       return existingOrder
     }

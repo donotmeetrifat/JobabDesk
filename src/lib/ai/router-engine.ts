@@ -930,7 +930,9 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
     "notes": "string or null"
   }
 }
-Note: If no order is being placed or confirmed in this turn, set "order": null.`
+Note on "order":
+Whenever the customer expresses intent to order or buy products (e.g. "i want to order Simple Skincare & Nivea Cleansing Cream", "book order", "kinte chai", "nite chai", "order korun"), ALWAYS populate the "order" object with the items, quantities, catalog prices, subtotal, and total so the system captures it immediately! Set customer_phone and customer_address to null if not yet provided.
+Only set "order": null if the customer is merely asking a general FAQ or store policy question without any intent to purchase or order.`
 
   // 3-TIER UNSTOPPABLE FALLBACK CHAIN
 
@@ -1244,7 +1246,7 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
   try {
-    detectAndCreateOrderFromChat({
+    await detectAndCreateOrderFromChat({
       accountId: account?.id || accountId,
       contactId: contactId || null,
       conversationId: convId || null,
@@ -1257,8 +1259,6 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
       llmOrderData,
       storeProducts: products,
       supabase: client,
-    }).catch((err) => {
-      console.warn('[AI Router Engine] Failed to auto-create order from chat:', err)
     })
   } catch (err) {
     console.warn('[AI Router Engine] Order capture error:', err)

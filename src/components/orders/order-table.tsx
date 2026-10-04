@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare } from 'lucide-react'
+import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone } from 'lucide-react'
 import Link from 'next/link'
 import type { Order, OrderStatus, PaymentStatus } from '@/types/orders'
 
@@ -108,12 +108,11 @@ export function OrderTable({
                 className="rounded border-muted-foreground/40 accent-primary cursor-pointer"
               />
             </th>
-            <th className="px-3 py-3 font-semibold">Order #</th>
+            <th className="px-3 py-3 font-semibold">Order</th>
             <th className="px-3 py-3 font-semibold">Customer</th>
-            <th className="px-3 py-3 font-semibold">Contact / Phone</th>
-            <th className="px-3 py-3 font-semibold">Address</th>
-            <th className="px-3 py-3 font-semibold">Ordered Products</th>
-            <th className="px-3 py-3 font-semibold">Total (৳)</th>
+            <th className="px-3 py-3 font-semibold">Products</th>
+            <th className="px-3 py-3 font-semibold">Delivery Address</th>
+            <th className="px-3 py-3 font-semibold">Total</th>
             <th className="px-3 py-3 font-semibold">Payment</th>
             <th className="px-3 py-3 font-semibold">Status</th>
             <th className="px-3 py-3 font-semibold">Date</th>
@@ -127,11 +126,12 @@ export function OrderTable({
             const paymentInfo = PAYMENT_BADGES[order.payment_status] ?? PAYMENT_BADGES.unpaid
             const items = order.order_items ?? []
             const customerId = order.contact_id || order.contact?.id
+            const isNew = order.status === 'new'
 
             return (
               <tr
                 key={order.id}
-                className={`transition-colors hover:bg-muted/40 ${isSelected ? 'bg-primary/5' : ''}`}
+                className={`transition-colors hover:bg-muted/30 ${isSelected ? 'bg-primary/5' : ''}`}
               >
                 {/* Select Checkbox */}
                 <td className="px-3.5 py-3">
@@ -144,8 +144,15 @@ export function OrderTable({
                 </td>
 
                 {/* Order Number & Source */}
-                <td className="px-3 py-3 font-mono font-semibold text-foreground whitespace-nowrap">
-                  <div>{order.order_number || 'ORD-NEW'}</div>
+                <td className="px-3 py-3 font-mono text-foreground whitespace-nowrap">
+                  <button
+                    type="button"
+                    onClick={() => onView(order)}
+                    className="font-bold hover:text-primary transition-colors text-left flex items-center gap-1.5"
+                    title="Click to view order details"
+                  >
+                    <span>{order.order_number || 'ORD-NEW'}</span>
+                  </button>
                   {order.source && (
                     <span className="inline-block mt-0.5 rounded px-1.5 py-0.2 text-[9px] font-medium bg-muted text-muted-foreground uppercase">
                       {order.source}
@@ -153,29 +160,55 @@ export function OrderTable({
                   )}
                 </td>
 
-                {/* Customer Name & ID */}
+                {/* Customer (Name & Phone Cleanly Grouped) */}
                 <td className="px-3 py-3">
                   <div className="font-semibold text-foreground flex items-center gap-1">
                     <User className="size-3 text-muted-foreground shrink-0" />
-                    <span>{order.customer_name}</span>
+                    <span className="truncate max-w-[140px]" title={order.customer_name}>{order.customer_name}</span>
                   </div>
-                  {customerId && (
-                    <div className="text-[10px] text-muted-foreground font-mono mt-0.5" title={`Customer ID: ${customerId}`}>
-                      ID: {customerId.slice(0, 8)}...
+                  <div className="text-[11px] text-muted-foreground flex items-center gap-1 mt-0.5 font-mono">
+                    <Phone className="size-2.5 shrink-0 opacity-70" />
+                    {order.customer_phone ? (
+                      <span>{order.customer_phone}</span>
+                    ) : (
+                      <span className="italic text-[10px] text-muted-foreground/80">No phone</span>
+                    )}
+                  </div>
+                </td>
+
+                {/* Products (Clean Preview with Item Count Badge) */}
+                <td className="px-3 py-3 max-w-[240px]">
+                  {items.length > 0 ? (
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5 text-foreground font-medium text-xs">
+                        <Package className="size-3.5 text-primary shrink-0" />
+                        <span
+                          className="truncate max-w-[150px]"
+                          title={items.map((i) => `${i.product_name} (×${i.quantity})`).join(', ')}
+                        >
+                          {items[0].product_name}
+                        </span>
+                        <span className="text-muted-foreground text-[10px] font-mono shrink-0 font-semibold">
+                          ×{items[0].quantity}
+                        </span>
+                      </div>
+                      {items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => onView(order)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline w-fit mt-0.5"
+                          title="Click to view all items"
+                        >
+                          <span>+{items.length - 1} more item{items.length - 1 > 1 ? 's' : ''}</span>
+                        </button>
+                      )}
                     </div>
-                  )}
-                </td>
-
-                {/* Phone */}
-                <td className="px-3 py-3 text-foreground whitespace-nowrap">
-                  {order.customer_phone ? (
-                    <span className="font-mono">{order.customer_phone}</span>
                   ) : (
-                    <span className="text-muted-foreground italic">Not provided</span>
+                    <span className="text-muted-foreground italic text-[11px]">No items</span>
                   )}
                 </td>
 
-                {/* Address */}
+                {/* Delivery Address */}
                 <td className="px-3 py-3 max-w-[200px]">
                   {order.customer_address ? (
                     <div className="flex items-start gap-1 text-muted-foreground truncate" title={order.customer_address}>
@@ -183,44 +216,20 @@ export function OrderTable({
                       <span className="truncate">{order.customer_address}</span>
                     </div>
                   ) : (
-                    <span className="text-muted-foreground italic">No address</span>
-                  )}
-                </td>
-
-                {/* Ordered Products */}
-                <td className="px-3 py-3 min-w-[200px] max-w-[280px]">
-                  {items.length > 0 ? (
-                    <div className="flex flex-col gap-1">
-                      {items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between gap-1.5 px-2 py-0.5 rounded bg-muted/60 dark:bg-muted/40 border border-border/40 text-[11px]"
-                        >
-                          <span className="font-medium text-foreground truncate max-w-[160px]" title={item.product_name}>
-                            {item.product_name}
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0 font-mono text-[10px] text-muted-foreground">
-                            <span className="text-foreground font-semibold">×{item.quantity}</span>
-                            {item.unit_price > 0 && (
-                              <span>৳{item.unit_price.toLocaleString()}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground italic text-[11px]">No items</span>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 text-[10px] text-muted-foreground italic">
+                      Awaiting address
+                    </span>
                   )}
                 </td>
 
                 {/* Total */}
-                <td className="px-3 py-3 font-bold text-foreground whitespace-nowrap">
+                <td className="px-3 py-3 font-bold text-foreground whitespace-nowrap text-sm">
                   ৳{(Number(order.total) || 0).toLocaleString()}
                 </td>
 
                 {/* Payment */}
                 <td className="px-3 py-3 whitespace-nowrap">
-                  <div className="flex flex-col gap-1 items-start">
+                  <div className="flex items-center gap-1.5">
                     <select
                       value={order.payment_status}
                       onChange={(e) => onUpdatePaymentStatus?.(order, e.target.value as PaymentStatus)}
@@ -231,7 +240,7 @@ export function OrderTable({
                       <option value="partial">Partial</option>
                       <option value="paid">Paid</option>
                     </select>
-                    <span className="text-[10px] font-mono font-medium text-muted-foreground uppercase px-1">
+                    <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase px-1.5 py-0.5 rounded bg-muted">
                       {order.payment_method}
                     </span>
                   </div>
@@ -253,29 +262,40 @@ export function OrderTable({
                   })}
                 </td>
 
-                {/* Quick Actions */}
+                {/* Actions (Prominent Details Button & Quick Controls) */}
                 <td className="px-3.5 py-3 text-right whitespace-nowrap">
                   <div className="flex items-center justify-end gap-1.5">
-                    {/* Direct Quick Approve for New Orders */}
-                    {order.status === 'new' && onApprove && (
+                    {/* Dedicated, Prominent Details Button */}
+                    <button
+                      type="button"
+                      onClick={() => onView(order)}
+                      title="View Complete Order Details & Breakdown"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 hover:border-primary/50 bg-background hover:bg-muted text-foreground px-2.5 py-1 text-xs font-semibold shadow-2xs transition-all hover:scale-[1.02] active:scale-95"
+                    >
+                      <Eye className="size-3 text-primary" />
+                      <span>Details</span>
+                    </button>
+
+                    {/* Quick Approve for New Orders */}
+                    {isNew && onApprove && (
                       <button
                         type="button"
                         onClick={() => onApprove(order)}
                         title="Approve / Confirm Order"
-                        className="flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-xs font-semibold shadow-2xs transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-xs font-semibold shadow-2xs transition-all hover:scale-[1.02] active:scale-95"
                       >
-                        <CheckCircle2 className="size-3.5" />
+                        <CheckCircle2 className="size-3" />
                         <span>Approve</span>
                       </button>
                     )}
 
-                    {/* Direct Quick Cancel for New Orders */}
-                    {order.status === 'new' && onCancel && (
+                    {/* Quick Cancel for New Orders */}
+                    {isNew && onCancel && (
                       <button
                         type="button"
                         onClick={() => onCancel(order)}
                         title="Cancel Order"
-                        className="rounded-md border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 p-1 transition-colors"
+                        className="rounded-lg border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 p-1.5 transition-colors"
                       >
                         <Ban className="size-3.5" />
                       </button>
@@ -287,8 +307,8 @@ export function OrderTable({
                         href={`/inbox?c=${order.conversation_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Open Conversation in Inbox"
-                        className="rounded-md p-1.5 text-primary hover:bg-primary/10 transition-colors"
+                        title="Open Customer Conversation in Inbox"
+                        className="rounded-lg p-1.5 text-primary hover:bg-primary/10 transition-colors"
                       >
                         <MessageSquare className="size-3.5" />
                       </a>
@@ -298,28 +318,18 @@ export function OrderTable({
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Open Customer Conversation in Inbox"
-                        className="rounded-md p-1.5 text-primary hover:bg-primary/10 transition-colors"
+                        className="rounded-lg p-1.5 text-primary hover:bg-primary/10 transition-colors"
                       >
                         <MessageSquare className="size-3.5" />
                       </a>
                     ) : null}
-
-                    {/* View Details */}
-                    <button
-                      type="button"
-                      onClick={() => onView(order)}
-                      title="View Full Details"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                    >
-                      <Eye className="size-3.5" />
-                    </button>
 
                     {/* Edit Order */}
                     <button
                       type="button"
                       onClick={() => onEdit(order)}
                       title="Edit Order"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                     >
                       <Edit className="size-3.5" />
                     </button>
@@ -329,7 +339,7 @@ export function OrderTable({
                       type="button"
                       onClick={() => onDelete(order.id)}
                       title="Delete Order"
-                      className="rounded-md p-1.5 text-destructive hover:bg-destructive/10 transition-colors"
+                      className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10 transition-colors"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
@@ -343,3 +353,4 @@ export function OrderTable({
     </div>
   )
 }
+

@@ -691,12 +691,16 @@ export async function POST(req: Request) {
 
     // 4. Auto-extract customer phone / address / info from inbound chat
     if (!isEcho && contactId && displayText) {
-      autoUpdateContactFromChatMessage({
-        contactId,
-        accountId,
-        messageText: displayText,
-        supabase: db,
-      }).catch((e) => console.error('[Messenger Webhook] Auto-extract failed:', e))
+      try {
+        await autoUpdateContactFromChatMessage({
+          contactId,
+          accountId,
+          messageText: displayText,
+          supabase: db,
+        })
+      } catch (e) {
+        console.error('[Messenger Webhook] Auto-extract failed:', e)
+      }
     }
 
     // 5. Process AI auto-reply if not an echo message
