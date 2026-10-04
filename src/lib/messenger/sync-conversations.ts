@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -735,17 +736,18 @@ export async function syncFacebookMessengerConversations(
       let contactId = ''
       const { data: existingContact } = await db
         .from('contacts')
-        .select('id, name, avatar_url, company')
+        .select('id, name, avatar_url, company, phone, messenger_id')
         .eq('account_id', actualAccountId)
-        .eq('phone', customerPsid)
+        .or(`phone.eq.${customerPsid},messenger_id.eq.${customerPsid},wa_user_id.eq.${customerPsid}`)
         .maybeSingle()
 
       if (existingContact) {
         contactId = existingContact.id
-        // Update contact with real Facebook name, avatar, and company
+        // Update contact with real Facebook name, avatar, company, and preserve messenger_id
         const updates: any = {
           updated_at: new Date().toISOString(),
           company: 'Facebook Messenger',
+          messenger_id: customerPsid,
         }
         if (
           customerName &&
@@ -765,6 +767,7 @@ export async function syncFacebookMessengerConversations(
           account_id: actualAccountId,
           user_id: ownerUserId,
           phone: customerPsid,
+          messenger_id: customerPsid,
           name: customerName,
           email: customerEmail,
           avatar_url: customerAvatarUrl || null,
@@ -977,6 +980,22 @@ export async function syncFacebookMessengerConversations(
         if (!msgInsertErr) {
           convMessageCount++
           totalMessages++
+        }
+      }
+
+      // Auto-extract customer phone, address, and name from synced customer messages
+      if (contactId && rawMessages.length > 0) {
+        for (const m of rawMessages) {
+          if (m.from?.id !== pageId && m.message) {
+            try {
+              await autoUpdateContactFromChatMessage({
+                contactId,
+                accountId: actualAccountId,
+                messageText: m.message,
+                supabase: db,
+              })
+            } catch {}
+          }
         }
       }
 

@@ -1087,7 +1087,11 @@ export function MessageThread({
             </div>
             <p className="truncate text-xs text-muted-foreground">
               {isMessenger
-                ? effectiveContact.phone
+                ? effectiveContact.phone?.startsWith('+')
+                  ? effectiveContact.phone
+                  : effectiveContact.messenger_id
+                  ? `ID: ${effectiveContact.messenger_id}`
+                  : effectiveContact.phone
                   ? `ID: ${effectiveContact.phone}`
                   : "Facebook Messenger"
                 : contactHandle(effectiveContact)}

@@ -1025,6 +1025,7 @@ function InboxPageInner() {
             <ContactSidebar
               contact={activeContact}
               conversation={activeConversation}
+              pageId={messengerPageId}
               onContactUpdated={(updated) => {
                 setActiveContact(updated);
                 setConversations((prev) =>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
@@ -17,8 +18,8 @@ import { AiError } from '@/lib/ai/types'
  * Body: { conversation_id }
  * Returns: { draft } — a suggested reply for the agent to edit + send.
  *
- * Uses the account's configured provider/key (BYO). Read-only: it never
- * sends or stores anything, just hands text back to the composer.
+ * Powered by JobabDesk Sales AI Engine (Gemini -> Groq -> OpenRouter)
+ * grounded in the store catalog, customer history, and delivery policy.
  */
 export async function POST(request: Request) {
   try {
@@ -26,7 +27,6 @@ export async function POST(request: Request) {
 
     const userLimit = checkRateLimit(`ai-draft:${userId}`, RATE_LIMITS.aiDraft)
     if (!userLimit.success) return rateLimitResponse(userLimit)
-    // Also cap the whole team's draws on the shared BYO provider key.
     const accountLimit = checkRateLimit(
       `ai-draft-acct:${accountId}`,
       RATE_LIMITS.aiDraftAccount,
@@ -43,11 +43,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // RLS scopes the SSR client to the caller's account, so a missing
-    // row means "not yours / not found" either way.
     const { data: conversation, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id, account_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr) {
@@ -58,75 +56,91 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    const config = await loadAiConfig(supabase, accountId).catch((err) => {
-      // Decrypt failure — surface distinctly from "not configured".
-      console.error('[ai/draft] loadAiConfig error:', err)
-      throw new AiError('Stored API key could not be decrypted.', {
-        code: 'key_decrypt_failed',
-        status: 400,
-      })
-    })
-    if (!config) {
-      return NextResponse.json(
-        {
-          error: 'AI assistant is not set up. Enable it in Settings → AI Assistant.',
-          code: 'ai_not_configured',
-        },
-        { status: 400 },
-      )
-    }
+    // Load recent messages for context
+    const { data: recentMsgs } = await supabase
+      .from('messages')
+      .select('id, sender_type, content_text, media_url, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    const messages = await buildConversationContext(supabase, conversationId)
-    // Nothing to draft from — a brand-new thread with no customer text
-    // would otherwise produce a nonsensical reply-to-nothing.
-    if (messages.length === 0) {
+    if (!recentMsgs || recentMsgs.length === 0) {
       return NextResponse.json(
         {
-          error: 'No messages to draft from yet.',
+          error: 'No messages in this conversation to draft from yet.',
           code: 'no_messages',
         },
         { status: 400 },
       )
     }
 
-    // Ground the draft in the account's knowledge base (best-effort —
-    // returns [] when there's no KB or retrieval fails).
-    const knowledge = await retrieveKnowledge(
-      supabase,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
+    const lastCustomerMsg = recentMsgs.find((m) => m.sender_type === 'customer') || recentMsgs[0]
+    const messageText = lastCustomerMsg?.content_text?.trim() || 'Customer sent an inquiry.'
 
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'draft',
-      knowledge,
-    })
-
-    const { text, usage } = await generateReply({ config, systemPrompt, messages })
-
-    // Record spend on the account's BYO key. Best-effort + via the
-    // service role (the log has no `authenticated` INSERT policy). This
-    // must not fail or delay the draft the agent is waiting on, so:
-    //  - the whole thing is wrapped (constructing the admin client throws
-    //    if the service-role key is unset — that must not 500 the draft);
-    //  - it's fire-and-forget (`void`), not awaited, so the response
-    //    isn't held for a DB round-trip.
+    // Primary: Run JobabDesk intelligent sales router engine (Gemini -> Groq -> OpenRouter)
+    // with store catalog, delivery policies, and conversation context.
     try {
-      void logAiUsage(supabaseAdmin(), {
+      const routerResult = await handleIncomingCustomerMessage({
         accountId,
+        supabase,
         conversationId,
-        mode: 'draft',
-        provider: config.provider,
-        model: config.model,
-        usage,
+        contactId: conversation.contact_id,
+        channel: 'messenger',
+        messageText,
+        mediaUrl: lastCustomerMsg?.media_url,
       })
-    } catch (logErr) {
-      console.error('[ai/draft] usage log skipped:', logErr)
+
+      if (routerResult?.aiReply) {
+        return NextResponse.json({ draft: routerResult.aiReply })
+      }
+    } catch (engineErr) {
+      console.warn('[ai/draft] Router engine fallback attempt:', engineErr)
     }
 
-    return NextResponse.json({ draft: text })
+    // Secondary fallback: Try custom BYO config if available
+    let config = null
+    try {
+      config = await loadAiConfig(supabase, accountId)
+    } catch {
+      // Swallowed: if legacy stored key cannot be decrypted, do not block the user!
+    }
+
+    if (config) {
+      const messages = await buildConversationContext(supabase, conversationId)
+      const knowledge = await retrieveKnowledge(
+        supabase,
+        accountId,
+        config,
+        latestUserMessage(messages),
+      )
+      const systemPrompt = buildSystemPrompt({
+        userPrompt: config.systemPrompt,
+        mode: 'draft',
+        knowledge,
+      })
+      const { text, usage } = await generateReply({ config, systemPrompt, messages })
+      try {
+        void logAiUsage(supabaseAdmin(), {
+          accountId,
+          conversationId,
+          mode: 'draft',
+          provider: config.provider,
+          model: config.model,
+          usage,
+        })
+      } catch {}
+      if (text) {
+        return NextResponse.json({ draft: text })
+      }
+    }
+
+    return NextResponse.json(
+      {
+        error: 'Unable to generate AI draft. Please ensure your AI API keys are configured.',
+        code: 'ai_draft_failed',
+      },
+      { status: 500 },
+    )
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(
