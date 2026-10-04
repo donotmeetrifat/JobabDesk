@@ -22,6 +22,8 @@ export interface Order {
   customer_name: string
   customer_phone?: string | null
   customer_address?: string | null
+  customer_email?: string | null
+  is_digital?: boolean
   status: OrderStatus
   payment_method: PaymentMethod
   payment_status: PaymentStatus

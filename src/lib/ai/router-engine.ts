@@ -2,6 +2,8 @@ import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
+import { isDigitalProduct, checkIsDigitalOrder, isDigitalText } from '@/lib/products/product-type'
+import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -230,24 +232,46 @@ export function buildOfflineReply({
   // 1. Matched Product(s) Inquiry or Order Request
   else if (matchedProducts.length > 0) {
     intent = 'product_inquiry'
+    const isDigital = matchedProducts.some((p) => isDigitalProduct(p)) || isDigitalText(textLower)
     if (matchedProducts.length > 1) {
       const namesAndPrices = matchedProducts.map((p) => `${p.name} (৳${p.price})`).join(' & ')
       const namesAndPricesBn = matchedProducts.map((p) => `${p.name} (৳${p.price})`).join(' এবং ')
       const totalPrice = matchedProducts.reduce((sum, p) => sum + (Number(p.price) || 0), 0)
-      if (detectedLang === 'banglish') {
-        reply = `Ji oboshoy! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address ar phone number ta diben please?`
-      } else if (detectedLang === 'bn') {
-        reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার ঠিকানা ও ফোন নম্বরটি দিন।`
+      if (isDigital) {
+        if (detectedLang === 'banglish') {
+          reply = `Ji oboshoy! ${namesAndPrices} - shobgulo available. Total ৳${totalPrice.toLocaleString()}. Digital product er delivery email e pathano hoy. Order korte apnar Email address, phone number o bKash/Nagad payment method confirm korben please?`
+        } else if (detectedLang === 'bn') {
+          reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলোই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। ডিজিটাল পণ্যের অ্যাক্সেস ইমেইলে পাঠিয়ে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদ পেমেন্ট মাধ্যমটি জানান।`
+        } else {
+          reply = `Sure! ${namesAndPrices} are available. Total comes to ৳${totalPrice.toLocaleString()}. Access to digital items is delivered via email. Please share your Email address, phone number, and bKash/Nagad payment confirmation to place your order!`
+        }
       } else {
-        reply = `Sure! ${namesAndPrices} are both available. Total comes to ৳${totalPrice.toLocaleString()}. Please share your delivery address and phone number to confirm your order!`
+        if (detectedLang === 'banglish') {
+          reply = `Ji oboshoy! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address, phone number o preferred payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
+        } else if (detectedLang === 'bn') {
+          reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+        } else {
+          reply = `Sure! ${namesAndPrices} are both available. Total comes to ৳${totalPrice.toLocaleString()}. Please share your delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad) to confirm your order!`
+        }
       }
     } else {
-      if (detectedLang === 'banglish') {
-        reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
-      } else if (detectedLang === 'bn') {
-        reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
+      const isSingleDigital = isDigitalProduct(matchedProduct) || isDigitalText(textLower)
+      if (isSingleDigital) {
+        if (detectedLang === 'banglish') {
+          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Digital access apnar email e pathano hoy. Order confirm korte apnar Email address, phone number ebong bKash/Nagad payment confirm korben please?`
+        } else if (detectedLang === 'bn') {
+          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। এটি একটি ডিজিটাল পণ্য, এর অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
+        } else {
+          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. As a digital product, access will be delivered to your email. To place your order, please provide your Email address, phone number, and bKash/Nagad payment confirmation!`
+        }
       } else {
-        reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
+        if (detectedLang === 'banglish') {
+          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Order confirm korte apnar delivery address, phone number o payment method (COD naki bKash) janaben please?`
+        } else if (detectedLang === 'bn') {
+          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} অর্ডার করতে অনুগ্রহ করে আপনার ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+        } else {
+          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to order? Please share your delivery address, phone number, and preferred payment method (COD or bKash)!`
+        }
       }
     }
   }
@@ -892,10 +916,13 @@ ${businessContext}
 
 3. NO UNSOLICITED PRODUCT LECTURES / ESSAYS:
    - When a customer says they want to order or asks about products (e.g. "i want to order [product]", "order korte chai", "দাম কত?"):
-     * Confirm availability & price in ONE concise sentence: "Great choice! [Product Name] (৳1,000) is in stock."
-     * Directly ask for delivery details in ONE sentence: "Please share your delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad) to confirm your order!"
-     * ZERO UNSOLICITED ESSAYS: NEVER lecture about ingredients or feature lists unless the customer explicitly asked "What does this product do?" or "What are the benefits?".
-   - ONLY explain product features if the customer EXPLICITLY asks (e.g. "What are the features?", "Product-e ki ki ache?"). Even then, keep it to 1-2 punchy sentences!
+     * Confirm availability & price in ONE concise sentence: "Great choice! [Product Name] (৳[price]) is available."
+     * If DIGITAL (e.g. Canva Pro, subscriptions, software, digital accounts, licenses):
+       Directly ask for digital delivery details: "Please share your Email address, contact phone number, and send payment via bKash/Nagad to confirm your order!" (NEVER ask for physical home address or courier for digital products!).
+     * If PHYSICAL (tangible goods, skincare, cosmetics, clothes):
+       Directly ask for courier delivery details: "Please share your full delivery address, contact phone number, and preferred payment method (Cash on Delivery or bKash/Nagad) to confirm your order!"
+     * ZERO UNSOLICITED ESSAYS: NEVER lecture about ingredients or feature lists unless the customer explicitly asked. Keep your reply strictly 2 to 3 short sentences!
+   - ONLY explain product features if the customer EXPLICITLY asks. Even then, keep it to 1-2 punchy sentences!
 
 4. NATURAL HUMAN SALESPERSON STYLE (NO ROBOTIC FLATTERY):
    - Talk like an authentic, polite, and helpful human store manager in Bangladesh.
@@ -903,13 +930,35 @@ ${businessContext}
    - NO canned repetitive welcomes ("Thank you for reaching out to [Store]! How can we assist you today?").
    - Greet briefly and naturally if starting a conversation, or jump straight into the answer if conversation is already underway.
 
-5. REAL MARKET ORDER CAPTURE & CONFIRMATION:
-   - When customer wants to order, ask for:
-     1. Delivery Address
-     2. Contact Phone Number
-     3. Payment Method (Cash on Delivery / bKash / Nagad)
-   - When taking or booking an order, inform the customer that their order has been placed and is currently UNDER REVIEW / AWAITING VERIFICATION (পর্যালোচনার অধীনে) by our store team.
-   - Never say "Order has been dispatched" or "Order confirmed" immediately before manual store review.
+5. REAL MARKET ORDER CAPTURE & VERIFICATION (DIGITAL VS PHYSICAL - MANDATORY):
+   - You MUST auto-detect whether the product is DIGITAL or PHYSICAL based on the product type:
+     * A. DIGITAL PRODUCTS (Canva Pro, subscriptions, software, digital licenses, accounts, courses, top-ups):
+       - These products are delivered electronically (via email/chat), NEVER by courier or physical parcel!
+       - NEVER ask for physical delivery address, home address, road, or courier delivery!
+       - DIGITAL ORDERS CANNOT BE CASH ON DELIVERY (COD)! They MUST be prepaid via bKash/Nagad/Rocket.
+       - ALL 3 REQUIRED PIECES OF INFO FOR DIGITAL:
+         (1) Customer Email Address (for digital access / credentials)
+         (2) Contact Phone Number
+         (3) bKash / Nagad payment confirmation (Customer must confirm they paid or send the Transaction ID / TrxID).
+       - If ANY required info (especially email or payment confirmation) is missing:
+         * DO NOT say 'Your order has been placed' or 'order confirmed'!
+         * DO NOT set 'is_order': true!
+         * Politely ask for the missing Email and bKash/Nagad payment confirmation.
+
+     * B. PHYSICAL PRODUCTS (Skincare, cosmetics, clothes, shoes, gadgets, tangible goods):
+       - Delivered by courier to the customer's delivery address.
+       - ALL 3 REQUIRED PIECES OF INFO FOR PHYSICAL:
+         (1) Full Street / Home Address (House, road, area/thana, district)
+         (2) Contact Phone Number
+         (3) Explicit Payment Method Choice (Customer MUST explicitly state Cash on Delivery or bKash/Nagad).
+       - If the customer provided their address and phone number, but DID NOT confirm their payment method (e.g. they didn't specify Cash on Delivery or bKash):
+         * DO NOT say 'Your order has been placed' or 'order confirmed'!
+         * DO NOT set 'is_order': true!
+         * Politely ask: 'Thank you! We have received your delivery address and phone number. Could you please confirm your preferred payment method: Cash on Delivery (COD) or bKash/Nagad to complete your order?'
+
+   - ORDER STATUS COMMUNICATION:
+     * NEVER tell the customer their order is placed or confirmed unless ALL required details (including payment method / payment confirmation) are provided!
+     * Once all details are completely provided, inform the customer that their order has been placed and is currently under review by our store team.
 
 6. MULTIMODAL & PRODUCT PHOTO RULES:
    - You CAN directly view images/photos! Never say you cannot view photos.
@@ -936,8 +985,10 @@ ${
     ? 'No products available.'
     : products
         .map(
-          (p) =>
-            `- Product: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Category: ${p.category || 'General'}${p.description ? `, Info: ${p.description}` : ''}`
+          (p) => {
+            const isDig = isDigitalProduct(p)
+            return `- Product: "${p.name}", Price: ৳${p.price}, Stock: ${p.stock_qty} (${p.is_in_stock ? 'In Stock' : 'Out of Stock'}), Type: ${isDig ? 'DIGITAL (Requires Email + Prepaid bKash/Nagad, NO physical courier/COD)' : 'PHYSICAL (Requires Full Delivery Address + COD or bKash)'}, Category: ${p.category || 'General'}${p.description ? `, Info: ${p.description}` : ''}`
+          }
         )
         .join('\n')
 }
@@ -956,10 +1007,13 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
   "confidence": 0.95,
   "order": {
     "is_order": true,
+    "is_digital": boolean,
     "customer_name": "string or null",
     "customer_phone": "string or null",
     "customer_address": "string or null",
+    "customer_email": "string or null",
     "payment_method": "cod" | "bkash" | "nagad" | "rocket" | "bank_transfer",
+    "payment_confirmed": boolean,
     "items": [
       {
         "product_name": "string",
@@ -974,8 +1028,11 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
   }
 }
 Note on "order":
-Whenever the customer expresses intent to order or buy products (e.g. "i want to order Simple Skincare & Nivea Cleansing Cream", "book order", "kinte chai", "nite chai", "order korun"), ALWAYS populate the "order" object with the items, quantities, catalog prices, subtotal, and total so the system captures it immediately! Set customer_phone and customer_address to null if not yet provided.
-Only set "order": null if the customer is merely asking a general FAQ or store policy question without any intent to purchase or order.`
+Set "is_order": true ONLY when ALL required information has been provided by the customer:
+- For Digital products: requires Email address, Phone number, and confirmed prepaid payment (bKash/Nagad).
+- For Physical products: requires Full delivery address, Phone number, and confirmed payment method (COD or bKash/Nagad).
+If any required detail (such as payment method, email, or address) is missing or unconfirmed, set "is_order": false so the order is NOT prematurely placed!
+Set "order": null if the customer is merely asking a question without ordering.`
 
   // 3-TIER UNSTOPPABLE FALLBACK CHAIN
 
@@ -1284,6 +1341,118 @@ Only set "order": null if the customer is merely asking a general FAQ or store p
       .trim()
     if (cleanedReply.length > 0) {
       aiReply = cleanedReply
+    }
+  }
+
+  // 3b. Deterministic Guardrail for Order Completeness & Payment Method
+  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
+
+  const aiClaimsOrderPlaced = orderConfirmationPhrases.test(aiReply)
+
+  const isOrderDigital =
+    Boolean(llmOrderData?.is_digital) ||
+    checkIsDigitalOrder(llmOrderData?.items) ||
+    isDigitalText(messageText) ||
+    isDigitalText(conversationHistoryText) ||
+    products.some((p) => isDigitalProduct(p) && (messageText.toLowerCase().includes(p.name.toLowerCase()) || conversationHistoryText.toLowerCase().includes(p.name.toLowerCase())))
+
+  const combinedHistory = `${conversationHistoryText}\n${messageText}`
+  const extractedInfo = extractCustomerInfoFromMessage(messageText)
+  const histExtractedInfo = extractCustomerInfoFromMessage(conversationHistoryText)
+
+  const effectivePhone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extractedInfo.phone || histExtractedInfo.phone || llmOrderData?.customer_phone || null
+  const effectiveAddress = extractedInfo.address || histExtractedInfo.address || llmOrderData?.customer_address || null
+  const effectiveEmail = extractedInfo.email || histExtractedInfo.email || llmOrderData?.customer_email || (combinedHistory.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null)
+
+  const msgLower = messageText.toLowerCase()
+  const histLower = combinedHistory.toLowerCase()
+  const hasTrx = /\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i.test(combinedHistory)
+  const hasPaymentSent = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান)\b/i.test(combinedHistory)
+
+  let explicitPaymentMethod: string | null = null
+  if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে)\b/i.test(msgLower)) {
+    if (!isOrderDigital) explicitPaymentMethod = 'cod'
+  } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(msgLower)) {
+    explicitPaymentMethod = 'bkash'
+  } else if (/\b(?:nagad|নগদ)\b/i.test(msgLower)) {
+    explicitPaymentMethod = 'nagad'
+  } else if (/\b(?:rocket|রকেট)\b/i.test(msgLower)) {
+    explicitPaymentMethod = 'rocket'
+  } else if (/\b(?:bank transfer|bank|ব্যাংক)\b/i.test(msgLower)) {
+    explicitPaymentMethod = 'bank_transfer'
+  } else if (!isOrderDigital && /\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি)\b/i.test(histLower)) {
+    explicitPaymentMethod = 'cod'
+  } else if (llmOrderData?.payment_method && ['bkash', 'nagad', 'rocket', 'bank_transfer'].includes(llmOrderData.payment_method.toLowerCase())) {
+    if (/\b(?:bkash|nagad|rocket|bank|paid|pay|পেমেন্ট|বিকাশ|নগদ|টাকা)\b/i.test(combinedHistory)) {
+      explicitPaymentMethod = llmOrderData.payment_method.toLowerCase()
+    }
+  } else if (!isOrderDigital && llmOrderData?.payment_method?.toLowerCase() === 'cod') {
+    if (/\b(?:cod|cash on delivery|cash|ক্যাশ)\b/i.test(combinedHistory)) {
+      explicitPaymentMethod = 'cod'
+    }
+  }
+
+  // Completeness check:
+  // For digital: requires phone, email, and confirmed prepaid payment (not COD)
+  // For physical: requires phone, delivery address (>= 6 chars), and explicit payment method
+  let missingInfo: 'payment_method' | 'email' | 'address' | 'phone' | null = null
+
+  if (isOrderDigital) {
+    if (!effectiveEmail) missingInfo = 'email'
+    else if (!explicitPaymentMethod || (!hasTrx && !hasPaymentSent && explicitPaymentMethod === 'cod')) missingInfo = 'payment_method'
+    else if (!effectivePhone) missingInfo = 'phone'
+  } else {
+    if (!effectiveAddress || effectiveAddress.length < 6) missingInfo = 'address'
+    else if (!effectivePhone) missingInfo = 'phone'
+    else if (!explicitPaymentMethod) missingInfo = 'payment_method'
+  }
+
+  // If information is incomplete, invalidate order capture and sanitize response
+  if (missingInfo) {
+    if (llmOrderData) {
+      llmOrderData.is_order = false
+    }
+
+    if (aiClaimsOrderPlaced) {
+      const bKashNumber = account?.special_instructions || account?.ai_store_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+
+      if (isOrderDigital) {
+        if (missingInfo === 'email') {
+          if (detectedLang === 'bn') {
+            aiReply = `ধন্যবাদ! ডিজিটাল পণ্যের অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি দিন এবং বিকাশ/নগদে (${bKashNumber}) পেমেন্ট কনফার্ম করুন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Dhonnobad! Digital product er access shorashori apnar email e deya hobe. Doya kore apnar Email address ti din ebong bKash/Nagad e (${bKashNumber}) payment confirm korun.`
+          } else {
+            aiReply = `Thank you! Since this is a digital product, access is delivered directly to your email. Please share your Email address and confirm your payment to ${bKashNumber} to finalize your order!`
+          }
+        } else if (missingInfo === 'payment_method') {
+          if (detectedLang === 'bn') {
+            aiReply = `ধন্যবাদ! ডিজিটাল পণ্যটির অর্ডার সম্পন্ন করতে অনুগ্রহ করে বিকাশ/নগদে (${bKashNumber}) পেমেন্ট সম্পন্ন করে TrxID বা পেমেন্ট কনফার্ম করুন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Dhonnobad! Digital product er order complete korte bKash/Nagad e (${bKashNumber}) payment kore TrxID ba payment confirm korun please.`
+          } else {
+            aiReply = `Thank you! To complete your digital order, please send payment via bKash/Nagad to ${bKashNumber} and share the TrxID or confirmation.`
+          }
+        }
+      } else {
+        if (missingInfo === 'payment_method') {
+          if (detectedLang === 'bn') {
+            aiReply = `ধন্যবাদ! আমরা আপনার ডেলিভারি তথ্য পেয়েছি। অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Dhonnobad! Amra apnar delivery details peyechi. Order confirm korte apnar pochonder payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
+          } else {
+            aiReply = `Thank you! We have received your delivery details. To complete your order, could you please specify your preferred payment method: Cash on Delivery (COD) or bKash/Nagad?`
+          }
+        } else if (missingInfo === 'address') {
+          if (detectedLang === 'bn') {
+            aiReply = `ধন্যবাদ! অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা) জানিয়ে দিন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Dhonnobad! Order confirm korte apnar full delivery address (basha/road, thana, district) janaben please.`
+          } else {
+            aiReply = `Thank you! Please share your full delivery address (house/road, area, city) to complete your order!`
+          }
+        }
+      }
     }
   }
 

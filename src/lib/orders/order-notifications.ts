@@ -1,4 +1,5 @@
 import { isFacebookPsid } from '@/lib/contacts/extract-info'
+import { checkIsDigitalOrder } from '@/lib/products/product-type'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 interface OrderNotificationParams {
@@ -109,9 +110,27 @@ export async function sendOrderStatusNotification({
     const paymentMethodLabel = paymentMethodMap[order.payment_method] || order.payment_method || 'Cash on Delivery'
     const paymentStatusLabel = paymentStatusMap[order.payment_status] || order.payment_status || 'আনপেইড'
 
+    const isDigital = Boolean(order.is_digital) || checkIsDigitalOrder(items)
+    const emailDestination = order.customer_email || contact?.email || 'চ্যাটে ডেলিভারি'
+
     let notificationText = ''
     if (newStatus === 'confirmed') {
-      notificationText = `🎉 আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
+      if (isDigital) {
+        notificationText = `🎉 আপনার ডিজিটাল অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
+
+প্রিয় ${customerName},
+আপনার অর্ডার #${orderNum} সফলভাবে যাচাই ও নিশ্চিত করা হয়েছে। আমরা দ্রুত আপনার ডিজিটাল অ্যাক্সেস / সাবস্ক্রিপশন প্রস্তুত করে আপনার ইমেইল ও চ্যাটে পাঠিয়ে দিচ্ছি!
+
+📦 পণ্যের বিবরণ:
+${itemListText}
+
+💰 সর্বমোট মূল্য: ৳${totalAmount.toLocaleString()}
+📧 ডেলিভারি মাধ্যম: ডিজিটাল ডেলিভারি (${emailDestination})
+💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel} (${paymentStatusLabel})
+
+ধন্যবাদ আমাদের সাথে থাকার জন্য! যেকোনো প্রয়োজনে এখানে মেসেজ করতে পারেন।`
+      } else {
+        notificationText = `🎉 আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
 
 প্রিয় ${customerName},
 আপনার অর্ডার #${orderNum} সফলভাবে যাচাই ও নিশ্চিত করা হয়েছে। আমরা এখনই পার্সেলটি ডেলিভারির জন্য প্রস্তুত করছি!
@@ -124,6 +143,7 @@ ${itemListText}
 💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel} (${paymentStatusLabel})
 
 ধন্যবাদ আমাদের সাথে থাকার জন্য! পণ্য ডেলিভারি হওয়া পর্যন্ত যেকোনো প্রয়োজনে এখানে মেসেজ করতে পারেন।`
+      }
     } else if (newStatus === 'cancelled') {
       notificationText = `⚠️ অর্ডার বাতিল সংক্রান্ত তথ্য
 

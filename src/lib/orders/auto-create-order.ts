@@ -1,5 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
+import { checkIsDigitalOrder, isDigitalProduct } from '@/lib/products/product-type'
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 function getAdminClient() {
@@ -31,13 +32,17 @@ export interface AutoOrderPayload {
   customerName?: string | null
   customerPhone?: string | null
   customerAddress?: string | null
+  customerEmail?: string | null
   messageText: string
   conversationHistoryText?: string
   llmOrderData?: {
     is_order?: boolean
+    is_digital?: boolean
     customer_name?: string | null
     customer_phone?: string | null
     customer_address?: string | null
+    customer_email?: string | null
+    payment_confirmed?: boolean
     items?: Array<{
       product_name: string
       unit_price: number
@@ -72,6 +77,7 @@ export async function detectAndCreateOrderFromChat({
   customerName,
   customerPhone,
   customerAddress,
+  customerEmail,
   messageText,
   conversationHistoryText = '',
   llmOrderData,
@@ -86,6 +92,7 @@ export async function detectAndCreateOrderFromChat({
   const extracted = extractCustomerInfoFromMessage(messageText)
   let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || null
   let address = customerAddress || extracted.address || null
+  let email = customerEmail || extracted.email || null
 
   // If still missing, check contact record in DB
   let resolvedName = customerName || null
@@ -93,7 +100,7 @@ export async function detectAndCreateOrderFromChat({
     try {
       const { data: contactRow } = await db
         .from('contacts')
-        .select('name, phone, address')
+        .select('name, phone, address, email')
         .eq('id', contactId)
         .maybeSingle()
 
@@ -105,6 +112,7 @@ export async function detectAndCreateOrderFromChat({
         }
         if (!phone && contactRow.phone && !isFacebookPsid(contactRow.phone)) phone = contactRow.phone
         if (!address && contactRow.address) address = contactRow.address
+        if (!email && contactRow.email) email = contactRow.email
       }
     } catch (_cErr) {
       // safe fallback
@@ -115,6 +123,7 @@ export async function detectAndCreateOrderFromChat({
     phone = llmOrderData.customer_phone
   }
   if (llmOrderData?.customer_address && !address) address = llmOrderData.customer_address
+  if (llmOrderData?.customer_email && !email) email = llmOrderData.customer_email
   if (llmOrderData?.customer_name && (!resolvedName || resolvedName === 'Messenger User')) {
     resolvedName = llmOrderData.customer_name
   }
@@ -122,7 +131,7 @@ export async function detectAndCreateOrderFromChat({
   // 2. Check if this turn represents an order intent
   const isLlmConfirmed = Boolean(llmOrderData?.is_order && llmOrderData?.items && llmOrderData.items.length > 0)
   const matchesOrderKeywords = ORDER_INTENT_REGEX.test(messageText) || ORDER_INTENT_REGEX.test(conversationHistoryText)
-  const hasDeliveryDetails = Boolean(phone || address)
+  const hasDeliveryDetails = Boolean(phone || address || email)
 
   // Trigger order creation if:
   // - LLM confirmed an order, OR
@@ -278,10 +287,13 @@ export async function detectAndCreateOrderFromChat({
     })
   }
 
-  // 4. Calculate Financials
+  // 4. Check if order is Digital vs Physical
+  const isDigital = Boolean(llmOrderData?.is_digital) || checkIsDigitalOrder(items)
+
+  // Calculate Financials
   let subtotal = items.reduce((sum, item) => sum + item.total, 0)
   const discount = Math.max(0, Number(llmOrderData?.discount) || 0)
-  const deliveryCharge = Math.max(0, Number(llmOrderData?.delivery_charge) || 0)
+  const deliveryCharge = isDigital ? 0 : Math.max(0, Number(llmOrderData?.delivery_charge) || 0)
   let total = Math.max(0, subtotal - discount + deliveryCharge)
 
   if (total === 0 && isPlausiblePrice(llmOrderData?.total)) {
@@ -293,34 +305,111 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  // 5. Payment method resolution
-  let paymentMethod: PaymentMethod = 'cod'
+  // 5. Payment method resolution & confirmation check
+  const custMsg = messageText.toLowerCase()
+  const combinedText = `${conversationHistoryText}\n${messageText}`.toLowerCase()
 
-  // Priority 1: LLM structured order output
-  if (llmOrderData?.payment_method) {
+  let explicitPaymentMethod: PaymentMethod | null = null
+  let paymentReference: string | null = null
+  let isPaymentConfirmed = false
+
+  // Check for explicit Transaction ID or payment reference
+  const trxMatch = messageText.match(/\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i)
+  if (trxMatch && trxMatch[1]) {
+    paymentReference = trxMatch[1].trim()
+    isPaymentConfirmed = true
+  }
+
+  // Check for payment sent phrases
+  const paymentSentRegex = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান|টাকা\s*দিছি)\b/i
+  if (paymentSentRegex.test(custMsg) || paymentReference) {
+    isPaymentConfirmed = true
+  }
+
+  if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(custMsg)) {
+    explicitPaymentMethod = 'bkash'
+  } else if (/\b(?:nagad|নগদ)\b/i.test(custMsg)) {
+    explicitPaymentMethod = 'nagad'
+  } else if (/\b(?:rocket|রকেট)\b/i.test(custMsg)) {
+    explicitPaymentMethod = 'rocket'
+  } else if (/\b(?:bank transfer|bank|ব্যাংক)\b/i.test(custMsg)) {
+    explicitPaymentMethod = 'bank_transfer'
+  } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে|delivery te taka|হাতে পেয়ে)\b/i.test(custMsg)) {
+    if (!isDigital) {
+      explicitPaymentMethod = 'cod'
+      isPaymentConfirmed = true
+    }
+  }
+
+  // If physical and not in current message, check if customer already confirmed COD in recent conversation
+  if (!explicitPaymentMethod && !isDigital) {
+    if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি)\b/i.test(combinedText)) {
+      explicitPaymentMethod = 'cod'
+      isPaymentConfirmed = true
+    }
+  }
+
+  // Check LLM order data payment method
+  if (!explicitPaymentMethod && llmOrderData?.payment_method) {
     const pm = llmOrderData.payment_method.toLowerCase().trim()
-    if (['bkash', 'nagad', 'rocket', 'bank_transfer', 'cod', 'card'].includes(pm)) {
-      paymentMethod = pm as PaymentMethod
+    if (['bkash', 'nagad', 'rocket', 'bank_transfer'].includes(pm)) {
+      explicitPaymentMethod = pm as PaymentMethod
+    } else if (pm === 'cod' && !isDigital) {
+      if (/\b(?:cod|cash on delivery|ক্যাশ)\b/i.test(combinedText)) {
+        explicitPaymentMethod = 'cod'
+        isPaymentConfirmed = true
+      }
     }
   }
 
-  // Priority 2: Check ONLY the customer's current message for explicit choice
-  if (paymentMethod === 'cod') {
-    const custMsg = messageText.toLowerCase()
-    if (/\b(?:bkash|b-kash|বিকাশ)\b/.test(custMsg)) {
-      paymentMethod = 'bkash'
-    } else if (/\b(?:nagad|নগদ)\b/.test(custMsg)) {
-      paymentMethod = 'nagad'
-    } else if (/\b(?:rocket|রকেট)\b/.test(custMsg)) {
-      paymentMethod = 'rocket'
-    } else if (/\b(?:bank transfer)\b/.test(custMsg)) {
-      paymentMethod = 'bank_transfer'
+  // 6. Completeness Validation:
+  // - Digital Products: Require Phone, Email, and Confirmed Payment (prepaid). COD is forbidden.
+  // - Physical Products: Require Phone, Physical Address, and Confirmed Payment Method (COD or bKash/Nagad).
+  const hasPhone = Boolean(phone)
+  const hasAddress = Boolean(address && address.length >= 6)
+  const hasEmail = Boolean(email && email.includes('@'))
+
+  let isOrderComplete = false
+  const missingRequirements: string[] = []
+
+  if (isDigital) {
+    if (!hasPhone) missingRequirements.push('phone')
+    if (!hasEmail) missingRequirements.push('email')
+    if (!explicitPaymentMethod || explicitPaymentMethod === 'cod' || !isPaymentConfirmed) {
+      missingRequirements.push('payment_confirmation')
+    }
+    isOrderComplete = hasPhone && hasEmail && isPaymentConfirmed && Boolean(explicitPaymentMethod) && explicitPaymentMethod !== 'cod'
+  } else {
+    if (!hasPhone) missingRequirements.push('phone')
+    if (!hasAddress) missingRequirements.push('delivery_address')
+    if (!explicitPaymentMethod) {
+      missingRequirements.push('payment_method')
+    }
+    isOrderComplete = hasPhone && hasAddress && Boolean(explicitPaymentMethod)
+  }
+
+  // Update contact information in CRM even if order is not fully complete yet
+  if (contactId && (phone || address || email)) {
+    try {
+      const contactUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
+      if (phone && !isFacebookPsid(phone)) contactUpdates.phone = phone
+      if (address) contactUpdates.address = address
+      if (email) contactUpdates.email = email
+      await db.from('contacts').update(contactUpdates).eq('id', contactId)
+    } catch {
+      // safe fallback
     }
   }
 
-  // 6. Deduplication Check: Look for an existing 'new' order created in the last 15 minutes
-  // Only update an existing order if customer is supplying missing contact/delivery details
-  // If the customer is ordering a DIFFERENT product, create a fresh new order!
+  // If required information is not complete, DO NOT create an order!
+  if (!isOrderComplete) {
+    console.log(`[auto-create-order] Order not completed yet. Digital: ${isDigital}. Missing: ${missingRequirements.join(', ')}`)
+    return null
+  }
+
+  const finalPaymentMethod: PaymentMethod = explicitPaymentMethod || (isDigital ? 'bkash' : 'cod')
+
+  // 7. Deduplication Check: Look for an existing 'new' order created in the last 15 minutes
   try {
     let existingQuery = db
       .from('orders')
@@ -342,19 +431,21 @@ export async function detectAndCreateOrderFromChat({
       const existingItems = existingOrder.order_items || []
       const hasPlaceholder = existingItems.length === 0 || existingItems.some((i: any) => i.product_name === 'Customer Order')
       
-      // Check if new items are identical to existing items
       const isSameItems = existingItems.length > 0 && items.length > 0 &&
         existingItems.every((ei: any) => items.some(ni => ni.product_name.toLowerCase() === ei.product_name.toLowerCase()))
 
-      // If customer is just providing their phone or address for the existing order:
-      if (hasPlaceholder || isSameItems || (!isLlmConfirmed && (phone || address))) {
+      if (hasPlaceholder || isSameItems) {
         const updates: Record<string, any> = {
           updated_at: new Date().toISOString(),
+          payment_method: finalPaymentMethod,
+          payment_status: isPaymentConfirmed && finalPaymentMethod !== 'cod' ? 'paid' : 'unpaid',
         }
         if (address) updates.customer_address = address
         if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
+        if (email) updates.customer_email = email
         if (resolvedName && resolvedName !== 'Messenger Customer') updates.customer_name = resolvedName
-        if (paymentMethod && paymentMethod !== 'cod') updates.payment_method = paymentMethod
+        if (paymentReference) updates.payment_reference = paymentReference
+        updates.is_digital = isDigital
 
         if (items.length > 0 && hasPlaceholder) {
           updates.subtotal = subtotal
@@ -374,8 +465,16 @@ export async function detectAndCreateOrderFromChat({
           await db.from('order_items').insert(itemsToInsert)
         }
 
-        await db.from('orders').update(updates).eq('id', existingOrder.id)
-        console.log(`[auto-create-order] Updated existing new order ${existingOrder.id}`)
+        try {
+          await db.from('orders').update(updates).eq('id', existingOrder.id)
+        } catch {
+          // If customer_email or is_digital columns not in schema, update without them
+          delete updates.customer_email
+          delete updates.is_digital
+          await db.from('orders').update(updates).eq('id', existingOrder.id)
+        }
+
+        console.log(`[auto-create-order] Updated existing order ${existingOrder.id}`)
         return existingOrder
       }
     }
@@ -383,7 +482,7 @@ export async function detectAndCreateOrderFromChat({
     console.warn('[auto-create-order] Deduplication check failed:', dedupeErr)
   }
 
-  // 7. Verify Contact ID exists in contacts table to prevent Foreign Key constraint violation
+  // 8. Verify Contact ID exists in contacts table to prevent Foreign Key constraint violation
   let validContactId: string | null = null
   if (contactId) {
     try {
@@ -396,9 +495,9 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  // 8. Insert New Order with status 'new' (Pending Shop Owner Approval)
+  // 9. Insert New Order with status 'new' (Pending Shop Owner Approval)
   const finalCustomerName = resolvedName || (phone ? `Customer (${phone.slice(-4)})` : 'Messenger Customer')
-  const orderNotes = llmOrderData?.notes || `Automatically captured by AI Assistant via ${channel}`
+  const orderNotes = llmOrderData?.notes || `Automatically captured by AI Assistant via ${channel} (${isDigital ? 'Digital Product' : 'Physical Product'})`
 
   const orderPayload: Record<string, any> = {
     account_id: accountId,
@@ -406,9 +505,12 @@ export async function detectAndCreateOrderFromChat({
     customer_name: finalCustomerName,
     customer_phone: phone || null,
     customer_address: address || null,
+    customer_email: email || null,
+    is_digital: isDigital,
     status: 'new' as OrderStatus,
-    payment_method: paymentMethod,
-    payment_status: 'unpaid' as PaymentStatus,
+    payment_method: finalPaymentMethod,
+    payment_status: isPaymentConfirmed && finalPaymentMethod !== 'cod' ? ('paid' as PaymentStatus) : ('unpaid' as PaymentStatus),
+    payment_reference: paymentReference || null,
     subtotal,
     discount,
     delivery_charge: deliveryCharge,
@@ -426,6 +528,20 @@ export async function detectAndCreateOrderFromChat({
     .insert(orderPayload)
     .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
     .single()
+
+  // Fallback 1: If insert failed due to customer_email or is_digital columns
+  if (orderErr && (orderErr.message?.includes('customer_email') || orderErr.message?.includes('is_digital'))) {
+    delete orderPayload.customer_email
+    delete orderPayload.is_digital
+    const retry = await db
+      .from('orders')
+      .insert(orderPayload)
+      .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
+      .single()
+    order = retry.data
+    orderErr = retry.error
+  }
+
 
   // Fallback 1: If insert failed because conversation_id column doesn't exist in Supabase schema:
   if (orderErr && orderPayload.conversation_id) {
