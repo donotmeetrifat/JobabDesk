@@ -52,6 +52,8 @@ export async function GET() {
     let contactInfo: any = null
     let contactColumns: string[] = []
     let addressColumnExists = false
+    let allContacts: any = []
+    let allNotes: any = []
     try {
       const { data: ct, error: ctErr } = await admin
         .from('contacts')
@@ -62,7 +64,11 @@ export async function GET() {
         contactColumns = Object.keys(ct)
         addressColumnExists = 'address' in ct
       }
-      contactInfo = { contactColumns, addressColumnExists, ctErr }
+      const { data: cList } = await admin.from('contacts').select('id, name, phone, email, company').limit(10)
+      allContacts = cList || []
+      const { data: nList } = await admin.from('contact_notes').select('*').limit(10)
+      allNotes = nList || []
+      contactInfo = { contactColumns, addressColumnExists, ctErr, allContacts, allNotes }
     } catch (e: any) {
       contactInfo = { error: e.message }
     }
