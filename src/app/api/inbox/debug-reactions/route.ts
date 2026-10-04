@@ -32,12 +32,13 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(20)
 
-    // 3. Fetch recent messages
+    // 3. Fetch recent customer messages
     const { data: messages, error: mErr } = await admin
       .from('messages')
       .select('id, conversation_id, sender_type, message_id, content_text, created_at')
+      .eq('sender_type', 'customer')
       .order('created_at', { ascending: false })
-      .limit(10)
+      .limit(30)
 
     // 3b. Inspect conversation and contact for mute status
     const targetConvId = messages?.[0]?.conversation_id || 'f7bdd5b5-e9a1-4ad4-83f9-989a18dde09e'
@@ -48,13 +49,21 @@ export async function GET() {
       .maybeSingle()
 
     let contactInfo: any = null
-    if (convInfo?.contact_id) {
+    let contactColumns: string[] = []
+    let addressColumnExists = false
+    try {
       const { data: ct, error: ctErr } = await admin
         .from('contacts')
-        .select('id, account_id, name, phone, channel, ai_auto_reply_muted')
-        .eq('id', convInfo.contact_id)
+        .select('*')
+        .limit(1)
         .maybeSingle()
-      contactInfo = { contact: ct, error: ctErr }
+      if (ct) {
+        contactColumns = Object.keys(ct)
+        addressColumnExists = 'address' in ct
+      }
+      contactInfo = { contactColumns, addressColumnExists, ctErr }
+    } catch (e: any) {
+      contactInfo = { error: e.message }
     }
 
     // Clean up dummy @facebook.com emails from contacts table
