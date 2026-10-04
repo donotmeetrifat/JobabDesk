@@ -339,6 +339,7 @@
         "phone": "Teléfono",
         "email": "Correo",
         "company": "Empresa",
+        "channel": "Canal",
         "tags": "Etiquetas",
         "createdAt": "Creado"
       },

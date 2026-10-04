@@ -339,6 +339,7 @@
         "phone": "전화번호",
         "email": "이메일",
         "company": "회사",
+        "channel": "채널",
         "tags": "태그",
         "createdAt": "생성일"
       },

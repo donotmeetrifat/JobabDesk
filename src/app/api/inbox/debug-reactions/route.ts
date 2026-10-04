@@ -57,7 +57,12 @@ export async function GET() {
       contactInfo = { contact: ct, error: ctErr }
     }
 
-    // 4. Check connected Facebook Pages and their Webhook Subscriptions
+    // Clean up dummy @facebook.com emails from contacts table
+    const { data: cleanedContacts } = await admin
+      .from('contacts')
+      .update({ email: null })
+      .like('email', '%@facebook.com')
+      .select('id, name')
     const { data: accounts } = await admin
       .from('accounts')
       .select('id, name, facebook_page_id, facebook_page_name, facebook_page_access_token')

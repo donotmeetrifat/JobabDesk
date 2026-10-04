@@ -75,8 +75,10 @@ export function ContactForm({
     if (open) {
       setName(contact?.name ?? '');
       setPhone(contact?.phone ?? '');
-      setEmail(contact?.email ?? '');
-      setCompany(contact?.company ?? '');
+      const rawEmail = contact?.email ?? '';
+      setEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
+      const rawCompany = contact?.company ?? '';
+      setCompany(rawCompany === 'Facebook Messenger' ? '' : rawCompany);
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();

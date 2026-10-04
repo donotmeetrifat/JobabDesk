@@ -49,7 +49,14 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Phone,
+  MessageSquare,
+  MessageCircle,
+  ExternalLink,
+  Eye,
+  Copy,
 } from 'lucide-react';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
@@ -59,6 +66,44 @@ import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 25;
+
+function isFacebookPsid(phone?: string | null): boolean {
+  if (!phone) return false;
+  const trimmed = phone.trim();
+  return !trimmed.startsWith('+') && trimmed.length >= 15 && /^\d+$/.test(trimmed);
+}
+
+function cleanEmail(email?: string | null): string | null {
+  if (!email) return null;
+  const trimmed = email.trim();
+  if (trimmed.toLowerCase().endsWith('@facebook.com')) return null;
+  return trimmed;
+}
+
+function getContactChannel(contact: Contact): 'messenger' | 'whatsapp' | 'other' {
+  if (
+    contact.company === 'Facebook Messenger' ||
+    isFacebookPsid(contact.phone) ||
+    contact.email?.toLowerCase().endsWith('@facebook.com')
+  ) {
+    return 'messenger';
+  }
+  if (contact.phone && (contact.phone.startsWith('+') || /^\d{7,14}$/.test(contact.phone))) {
+    return 'whatsapp';
+  }
+  return 'other';
+}
+
+function getInitials(name?: string | null) {
+  if (!name) return '?';
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -544,7 +589,7 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.channel')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
@@ -587,107 +632,218 @@ export default function ContactsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              contacts.map((contact) => (
-                <TableRow
-                  key={contact.id}
-                  className="border-border hover:bg-muted/50 cursor-pointer"
-                  onClick={() => openDetail(contact.id)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(contact.id)}
-                      onCheckedChange={() => toggleSelect(contact.id)}
-                      aria-label={`Select ${contact.name || contact.phone}`}
-                    />
-                  </TableCell>
-                  <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
-                    {contact.email || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
-                    {contact.company || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
+              contacts.map((contact) => {
+                const isPsid = isFacebookPsid(contact.phone);
+                const cleanMail = cleanEmail(contact.email);
+                const channel = getContactChannel(contact);
+                const displayName = contact.name && contact.name !== 'Unknown' ? contact.name : '';
+
+                return (
+                  <TableRow
+                    key={contact.id}
+                    className="border-border hover:bg-muted/50 cursor-pointer"
+                    onClick={() => openDetail(contact.id)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(contact.id)}
+                        onCheckedChange={() => toggleSelect(contact.id)}
+                        aria-label={`Select ${displayName || contact.phone}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-foreground font-medium">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="size-8 rounded-full border border-border shrink-0 bg-muted">
+                          {contact.avatar_url && (
+                            <AvatarImage
+                              src={contact.avatar_url}
+                              alt={displayName || 'Contact'}
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+                            {getInitials(displayName || contact.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold text-foreground">
+                              {displayName || <span className="text-muted-foreground italic font-normal">{t('unnamed')}</span>}
+                            </span>
+                          </div>
+                          {isPsid && (
+                            <span className="text-[11px] font-mono text-muted-foreground/75 block truncate">
+                              PSID: •••{contact.phone.slice(-4)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground font-mono text-xs">
+                      {isPsid ? (
+                        <div className="flex items-center gap-1.5" title={`Facebook User ID: ${contact.phone}`}>
+                          <span className="text-muted-foreground/60 italic font-sans text-xs">No phone</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(contact.phone);
+                              toast.success('Facebook ID copied');
                             }}
+                            className="inline-flex items-center gap-0.5 rounded bg-muted/80 hover:bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors border border-border/50"
+                            title="Copy Facebook PSID"
                           >
-                            {tag.name}
-                          </span>
-                        ))
+                            <Copy className="size-2.5" />
+                            <span>ID</span>
+                          </button>
+                        </div>
+                      ) : contact.phone ? (
+                        <span className="text-foreground/90">{contact.phone}</span>
                       ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
+                        <span className="text-muted-foreground/60 text-xs">—</span>
                       )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{contact.tags.length - 3}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
+                      {cleanMail ? (
+                        <span className="text-foreground/90">{cleanMail}</span>
+                      ) : (
+                        <span className="text-muted-foreground/60 text-xs">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {channel === 'messenger' ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-500 border border-blue-500/20">
+                          <MessageSquare className="size-3" />
+                          Messenger
                         </span>
+                      ) : channel === 'whatsapp' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-500 border border-emerald-500/20">
+                            <Phone className="size-3" />
+                            WhatsApp
+                          </span>
+                          {contact.company && contact.company !== 'Facebook Messenger' && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+                              {contact.company}
+                            </span>
+                          )}
+                        </div>
+                      ) : contact.company ? (
+                        <span className="text-xs text-foreground font-medium">{contact.company}</span>
+                      ) : (
+                        <span className="text-muted-foreground/60 text-xs">—</span>
                       )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
-                    {new Date(contact.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        }
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-popover border-border"
-                      >
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditForm(contact);
-                          }}
-                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {contact.tags && contact.tags.length > 0 ? (
+                          contact.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={{
+                                backgroundColor: tag.color + '20',
+                                color: tag.color,
+                              }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground text-xs">-</span>
+                        )}
+                        {contact.tags && contact.tags.length > 3 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            +{contact.tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
+                      {new Date(contact.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          }
                         >
-                          <Pencil className="size-4" />
-                          {t('editAction')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-border" />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDelete(contact);
-                          }}
+                          <MoreHorizontal className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="bg-popover border-border w-44"
                         >
-                          <Trash2 className="size-4" />
-                          {t('deleteAction')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDetail(contact.id);
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground cursor-pointer"
+                          >
+                            <Eye className="size-4" />
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.location.href = `/inbox?contactId=${contact.id}`;
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground cursor-pointer"
+                          >
+                            <MessageCircle className="size-4" />
+                            Chat in Inbox
+                          </DropdownMenuItem>
+                          {isPsid && (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`https://www.messenger.com/t/${contact.phone}`, '_blank');
+                              }}
+                              className="text-blue-500 focus:bg-blue-500/10 focus:text-blue-500 cursor-pointer"
+                            >
+                              <ExternalLink className="size-4" />
+                              Open in Messenger
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator className="bg-border" />
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditForm(contact);
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground cursor-pointer"
+                          >
+                            <Pencil className="size-4" />
+                            {t('editAction')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDelete(contact);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Trash2 className="size-4" />
+                            {t('deleteAction')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

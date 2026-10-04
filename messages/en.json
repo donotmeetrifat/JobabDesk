@@ -342,6 +342,7 @@
         "phone": "Phone",
         "email": "Email",
         "company": "Company",
+        "channel": "Channel",
         "tags": "Tags",
         "createdAt": "Created"
       },

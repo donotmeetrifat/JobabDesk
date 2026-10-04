@@ -726,7 +726,10 @@ export async function syncFacebookMessengerConversations(
       if (!customerName || customerName === 'Unknown') {
         customerName = `Messenger User (${customerPsid.slice(-4)})`
       }
-      const customerEmail = customer?.email || null
+      const customerEmail =
+        customer?.email && !customer.email.toLowerCase().endsWith('@facebook.com')
+          ? customer.email
+          : null
 
       // 3. Find or create Contact in contacts table
       let contactId = ''

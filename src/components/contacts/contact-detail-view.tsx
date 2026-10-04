@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -39,10 +39,26 @@ import {
   X,
   DollarSign,
   LayoutTemplate,
+  MessageSquare,
+  MessageCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+
+function isFacebookPsid(phone?: string | null): boolean {
+  if (!phone) return false;
+  const trimmed = phone.trim();
+  return !trimmed.startsWith('+') && trimmed.length >= 15 && /^\d+$/.test(trimmed);
+}
+
+function cleanEmail(email?: string | null): string | null {
+  if (!email) return null;
+  const trimmed = email.trim();
+  if (trimmed.toLowerCase().endsWith('@facebook.com')) return null;
+  return trimmed;
+}
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -113,8 +129,10 @@ export function ContactDetailView({
       setContact(data);
       setEditName(data.name ?? '');
       setEditPhone(data.phone);
-      setEditEmail(data.email ?? '');
-      setEditCompany(data.company ?? '');
+      const rawEmail = data.email ?? '';
+      setEditEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
+      const rawCompany = data.company ?? '';
+      setEditCompany(rawCompany === 'Facebook Messenger' ? '' : rawCompany);
     }
     setLoading(false);
   }, [contactId, supabase]);
@@ -388,6 +406,13 @@ export function ContactDetailView({
       .slice(0, 2);
   }
 
+  const isPsid = isFacebookPsid(contact?.phone);
+  const cleanMail = cleanEmail(contact?.email);
+  const isMessenger =
+    contact?.company === 'Facebook Messenger' ||
+    isPsid ||
+    contact?.email?.toLowerCase().endsWith('@facebook.com');
+
   return (
     <>
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -405,37 +430,67 @@ export function ContactDetailView({
             <SheetHeader className="p-4 border-b border-border/50">
               <div className="flex items-center gap-3">
                 <Avatar className="size-12 bg-muted border border-border">
+                  {contact.avatar_url && (
+                    <AvatarImage
+                      src={contact.avatar_url}
+                      alt={contact.name || ''}
+                      className="object-cover"
+                    />
+                  )}
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
                     {getInitials(contact.name)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <SheetTitle className="text-popover-foreground truncate">
-                    {contact.name || t('unnamed')}
-                  </SheetTitle>
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-popover-foreground truncate">
+                      {contact.name || t('unnamed')}
+                    </SheetTitle>
+                    {isMessenger && (
+                      <span className="shrink-0 inline-flex items-center gap-1 rounded bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-500 border border-blue-500/20">
+                        <MessageSquare className="size-2.5" />
+                        Messenger
+                      </span>
+                    )}
+                  </div>
                   <SheetDescription className="text-muted-foreground text-xs mt-0.5">
                     {t('contactDetailsDesc')}
                   </SheetDescription>
                   <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                    <button
-                      onClick={copyPhone}
-                      className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
-                    >
-                      <Phone className="size-3" />
-                      {contactHandle(contact)}
-                      {copiedPhone ? (
-                        <Check className="size-3 text-primary" />
-                      ) : (
-                        <Copy className="size-3" />
-                      )}
-                    </button>
-                    {contact.email && (
+                    {isPsid ? (
+                      <button
+                        onClick={copyPhone}
+                        className="flex items-center gap-1 hover:text-foreground text-muted-foreground font-mono text-[11px] bg-muted/60 px-2 py-0.5 rounded cursor-pointer border border-border/50"
+                        title="Copy Facebook User ID"
+                      >
+                        <span>PSID: {contact.phone}</span>
+                        {copiedPhone ? (
+                          <Check className="size-3 text-primary" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={copyPhone}
+                        className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
+                      >
+                        <Phone className="size-3" />
+                        {contactHandle(contact)}
+                        {copiedPhone ? (
+                          <Check className="size-3 text-primary" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                    )}
+                    {cleanMail && (
                       <span className="flex items-center gap-1">
                         <Mail className="size-3" />
-                        {contact.email}
+                        {cleanMail}
                       </span>
                     )}
-                    {contact.company && (
+                    {contact.company && contact.company !== 'Facebook Messenger' && (
                       <span className="flex items-center gap-1">
                         <Building2 className="size-3" />
                         {contact.company}
@@ -444,20 +499,42 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="flex items-center flex-wrap gap-2 mt-3">
                 <Button
                   size="sm"
-                  onClick={() => setTemplatePickerOpen(true)}
-                  disabled={sendingTemplate}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  variant="outline"
+                  onClick={() => window.location.href = `/inbox?contactId=${contact.id}`}
+                  className="border-border text-foreground hover:bg-muted text-xs h-8"
                 >
-                  {sendingTemplate ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <LayoutTemplate className="size-4" />
-                  )}
-                  {t('sendTemplateBtn')}
+                  <MessageCircle className="size-3.5 mr-1" />
+                  Chat in Inbox
                 </Button>
+                {isPsid && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`https://www.messenger.com/t/${contact.phone}`, '_blank')}
+                    className="border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 text-xs h-8"
+                  >
+                    <ExternalLink className="size-3.5 mr-1" />
+                    Open in Messenger
+                  </Button>
+                )}
+                {!isMessenger && (
+                  <Button
+                    size="sm"
+                    onClick={() => setTemplatePickerOpen(true)}
+                    disabled={sendingTemplate}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8"
+                  >
+                    {sendingTemplate ? (
+                      <Loader2 className="size-3.5 animate-spin mr-1" />
+                    ) : (
+                      <LayoutTemplate className="size-3.5 mr-1" />
+                    )}
+                    {t('sendTemplateBtn')}
+                  </Button>
+                )}
               </div>
             </SheetHeader>
 
@@ -499,6 +576,17 @@ export function ContactDetailView({
               {/* Details Tab */}
               <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-3">
+                  {isPsid && (
+                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3 text-xs">
+                      <p className="font-semibold flex items-center gap-1.5 text-blue-500">
+                        <MessageSquare className="size-3.5" />
+                        Facebook Messenger User
+                      </p>
+                      <p className="mt-1 text-muted-foreground text-[11px] leading-relaxed">
+                        This contact joined via Facebook Messenger. Their Facebook PSID is <span className="font-mono font-medium text-foreground">{contact.phone}</span>. You can enter their real telephone number below if they provide one.
+                      </p>
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs">{t('name')}</Label>
                     <Input
@@ -508,13 +596,15 @@ export function ContactDetailView({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">
-                      {t('phone')} <span className="text-red-400">*</span>
+                    <Label className="text-muted-foreground text-xs flex items-center justify-between">
+                      <span>{isPsid ? 'Phone Number' : t('phone')} <span className="text-red-400">*</span></span>
+                      {isPsid && <span className="text-[10px] text-muted-foreground">PSID stored</span>}
                     </Label>
                     <Input
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
+                      placeholder={isPsid ? '+1234567890' : undefined}
+                      className="bg-muted border-border text-foreground h-8 text-sm font-mono"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -522,6 +612,7 @@ export function ContactDetailView({
                     <Input
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="customer@example.com"
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
@@ -530,6 +621,7 @@ export function ContactDetailView({
                     <Input
                       value={editCompany}
                       onChange={(e) => setEditCompany(e.target.value)}
+                      placeholder="Company or Organization"
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
