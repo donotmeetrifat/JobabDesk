@@ -161,6 +161,20 @@ function resolveMetaEmoji(reactionObj: any): string {
   return raw
 }
 
+async function logWebhookDebug(db: any, entry: {
+  source: string
+  event_type: string
+  payload?: any
+  target_mid?: string
+  target_msg_id?: string
+  status: string
+  note?: string
+}) {
+  try {
+    await db.from('webhook_debug_logs').insert(entry)
+  } catch {}
+}
+
 // Meta Messenger Webhook Inbound POST
 export async function POST(req: Request) {
   try {
@@ -314,6 +328,14 @@ export async function POST(req: Request) {
 
       if (!targetMessage) {
         console.warn('[messenger/webhook] Reaction target message not found for mid:', reactionMid)
+        await logWebhookDebug(db, {
+          source: 'messenger',
+          event_type: 'reaction_not_found',
+          target_mid: reactionMid,
+          status: 'ignored',
+          note: `Target message not found for sender ${senderPsid}`,
+          payload: reactionEvent,
+        })
         return NextResponse.json({ status: 'ignored', reason: 'Target message not found' }, { status: 200 })
       }
 
@@ -333,6 +355,14 @@ export async function POST(req: Request) {
         }
 
         await query
+        await logWebhookDebug(db, {
+          source: 'messenger',
+          event_type: 'reaction_unreact',
+          target_mid: reactionMid,
+          target_msg_id: targetMessage.id,
+          status: 'deleted',
+          payload: reactionEvent,
+        })
         return NextResponse.json({ status: 'reaction_deleted' }, { status: 200 })
       }
 
@@ -391,6 +421,16 @@ export async function POST(req: Request) {
         .update({ updated_at: new Date().toISOString() })
         .eq('id', targetMessage.conversation_id)
 
+      await logWebhookDebug(db, {
+        source: 'messenger',
+        event_type: 'reaction_saved',
+        target_mid: reactionMid,
+        target_msg_id: targetMessage.id,
+        status: 'saved',
+        note: resolvedEmoji,
+        payload: reactionEvent,
+      })
+
       return NextResponse.json({ status: 'reaction_handled', emoji: resolvedEmoji }, { status: 200 })
     }
 
@@ -426,6 +466,12 @@ export async function POST(req: Request) {
         : 'Attachment')
 
     if (!customerPsid || (!messageText && !mediaUrl)) {
+      await logWebhookDebug(db, {
+        source: 'messenger',
+        event_type: 'ignored_unactionable',
+        status: 'ignored',
+        payload: messaging,
+      })
       return NextResponse.json({ status: 'ignored', reason: 'No actionable content or sender' }, { status: 200 })
     }
 
