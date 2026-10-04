@@ -176,25 +176,30 @@ export async function POST(request: Request) {
       contact = directContact
     }
 
-    let psid = contact?.phone || ''
+    let psid = (contact?.messenger_id || contact?.phone || '').trim()
     // If contact.phone is missing or a UUID, look up valid contact in account
     if (!psid || psid.includes('-')) {
-      const { data: realContact } = await admin
-        .from('contacts')
-        .select('phone')
-        .eq('account_id', accountId)
-        .eq('company', 'Facebook Messenger')
-        .not('phone', 'like', '%-%')
-        .limit(1)
-        .maybeSingle()
-      if (realContact?.phone) {
-        psid = realContact.phone
+      if (contact?.messenger_id) {
+        psid = contact.messenger_id.trim()
+      } else {
+        const { data: realContact } = await admin
+          .from('contacts')
+          .select('phone, messenger_id')
+          .eq('account_id', accountId)
+          .eq('company', 'Facebook Messenger')
+          .not('phone', 'like', '%-%')
+          .limit(1)
+          .maybeSingle()
+        if (realContact?.messenger_id || realContact?.phone) {
+          psid = (realContact.messenger_id || realContact.phone || '').trim()
+        }
       }
     }
 
     const isMessenger =
       contact?.channel === 'messenger' ||
       contact?.company === 'Facebook Messenger' ||
+      Boolean(contact?.messenger_id) ||
       (psid && !psid.includes('-') && !psid.startsWith('+') && !isNaN(Number(psid)) && psid.length > 9)
 
     if (isMessenger && content_text) {
@@ -276,6 +281,7 @@ export async function POST(request: Request) {
 
         // If window error, retry with MESSAGE_TAG
         if (!fbRes.ok && (fbJson?.error?.code === 10 || fbJson?.error?.message?.includes('window') || fbJson?.error?.error_subcode === 2018001)) {
+          // Attempt 1: CONFIRMED_EVENT_UPDATE
           fbRes = await fetch(
             `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
             {
@@ -284,12 +290,48 @@ export async function POST(request: Request) {
               body: JSON.stringify({
                 recipient: { id: psid },
                 messaging_type: 'MESSAGE_TAG',
-                tag: 'ACCOUNT_UPDATE',
+                tag: 'CONFIRMED_EVENT_UPDATE',
                 message: { text: content_text },
               }),
             }
           )
           fbJson = await fbRes.json()
+
+          // Attempt 2: ACCOUNT_UPDATE
+          if (!fbRes.ok) {
+            fbRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recipient: { id: psid },
+                  messaging_type: 'MESSAGE_TAG',
+                  tag: 'ACCOUNT_UPDATE',
+                  message: { text: content_text },
+                }),
+              }
+            )
+            fbJson = await fbRes.json()
+          }
+
+          // Attempt 3: POST_PURCHASE_UPDATE
+          if (!fbRes.ok) {
+            fbRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(activePageToken)}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  recipient: { id: psid },
+                  messaging_type: 'MESSAGE_TAG',
+                  tag: 'POST_PURCHASE_UPDATE',
+                  message: { text: content_text },
+                }),
+              }
+            )
+            fbJson = await fbRes.json()
+          }
         }
 
         if (!fbRes.ok || fbJson.error || !fbJson.message_id) {

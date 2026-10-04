@@ -54,6 +54,7 @@ import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { isFacebookPsid } from "@/lib/contacts/extract-info";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -232,8 +233,26 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
+  const isMessenger = useMemo(() => {
+    return Boolean(
+      contact?.company === "Facebook Messenger" ||
+      contact?.channel === "messenger" ||
+      contact?.messenger_id ||
+      isFacebookPsid(contact?.phone) ||
+      conversation?.channel_conversation_id?.startsWith("fb_") ||
+      conversation?.channel_conversation_id?.startsWith("mid.") ||
+      messages.some((m) => m.message_id?.startsWith("mid.") || m.message_id?.startsWith("m_")) ||
+      (contact?.phone && !contact.phone.startsWith("+") && !isNaN(Number(contact.phone)))
+    );
+  }, [contact, conversation, messages]);
+
+  // 24-hour session timer (relevant only for WhatsApp Cloud API)
   const sessionInfo = useMemo(() => {
+    // Facebook Messenger conversations have no 24-hour template lockout in JobabDesk
+    if (isMessenger) {
+      return { expired: false, remaining: "Live Chat" };
+    }
+
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -241,7 +260,7 @@ export function MessageThread({
       .reverse()
       .find((m) => m.sender_type === "customer");
 
-    if (!lastCustomerMsg) return { expired: true, remaining: tTimer("noCustomerMessages") };
+    if (!lastCustomerMsg) return { expired: false, remaining: tTimer("noCustomerMessages") };
 
     const hoursSince = differenceInHours(new Date(), new Date(lastCustomerMsg.created_at));
     const expired = hoursSince >= 24;
@@ -257,7 +276,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, isMessenger, tTimer]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -999,11 +1018,6 @@ export function MessageThread({
       </div>
     );
   }
-
-  const isMessenger =
-    contact?.company === "Facebook Messenger" ||
-    contact?.channel === "messenger" ||
-    (contact?.phone && !contact.phone.startsWith("+") && !isNaN(Number(contact.phone)));
 
   const effectiveContact: Contact = contact || {
     id: conversation.contact_id || conversation.id,
