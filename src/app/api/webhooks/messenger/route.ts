@@ -288,7 +288,7 @@ export async function POST(req: Request) {
         const { data: ct } = await db
           .from('contacts')
           .select('id')
-          .eq('phone', senderPsid)
+          .or(`messenger_id.eq.${senderPsid},phone.eq.${senderPsid}`)
           .maybeSingle()
         if (ct?.id) contactId = ct.id
       }
@@ -549,7 +549,11 @@ export async function POST(req: Request) {
             `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
           )
           const profileJson = await profileRes.json()
-          const updates: any = { updated_at: new Date().toISOString(), company: 'Facebook Messenger' }
+          const updates: any = {
+            updated_at: new Date().toISOString(),
+            company: 'Facebook Messenger',
+            messenger_id: customerPsid,
+          }
           const resolved = profileJson.name || [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
           if (resolved) updates.name = resolved
           if (profileJson.profile_pic) updates.avatar_url = profileJson.profile_pic
@@ -582,6 +586,7 @@ export async function POST(req: Request) {
         .insert({
           account_id: accountId,
           user_id: ownerUserId,
+          messenger_id: customerPsid,
           phone: customerPsid,
           name: customerName,
           avatar_url: customerAvatarUrl || null,

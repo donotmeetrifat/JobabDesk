@@ -59,6 +59,56 @@ export async function PATCH(
       }
     }
 
+    // Fetch current contact to preserve PSID in messenger_id if phone is being replaced
+    const { data: currentContact } = await supabase
+      .from('contacts')
+      .select('id, phone, messenger_id')
+      .eq('id', id)
+      .eq('account_id', accountId)
+      .maybeSingle()
+
+    if (currentContact) {
+      const isCurrentPsid =
+        currentContact.phone &&
+        !currentContact.phone.startsWith('+') &&
+        currentContact.phone.length >= 14 &&
+        /^\d+$/.test(currentContact.phone)
+
+      if (isCurrentPsid && !currentContact.messenger_id && !updates.messenger_id) {
+        updates.messenger_id = currentContact.phone
+      }
+    }
+
+    // Proactively clear conflicting phone on duplicate contacts in this account
+    if (updates.phone) {
+      const normalizedDigits = updates.phone.replace(/\D/g, '')
+      if (normalizedDigits) {
+        const { data: duplicateContact } = await supabase
+          .from('contacts')
+          .select('id, name, phone, messenger_id')
+          .eq('account_id', accountId)
+          .eq('phone_normalized', normalizedDigits)
+          .neq('id', id)
+          .limit(1)
+          .maybeSingle()
+
+        if (duplicateContact) {
+          console.log(`[api/contacts/[id]] Clearing phone on duplicate contact ${duplicateContact.id} so active contact ${id} can claim ${updates.phone}`)
+          try {
+            await supabase.from('conversations').update({ contact_id: id }).eq('contact_id', duplicateContact.id)
+            await supabase.from('orders').update({ contact_id: id }).eq('contact_id', duplicateContact.id)
+            await supabase.from('contact_notes').update({ contact_id: id }).eq('contact_id', duplicateContact.id)
+            await supabase
+              .from('contacts')
+              .update({ phone: null, updated_at: new Date().toISOString() })
+              .eq('id', duplicateContact.id)
+          } catch (e) {
+            console.warn('[api/contacts/[id]] Duplicate re-point warning:', e)
+          }
+        }
+      }
+    }
+
     let { data: updatedContact, error } = await supabase
       .from('contacts')
       .update(updates)
@@ -67,20 +117,46 @@ export async function PATCH(
       .select()
       .maybeSingle()
 
-    // If updating phone caused a unique constraint collision (23505),
-    // retry updating the remaining fields (address, name, etc.) without phone
+    // If updating phone still caused a unique constraint collision (23505),
+    // clear the conflicting phone and retry WITH phone first before giving up
     if (error && error.code === '23505' && updates.phone) {
-      console.warn('[api/contacts/[id]] Phone collision detected, retrying without phone:', updates.phone)
-      delete updates.phone
-      const retryResult = await supabase
-        .from('contacts')
-        .update(updates)
-        .eq('id', id)
-        .eq('account_id', accountId)
-        .select()
-        .maybeSingle()
-      updatedContact = retryResult.data
-      error = retryResult.error
+      console.warn('[api/contacts/[id]] Phone collision detected, clearing conflicting number and retrying:', updates.phone)
+      const normalizedDigits = updates.phone.replace(/\D/g, '')
+      if (normalizedDigits) {
+        await supabase
+          .from('contacts')
+          .update({ phone: null, updated_at: new Date().toISOString() })
+          .eq('account_id', accountId)
+          .eq('phone_normalized', normalizedDigits)
+          .neq('id', id)
+
+        const retryWithPhone = await supabase
+          .from('contacts')
+          .update(updates)
+          .eq('id', id)
+          .eq('account_id', accountId)
+          .select()
+          .maybeSingle()
+
+        if (!retryWithPhone.error && retryWithPhone.data) {
+          updatedContact = retryWithPhone.data
+          error = null
+        }
+      }
+
+      // If still error, only then retry without phone
+      if (error) {
+        delete updates.phone
+        const retryResult = await supabase
+          .from('contacts')
+          .update(updates)
+          .eq('id', id)
+          .eq('account_id', accountId)
+          .select()
+          .maybeSingle()
+        updatedContact = retryResult.data
+        error = retryResult.error
+      }
     }
 
     if (error) {

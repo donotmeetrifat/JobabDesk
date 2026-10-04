@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { extractCustomerInfoFromMessage } from '@/lib/contacts/extract-info'
+import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 function getAdminClient() {
@@ -84,7 +84,7 @@ export async function detectAndCreateOrderFromChat({
 
   // 1. Extract contact details from current message if not passed
   const extracted = extractCustomerInfoFromMessage(messageText)
-  let phone = customerPhone || extracted.phone || null
+  let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || null
   let address = customerAddress || extracted.address || null
 
   // If still missing, check contact record in DB
@@ -103,7 +103,7 @@ export async function detectAndCreateOrderFromChat({
             resolvedName = contactRow.name
           }
         }
-        if (!phone && contactRow.phone) phone = contactRow.phone
+        if (!phone && contactRow.phone && !isFacebookPsid(contactRow.phone)) phone = contactRow.phone
         if (!address && contactRow.address) address = contactRow.address
       }
     } catch (_cErr) {
@@ -111,7 +111,9 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  if (llmOrderData?.customer_phone && !phone) phone = llmOrderData.customer_phone
+  if (llmOrderData?.customer_phone && !phone && !isFacebookPsid(llmOrderData.customer_phone)) {
+    phone = llmOrderData.customer_phone
+  }
   if (llmOrderData?.customer_address && !address) address = llmOrderData.customer_address
   if (llmOrderData?.customer_name && (!resolvedName || resolvedName === 'Messenger User')) {
     resolvedName = llmOrderData.customer_name

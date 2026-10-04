@@ -100,7 +100,21 @@ export function ContactSidebar({
         },
         (payload) => {
           if (payload.new) {
-            onContactUpdatedRef.current?.(payload.new as Contact);
+            const updated = payload.new as Contact;
+            // Guard: If payload.new has a PSID or empty phone, but effectiveContact had a real phone, preserve the real phone!
+            const keepPhone =
+              effectiveContact?.phone &&
+              !isFacebookPsid(effectiveContact.phone) &&
+              (!updated.phone || isFacebookPsid(updated.phone));
+
+            const keepAddress = effectiveContact?.address && !updated.address;
+
+            const safeContact: Contact = {
+              ...updated,
+              phone: keepPhone ? effectiveContact.phone : updated.phone,
+              address: keepAddress ? effectiveContact.address : updated.address,
+            };
+            onContactUpdatedRef.current?.(safeContact);
           }
         }
       )
@@ -109,7 +123,7 @@ export function ContactSidebar({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [effectiveContact?.id]);
+  }, [effectiveContact?.id, effectiveContact?.phone, effectiveContact?.address]);
 
   // If address or phone is missing, check recent messages and auto-populate
   useEffect(() => {
@@ -160,7 +174,12 @@ export function ContactSidebar({
           if (res.ok) {
             const json = await res.json();
             if (json.contact) {
-              onContactUpdatedRef.current?.(json.contact);
+              const safeContact: Contact = {
+                ...json.contact,
+                phone: extractedPhone || (!isFacebookPsid(json.contact.phone) ? json.contact.phone : null),
+                address: extractedAddress || json.contact.address,
+              };
+              onContactUpdatedRef.current?.(safeContact);
             }
           }
         } catch (err) {
@@ -292,7 +311,28 @@ export function ContactSidebar({
   // Format phone display: hide raw Facebook PSID numbers from Phone field
   const isPhoneRawPsid = Boolean(effectiveContact.phone && isFacebookPsid(effectiveContact.phone));
 
-  const displayPhone = isPhoneRawPsid ? null : effectiveContact.phone || null;
+  // Fallback: If contact record has a PSID or no phone/address, extract from loaded customer messages
+  const fallbackInfo = useMemo(() => {
+    if (!propMessages || propMessages.length === 0) return null;
+    let p: string | undefined;
+    let a: string | undefined;
+    for (let i = propMessages.length - 1; i >= 0; i--) {
+      const m = propMessages[i];
+      if (m.sender_type === "customer" && m.content_text) {
+        const info = extractCustomerInfoFromMessage(m.content_text);
+        if (!p && info.phone) p = info.phone;
+        if (!a && info.address) a = info.address;
+        if (p && a) break;
+      }
+    }
+    return { phone: p, address: a };
+  }, [propMessages]);
+
+  const displayPhone = !isPhoneRawPsid && effectiveContact.phone
+    ? effectiveContact.phone
+    : (fallbackInfo?.phone || null);
+
+  const displayAddress = effectiveContact.address || fallbackInfo?.address || null;
 
   const displayName =
     effectiveContact.name && effectiveContact.name !== "Unknown"
@@ -402,10 +442,10 @@ export function ContactSidebar({
                   <MapPin className="h-3.5 w-3.5 text-primary" />
                   <span>Delivery Address</span>
                 </div>
-                {effectiveContact.address && (
+                {displayAddress && (
                   <button
                     type="button"
-                    onClick={() => handleCopy(effectiveContact.address!, "address")}
+                    onClick={() => handleCopy(displayAddress, "address")}
                     title="Copy Delivery Address"
                     className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                   >
@@ -420,12 +460,12 @@ export function ContactSidebar({
               <p
                 className={cn(
                   "mt-1.5 text-xs leading-relaxed",
-                  effectiveContact.address
+                  displayAddress
                     ? "font-medium text-foreground"
                     : "italic text-muted-foreground"
                 )}
               >
-                {effectiveContact.address || "No address provided yet"}
+                {displayAddress || "No address provided yet"}
               </p>
             </div>
 

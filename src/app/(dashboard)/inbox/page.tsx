@@ -549,15 +549,42 @@ function InboxPageInner() {
         .then((res) => (res.ok ? res.json() : null))
         .then((json) => {
           if (json?.contact) {
-            setActiveContact((prev) =>
-              prev?.id === json.contact.id ? { ...prev, ...json.contact } : prev
-            );
+            setActiveContact((prev) => {
+              if (!prev || prev.id !== json.contact.id) return prev;
+              const current = prev;
+              const keepPhone =
+                current.phone &&
+                !isFacebookPsid(current.phone) &&
+                (!json.contact.phone || isFacebookPsid(json.contact.phone));
+              const keepAddress = current.address && !json.contact.address;
+
+              return {
+                ...current,
+                ...json.contact,
+                phone: keepPhone ? current.phone : (json.contact.phone || current.phone || ''),
+                address: keepAddress ? current.address : (json.contact.address || current.address),
+              };
+            });
             setConversations((prev) =>
-              prev.map((c) =>
-                c.contact_id === json.contact.id || c.contact?.id === json.contact.id
-                  ? { ...c, contact: { ...(c.contact || {}), ...json.contact } }
-                  : c
-              )
+              prev.map((c) => {
+                if (c.contact_id !== json.contact.id && c.contact?.id !== json.contact.id) return c;
+                const prevPhone = c.contact?.phone || '';
+                const keepPhone =
+                  prevPhone &&
+                  !isFacebookPsid(prevPhone) &&
+                  (!json.contact.phone || isFacebookPsid(json.contact.phone));
+                const keepAddress = c.contact?.address && !json.contact.address;
+
+                return {
+                  ...c,
+                  contact: {
+                    ...(c.contact || {}),
+                    ...json.contact,
+                    phone: keepPhone ? prevPhone : (json.contact.phone || prevPhone || ''),
+                    address: keepAddress ? c.contact?.address : (json.contact.address || c.contact?.address),
+                  },
+                };
+              })
             );
           }
         })
@@ -1010,13 +1037,44 @@ function InboxPageInner() {
 
   const handleContactUpdated = useCallback(
     (updated: Contact) => {
-      setActiveContact(updated);
+      setActiveContact((prev) => {
+        if (!prev || prev.id !== updated.id) return updated;
+        const current = prev;
+        const keepPhone =
+          current.phone &&
+          !isFacebookPsid(current.phone) &&
+          (!updated.phone || isFacebookPsid(updated.phone));
+        const keepAddress = current.address && !updated.address;
+
+        return {
+          ...current,
+          ...updated,
+          phone: keepPhone ? current.phone : (updated.phone || current.phone || ''),
+          address: keepAddress ? current.address : (updated.address || current.address),
+        };
+      });
       setConversations((prev) =>
-        prev.map((c) =>
-          c.contact_id === updated.id || (activeConversation && c.id === activeConversation.id)
-            ? { ...c, contact: updated }
-            : c
-        )
+        prev.map((c) => {
+          if (c.contact_id !== updated.id && (!activeConversation || c.id !== activeConversation.id)) {
+            return c;
+          }
+          const prevPhone = c.contact?.phone || '';
+          const keepPhone =
+            prevPhone &&
+            !isFacebookPsid(prevPhone) &&
+            (!updated.phone || isFacebookPsid(updated.phone));
+          const keepAddress = c.contact?.address && !updated.address;
+
+          return {
+            ...c,
+            contact: {
+              ...(c.contact || {}),
+              ...updated,
+              phone: keepPhone ? prevPhone : (updated.phone || prevPhone || ''),
+              address: keepAddress ? c.contact?.address : (updated.address || c.contact?.address),
+            },
+          };
+        })
       );
     },
     [activeConversation]

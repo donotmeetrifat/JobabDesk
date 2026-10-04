@@ -104,34 +104,72 @@ export async function autoUpdateContactFromChatMessage(params: {
       }
     }
 
+    // If replacing a Facebook PSID, preserve the PSID in messenger_id
+    if (contact.phone && isFacebookPsid(contact.phone) && !contact.messenger_id && !updates.messenger_id) {
+      updates.messenger_id = contact.phone
+      shouldUpdate = true
+    }
+
     if (!shouldUpdate) {
       return { updated: false, updates: {} }
     }
 
     // Guard: Prevent unique constraint violation on (account_id, phone_normalized)
-    // If another contact row already has this phone number, do NOT fail the whole update.
+    // If another contact row already has this phone number, re-point child records (conversations, orders, notes)
+    // to this active contact and clear the phone on the duplicate contact so the active customer keeps their real phone number!
     if (updates.phone && effectiveAccountId) {
       const normalizedDigits = updates.phone.replace(/\D/g, '')
-      const { data: duplicateContact } = await supabase
-        .from('contacts')
-        .select('id')
-        .eq('account_id', effectiveAccountId)
-        .eq('phone_normalized', normalizedDigits)
-        .neq('id', contactId)
-        .limit(1)
-        .maybeSingle()
+      if (normalizedDigits) {
+        const { data: duplicateContact } = await supabase
+          .from('contacts')
+          .select('id, name, phone, messenger_id, wa_user_id')
+          .eq('account_id', effectiveAccountId)
+          .eq('phone_normalized', normalizedDigits)
+          .neq('id', contactId)
+          .limit(1)
+          .maybeSingle()
 
-      if (duplicateContact) {
-        console.warn(`[AutoExtract] Phone ${updates.phone} already belongs to contact ${duplicateContact.id}. Omitting phone update to avoid constraint collision; address/email will still update.`)
-        delete updates.phone
+        if (duplicateContact) {
+          console.log(`[AutoExtract] Phone ${updates.phone} already belongs to duplicate contact ${duplicateContact.id}. Re-pointing child records and freeing phone for active contact ${contactId}.`)
+          try {
+            await supabase.from('conversations').update({ contact_id: contactId }).eq('contact_id', duplicateContact.id)
+            await supabase.from('orders').update({ contact_id: contactId }).eq('contact_id', duplicateContact.id)
+            await supabase.from('contact_notes').update({ contact_id: contactId }).eq('contact_id', duplicateContact.id)
+            await supabase
+              .from('contacts')
+              .update({ phone: null, updated_at: new Date().toISOString() })
+              .eq('id', duplicateContact.id)
+          } catch (repErr) {
+            console.warn('[AutoExtract] Re-point/clear duplicate error:', repErr)
+          }
+        }
       }
     }
 
     // Execute atomic update for THIS EXACT CONTACT ONLY
-    const { error: updateErr } = await supabase
+    let { error: updateErr } = await supabase
       .from('contacts')
       .update(updates)
       .eq('id', contactId)
+
+    // Fallback: If still unique collision (raced), clear any conflicting contact and retry once
+    if (updateErr && updateErr.code === '23505' && updates.phone && effectiveAccountId) {
+      const normalizedDigits = updates.phone.replace(/\D/g, '')
+      if (normalizedDigits) {
+        await supabase
+          .from('contacts')
+          .update({ phone: null, updated_at: new Date().toISOString() })
+          .eq('account_id', effectiveAccountId)
+          .eq('phone_normalized', normalizedDigits)
+          .neq('id', contactId)
+
+        const retryRes = await supabase
+          .from('contacts')
+          .update(updates)
+          .eq('id', contactId)
+        updateErr = retryRes.error
+      }
+    }
 
     if (updateErr) {
       // If address column does not exist yet in schema cache, retry without address column
