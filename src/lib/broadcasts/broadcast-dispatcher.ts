@@ -1,21 +1,26 @@
 import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { sendMetaWhatsAppMessage } from '@/lib/whatsapp/meta-cloud'
 import { sendWhapiMessage } from '@/lib/whatsapp/whapi-gateway'
 
 function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
-  return createClient(url, key)
+  try {
+    return supabaseAdmin()
+  } catch {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+    const key =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      ''
+    return createClient(url, key)
+  }
 }
 
 export function isFacebookPsid(val: string | null | undefined): boolean {
   if (!val) return false
   const clean = val.trim()
-  return /^\d{12,24}$/.test(clean)
+  return !clean.startsWith('+') && clean.length >= 14 && /^\d+$/.test(clean)
 }
 
 /**
@@ -56,27 +61,56 @@ export async function resolveMetaPageAccessToken(db: any, accountId?: string | n
       pageAccessToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
     }
 
-    // If User Access Token, resolve to Page Access Token via /me/accounts
+    if (!pageAccessToken) {
+      const { data: anyAcc } = await db
+        .from('accounts')
+        .select('facebook_page_access_token, facebook_page_id')
+        .not('facebook_page_access_token', 'is', null)
+        .limit(1)
+        .maybeSingle()
+      if (anyAcc?.facebook_page_access_token) {
+        pageAccessToken = anyAcc.facebook_page_access_token
+      }
+    }
+
+    // If User Access Token, resolve to Page Access Token via /me/accounts or /me/assigned_pages
     if (pageAccessToken) {
-      const meRes = await fetch(
-        `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(pageAccessToken)}`
-      ).catch(() => null)
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(pageAccessToken)}`
+        ).catch(() => null)
 
-      if (meRes && meRes.ok) {
-        const meData = await meRes.json().catch(() => null)
-        if (!meData?.category) {
-          const accsRes = await fetch(
-            `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(pageAccessToken)}`
-          ).catch(() => null)
+        if (meRes && meRes.ok) {
+          const meData = await meRes.json().catch(() => null)
+          if (!meData?.category) {
+            const accsRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(pageAccessToken)}`
+            ).catch(() => null)
 
-          if (accsRes && accsRes.ok) {
-            const accsData = await accsRes.json().catch(() => null)
-            const pages = accsData?.data || []
-            if (pages.length > 0 && pages[0].access_token) {
-              pageAccessToken = pages[0].access_token
+            if (accsRes && accsRes.ok) {
+              const accsData = await accsRes.json().catch(() => null)
+              const pages = accsData?.data || []
+              if (pages.length > 0 && pages[0].access_token) {
+                pageAccessToken = pages[0].access_token
+              }
+            }
+
+            if (pageAccessToken) {
+              const assignedRes = await fetch(
+                `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,access_token&access_token=${encodeURIComponent(pageAccessToken)}`
+              ).catch(() => null)
+              if (assignedRes && assignedRes.ok) {
+                const assignedData = await assignedRes.json().catch(() => null)
+                const pages = assignedData?.data || []
+                if (pages.length > 0 && pages[0].access_token) {
+                  pageAccessToken = pages[0].access_token
+                }
+              }
             }
           }
         }
+      } catch (tokenErr) {
+        console.warn('[BroadcastDispatcher] Warning resolving page token:', tokenErr)
       }
     }
   } catch (err) {
@@ -119,6 +153,8 @@ export async function sendMessengerBroadcastMessage({
       }
     }
 
+    const cleanPsid = customerPsid.trim()
+
     // Attempt 1: Standard RESPONSE (within 24h window)
     let fbRes = await fetch(
       `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
@@ -126,7 +162,7 @@ export async function sendMessengerBroadcastMessage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recipient: { id: customerPsid },
+          recipient: { id: cleanPsid },
           messaging_type: 'RESPONSE',
           message: payloadMessage,
         }),
@@ -134,7 +170,7 @@ export async function sendMessengerBroadcastMessage({
     )
     let fbJson = await fbRes.json().catch(() => ({}))
 
-    // Attempt 2: If standard response failed, retry with CONFIRMED_EVENT_UPDATE tag
+    // Attempt 2: Retry with CONFIRMED_EVENT_UPDATE tag
     if (!fbRes.ok || fbJson.error) {
       fbRes = await fetch(
         `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
@@ -142,7 +178,7 @@ export async function sendMessengerBroadcastMessage({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            recipient: { id: customerPsid },
+            recipient: { id: cleanPsid },
             messaging_type: 'MESSAGE_TAG',
             tag: 'CONFIRMED_EVENT_UPDATE',
             message: payloadMessage,
@@ -152,7 +188,7 @@ export async function sendMessengerBroadcastMessage({
       fbJson = await fbRes.json().catch(() => ({}))
     }
 
-    // Attempt 3: Fallback with ACCOUNT_UPDATE tag
+    // Attempt 3: Retry with ACCOUNT_UPDATE tag
     if (!fbRes.ok || fbJson.error) {
       fbRes = await fetch(
         `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
@@ -160,9 +196,27 @@ export async function sendMessengerBroadcastMessage({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            recipient: { id: customerPsid },
+            recipient: { id: cleanPsid },
             messaging_type: 'MESSAGE_TAG',
             tag: 'ACCOUNT_UPDATE',
+            message: payloadMessage,
+          }),
+        }
+      )
+      fbJson = await fbRes.json().catch(() => ({}))
+    }
+
+    // Attempt 4: Retry with POST_PURCHASE_UPDATE tag
+    if (!fbRes.ok || fbJson.error) {
+      fbRes = await fetch(
+        `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: { id: cleanPsid },
+            messaging_type: 'MESSAGE_TAG',
+            tag: 'POST_PURCHASE_UPDATE',
             message: payloadMessage,
           }),
         }
@@ -204,8 +258,13 @@ export async function sendWhatsAppBroadcastMessage({
   headerMediaUrl?: string
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
-    // 1. Template send via Meta WhatsApp
-    if (templateName && templateName.trim() !== '') {
+    const isCustomTemplate =
+      !templateName ||
+      templateName === 'Custom Message' ||
+      templateName.toLowerCase() === 'custom message'
+
+    // 1. Template send via Meta WhatsApp (only if real template name specified)
+    if (!isCustomTemplate && templateName && templateName.trim() !== '') {
       let account = null
       if (accountId) {
         const { data } = await db
@@ -308,8 +367,12 @@ export function personalizeText(
 /**
  * Main fanout task: executes broadcast delivery across WhatsApp and Messenger
  */
-export async function executeBroadcastDelivery(broadcastId: string): Promise<void> {
+export async function executeBroadcastDelivery(
+  broadcastId: string,
+  options?: { scope?: 'pending' | 'failed' | 'all' }
+): Promise<{ success: boolean; sent: number; failed: number; total: number }> {
   const db = getAdminClient()
+  const scope = options?.scope || 'pending'
 
   // 1. Fetch broadcast record
   const { data: broadcast, error: bcError } = await db
@@ -319,8 +382,19 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
     .single()
 
   if (bcError || !broadcast) {
-    console.error('[BroadcastDispatcher] Broadcast not found:', broadcastId)
-    return
+    console.error('[BroadcastDispatcher] Broadcast not found:', broadcastId, bcError)
+    return { success: false, sent: 0, failed: 0, total: 0 }
+  }
+
+  // If retrying failed or all, reset target rows to pending first
+  if (scope === 'failed' || scope === 'all') {
+    const resetQuery = db
+      .from('broadcast_recipients')
+      .update({ status: 'pending', error_message: null })
+      .eq('broadcast_id', broadcastId)
+    if (scope === 'failed') {
+      await resetQuery.eq('status', 'failed')
+    }
   }
 
   // 2. Fetch pending recipients
@@ -330,13 +404,33 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
     .eq('broadcast_id', broadcastId)
     .eq('status', 'pending')
 
-  if (recError || !recipients || recipients.length === 0) {
-    // If no pending, mark as sent/completed
-    await db
-      .from('broadcasts')
-      .update({ status: 'sent', updated_at: new Date().toISOString() })
-      .eq('id', broadcastId)
-    return
+  if (recError) {
+    console.error('[BroadcastDispatcher] Error fetching recipients:', recError)
+    return { success: false, sent: 0, failed: 0, total: 0 }
+  }
+
+  if (!recipients || recipients.length === 0) {
+    // Check if any recipients are left pending
+    const { count: pendingRemaining } = await db
+      .from('broadcast_recipients')
+      .select('id', { count: 'exact', head: true })
+      .eq('broadcast_id', broadcastId)
+      .eq('status', 'pending')
+
+    if ((pendingRemaining || 0) === 0) {
+      const finalStatus =
+        (broadcast.failed_count || 0) > 0 && (broadcast.sent_count || 0) === 0 ? 'failed' : 'sent'
+      await db
+        .from('broadcasts')
+        .update({ status: finalStatus, updated_at: new Date().toISOString() })
+        .eq('id', broadcastId)
+    }
+    return {
+      success: true,
+      sent: Number(broadcast.sent_count) || 0,
+      failed: Number(broadcast.failed_count) || 0,
+      total: Number(broadcast.total_recipients) || 0,
+    }
   }
 
   let sentCount = Number(broadcast.sent_count) || 0
@@ -350,7 +444,19 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
 
     await Promise.all(
       batch.map(async (recipient) => {
-        const contact = recipient.contact
+        let contact = recipient.contact
+        if (Array.isArray(contact)) {
+          contact = contact[0]
+        }
+        if (!contact && recipient.contact_id) {
+          const { data: c } = await db
+            .from('contacts')
+            .select('*')
+            .eq('id', recipient.contact_id)
+            .maybeSingle()
+          contact = c
+        }
+
         if (!contact) {
           failedCount++
           await db
@@ -364,8 +470,21 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
         }
 
         const recipientChannel = recipient.channel || broadcast.channel || 'all'
-        const psid = contact.messenger_id || (isFacebookPsid(contact.phone) ? contact.phone : null)
-        const phone = contact.phone && !isFacebookPsid(contact.phone) ? contact.phone : null
+        const isMessengerContact =
+          contact.channel === 'messenger' ||
+          contact.company === 'Facebook Messenger' ||
+          Boolean(contact.messenger_id) ||
+          isFacebookPsid(contact.phone)
+
+        const psid =
+          contact.messenger_id ||
+          (isMessengerContact && contact.phone ? contact.phone : null) ||
+          (isFacebookPsid(contact.phone) ? contact.phone : null)
+
+        const phone =
+          contact.phone && !isFacebookPsid(contact.phone) && !isMessengerContact
+            ? contact.phone
+            : null
 
         // Determine destination: Messenger or WhatsApp
         let isMessenger = false
@@ -474,7 +593,9 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
       .eq('id', broadcastId)
 
     // Modest delay between batches to remain well within Meta rate limits
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    if (i + BATCH_SIZE < recipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+    }
   }
 
   // 4. Mark final broadcast status
@@ -488,4 +609,12 @@ export async function executeBroadcastDelivery(broadcastId: string): Promise<voi
       updated_at: new Date().toISOString(),
     })
     .eq('id', broadcastId)
+
+  return {
+    success: true,
+    sent: sentCount,
+    failed: failedCount,
+    total: Number(broadcast.total_recipients) || recipients.length,
+  }
 }
+

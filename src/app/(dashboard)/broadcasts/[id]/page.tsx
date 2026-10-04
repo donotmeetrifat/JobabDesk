@@ -248,7 +248,7 @@ export default function BroadcastDetailPage() {
   async function handleResume(scope: 'pending' | 'failed') {
     setResumingScope(scope);
     try {
-      const res = await fetch(`/api/whatsapp/broadcast/${broadcastId}/resume`, {
+      const res = await fetch(`/api/broadcasts/${broadcastId}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scope }),

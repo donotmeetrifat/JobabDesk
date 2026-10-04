@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { executeBroadcastDelivery, isFacebookPsid } from '@/lib/broadcasts/broadcast-dispatcher'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -261,11 +262,20 @@ export async function POST(req: Request) {
       console.warn('[Broadcasts API] Recipients bulk insert warning:', recInsertErr)
     }
 
-    // 4. Trigger delivery in background
-    after(() => {
-      executeBroadcastDelivery(broadcast.id).catch((err) => {
+    // 4. Trigger delivery immediately
+    try {
+      await executeBroadcastDelivery(broadcast.id)
+    } catch (deliveryErr) {
+      console.error('[Broadcasts API] Initial delivery error:', deliveryErr)
+    }
+
+    // Schedule background completion for any lingering recipients if applicable
+    after(async () => {
+      try {
+        await executeBroadcastDelivery(broadcast.id)
+      } catch (err) {
         console.error('[Broadcasts API] Background delivery error:', err)
-      })
+      }
     })
 
     return NextResponse.json({
