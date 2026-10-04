@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Users, Save, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 interface AudienceConfig {
@@ -28,6 +29,8 @@ interface Step4Props {
   onNameChange: (name: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
+  aiContext?: string;
+  onAiContextChange?: (val: string) => void;
   onSend: () => void;
   onSaveDraft?: () => void;
   onBack: () => void;
@@ -40,6 +43,8 @@ export function Step4ScheduleSend({
   onNameChange,
   template,
   audience,
+  aiContext = '',
+  onAiContextChange,
   onSend,
   onSaveDraft,
   onBack,
@@ -112,6 +117,26 @@ export function Step4ScheduleSend({
         />
       </div>
 
+      {/* AI Auto-Reply Context & Offer Details Box */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <label className="text-sm font-semibold text-foreground">
+            Update / Offer Details for AI Auto-Reply
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          When customers reply asking about this update (e.g. &quot;What is the update?&quot;, &quot;What discount?&quot;, &quot;Koto % discount?&quot;), what should the AI automation reply? Provide the exact details, discounts, or terms here. If left blank, the AI will NEVER invent or guess discounts!
+        </p>
+        <Textarea
+          rows={3}
+          value={aiContext}
+          onChange={(e) => onAiContextChange?.(e.target.value)}
+          placeholder="e.g. We are offering 15% discount on all skincare items using code SAVE15 until Friday. Free delivery inside Dhaka."
+          className="bg-card border-border resize-none text-xs text-foreground focus:ring-primary placeholder:text-muted-foreground"
+        />
+      </div>
+
       {/* Summary Card */}
       <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
         <p className="text-sm font-medium text-foreground">{t('scheduleSend.summary')}</p>
@@ -140,6 +165,12 @@ export function Step4ScheduleSend({
           <div>
             <p className="text-xs text-muted-foreground">{t('scheduleSend.language')}</p>
             <p className="text-foreground">{template.language ?? 'en_US'}</p>
+          </div>
+          <div className="col-span-2 pt-2 border-t border-border/60">
+            <p className="text-xs text-muted-foreground">AI Auto-Reply Context</p>
+            <p className="text-xs text-foreground mt-0.5">
+              {aiContext.trim() ? aiContext.trim() : <span className="text-muted-foreground italic">None provided (AI will not guess or invent discounts)</span>}
+            </p>
           </div>
         </div>
       </div>

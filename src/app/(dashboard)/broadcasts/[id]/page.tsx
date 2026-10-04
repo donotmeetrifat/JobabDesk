@@ -466,6 +466,32 @@ export default function BroadcastDetailPage() {
         </div>
       )}
 
+      {/* Broadcast Message & AI Context Info Card */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Broadcast Message Sent:</span>
+            <p className="text-xs text-foreground bg-muted/60 p-2.5 rounded-lg border border-border/50 whitespace-pre-wrap">
+              {broadcast.message_text || broadcast.template_name || 'N/A'}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-primary flex items-center gap-1.5">
+              <span>AI Auto-Reply Context / Offer Details:</span>
+            </span>
+            <p className="text-xs text-foreground bg-primary/5 p-2.5 rounded-lg border border-primary/20 whitespace-pre-wrap">
+              {broadcast.ai_context || (broadcast.template_variables as any)?.ai_context ? (
+                broadcast.ai_context || (broadcast.template_variables as any)?.ai_context
+              ) : (
+                <span className="text-muted-foreground italic">
+                  No specific offer/discount details configured. AI will not guess or invent discounts.
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard

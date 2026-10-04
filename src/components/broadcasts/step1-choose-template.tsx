@@ -28,6 +28,8 @@ interface Step1Props {
   onChannelChange: (channel: 'all' | 'whatsapp' | 'messenger') => void;
   selectedTemplate: MessageTemplate | null;
   onSelect: (template: MessageTemplate) => void;
+  aiContext?: string;
+  onAiContextChange?: (context: string) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -37,6 +39,8 @@ export function Step1ChooseTemplate({
   onChannelChange,
   selectedTemplate,
   onSelect,
+  aiContext = '',
+  onAiContextChange,
   onNext,
   onBack,
 }: Step1Props) {
@@ -246,6 +250,26 @@ export function Step1ChooseTemplate({
                 >
                   + Company
                 </button>
+              </div>
+
+              {/* AI Auto-Reply Context & Offer Details Box */}
+              <div className="pt-2 mt-2 space-y-1.5 rounded-xl border border-primary/20 bg-primary/5 p-3.5">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <label className="text-xs font-semibold text-foreground">
+                    Update / Offer Details for AI Auto-Reply
+                  </label>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  When customers reply asking about this update (e.g. &quot;What is the update?&quot;, &quot;How much discount?&quot;, &quot;Offer details&quot;), what should the AI automation reply? Provide the exact details, discounts, or terms here. If left blank, the AI will NEVER invent or guess discounts!
+                </p>
+                <Textarea
+                  rows={3}
+                  value={aiContext}
+                  onChange={(e) => onAiContextChange?.(e.target.value)}
+                  placeholder="e.g. We are offering 15% discount on all skincare items using code SAVE15 until Friday. Free delivery inside Dhaka."
+                  className="bg-background border-border resize-none text-xs text-foreground focus:ring-primary placeholder:text-muted-foreground"
+                />
               </div>
             </div>
 

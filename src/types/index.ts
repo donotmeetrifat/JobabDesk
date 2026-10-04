@@ -428,6 +428,7 @@ export interface Broadcast {
   template_name: string;
   template_language: string;
   message_text?: string;
+  ai_context?: string | null;
   template_variables?: Record<string, unknown>;
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;

@@ -44,6 +44,7 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+  const [aiContext, setAiContext] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -66,6 +67,7 @@ export default function NewBroadcastPage() {
           template_language: template.language ?? 'en_US',
           message_text: template.body_text,
           header_media_url: headerMediaUrl,
+          ai_context: aiContext.trim(),
           audience: {
             type: audience.type,
             tagIds: audience.tagIds,
@@ -120,7 +122,8 @@ export default function NewBroadcastPage() {
         template_name: template.id === 'custom' ? 'Custom Message' : template.name,
         template_language: template.language ?? 'en_US',
         message_text: template.body_text,
-        template_variables: variables,
+        ai_context: aiContext.trim() || null,
+        template_variables: { ...variables, ai_context: aiContext.trim() || null },
         audience_filter: {
           type: audience.type,
           tagIds: audience.tagIds,
@@ -210,6 +213,8 @@ export default function NewBroadcastPage() {
               onChannelChange={setChannel}
               selectedTemplate={template}
               onSelect={setTemplate}
+              aiContext={aiContext}
+              onAiContextChange={setAiContext}
               onNext={() => setCurrentStep(1)}
               onBack={() => router.push('/broadcasts')}
             />
@@ -239,6 +244,8 @@ export default function NewBroadcastPage() {
               onNameChange={setName}
               template={template}
               audience={audience}
+              aiContext={aiContext}
+              onAiContextChange={setAiContext}
               onSend={handleSend}
               onSaveDraft={handleSaveDraft}
               onBack={() => setCurrentStep(2)}

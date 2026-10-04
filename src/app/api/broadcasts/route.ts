@@ -138,6 +138,7 @@ export async function POST(req: Request) {
       template_language = 'en_US',
       message_text = '',
       header_media_url = '',
+      ai_context = '',
       audience = { type: 'all' },
       variables = {},
     } = body
@@ -194,26 +195,43 @@ export async function POST(req: Request) {
     }
 
     // 2. Insert Broadcast row
-    const { data: broadcast, error: bcInsertErr } = await db
+    const insertPayload: Record<string, any> = {
+      user_id: userId,
+      account_id: accountId,
+      name: name.trim(),
+      channel,
+      template_name: template_name || 'Custom Message',
+      template_language,
+      message_text: message_text || template_name,
+      template_variables: { ...variables, header_media_url, ai_context: ai_context?.trim() || null },
+      audience_filter: audience,
+      status: 'sending',
+      total_recipients: eligibleContacts.length,
+      sent_count: 0,
+      delivered_count: 0,
+      failed_count: 0,
+    }
+
+    if (ai_context && ai_context.trim()) {
+      insertPayload.ai_context = ai_context.trim()
+    }
+
+    let { data: broadcast, error: bcInsertErr } = await db
       .from('broadcasts')
-      .insert({
-        user_id: userId,
-        account_id: accountId,
-        name: name.trim(),
-        channel,
-        template_name: template_name || 'Custom Message',
-        template_language,
-        message_text: message_text || template_name,
-        template_variables: { ...variables, header_media_url },
-        audience_filter: audience,
-        status: 'sending',
-        total_recipients: eligibleContacts.length,
-        sent_count: 0,
-        delivered_count: 0,
-        failed_count: 0,
-      })
+      .insert(insertPayload)
       .select()
       .single()
+
+    if (bcInsertErr && bcInsertErr.message?.includes('ai_context')) {
+      delete insertPayload.ai_context
+      const retry = await db
+        .from('broadcasts')
+        .insert(insertPayload)
+        .select()
+        .single()
+      broadcast = retry.data
+      bcInsertErr = retry.error
+    }
 
     if (bcInsertErr || !broadcast) {
       return NextResponse.json(
