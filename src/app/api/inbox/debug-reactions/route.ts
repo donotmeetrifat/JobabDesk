@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { backfillContactInfoFromChat } from '@/lib/contacts/auto-extract'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +66,13 @@ export async function GET() {
     } catch (e: any) {
       contactInfo = { error: e.message }
     }
+
+    // Auto-backfill real phone numbers & addresses from customer messages into their contacts
+    const backfillStats = await backfillContactInfoFromChat(admin).catch((e: any) => ({
+      error: e.message,
+      processed: 0,
+      updated: 0,
+    }))
 
     // Clean up dummy @facebook.com emails from contacts table
     const { data: cleanedContacts } = await admin
@@ -154,6 +162,7 @@ export async function GET() {
       recentMessages: messages || [],
       convInfo,
       contactInfo,
+      backfillStats,
       errors: { rErr, logErr, mErr },
     })
   } catch (err: any) {

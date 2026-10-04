@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
 import { sendMetaWhatsAppMessage } from '@/lib/whatsapp/meta-cloud'
 import { sendWhapiMessage } from '@/lib/whatsapp/whapi-gateway'
+import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
@@ -209,6 +210,14 @@ export async function POST(req: Request) {
           direction: 'inbound',
           content: messageText,
         })
+
+        // Auto extract and update customer's own contact record with any address/number provided
+        await autoUpdateContactFromChatMessage({
+          contactId,
+          accountId,
+          messageText,
+          supabase: db,
+        }).catch((e) => console.warn('[WhatsApp] Auto-update contact error:', e))
       }
     } catch {
       // quiet catch if table schema slightly differs

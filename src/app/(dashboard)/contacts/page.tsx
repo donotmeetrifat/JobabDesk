@@ -55,6 +55,7 @@ import {
   ExternalLink,
   Eye,
   Copy,
+  MapPin,
 } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ContactForm } from '@/components/contacts/contact-form';
@@ -671,11 +672,16 @@ export default function ContactsPage() {
                               {displayName || <span className="text-muted-foreground italic font-normal">{t('unnamed')}</span>}
                             </span>
                           </div>
-                          {isPsid && (
+                          {contact.address ? (
+                            <div className="flex items-center gap-1 text-[11px] text-muted-foreground max-w-[220px] truncate" title={contact.address}>
+                              <MapPin className="size-2.5 shrink-0 text-primary" />
+                              <span className="truncate">{contact.address}</span>
+                            </div>
+                          ) : isPsid ? (
                             <span className="text-[11px] font-mono text-muted-foreground/75 block truncate">
                               PSID: •••{contact.phone.slice(-4)}
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     </TableCell>

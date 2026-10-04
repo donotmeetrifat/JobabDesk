@@ -42,6 +42,7 @@ import {
   MessageSquare,
   MessageCircle,
   ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
@@ -90,6 +91,7 @@ export function ContactDetailView({
   // Details tab
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
@@ -128,7 +130,9 @@ export function ContactDetailView({
     if (data) {
       setContact(data);
       setEditName(data.name ?? '');
-      setEditPhone(data.phone);
+      // If phone is a Facebook PSID, keep input empty so user enters real phone
+      setEditPhone(isFacebookPsid(data.phone) ? '' : data.phone);
+      setEditAddress(data.address ?? '');
       const rawEmail = data.email ?? '';
       setEditEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
       const rawCompany = data.company ?? '';
@@ -218,35 +222,65 @@ export function ContactDetailView({
   }
 
   async function saveDetails() {
-    if (!contactId || !editPhone.trim()) {
+    if (!contactId) return;
+
+    const currentIsPsid = isFacebookPsid(contact?.phone);
+    const trimmedPhone = editPhone.trim();
+
+    // If not a Facebook PSID contact, phone is required
+    if (!currentIsPsid && !trimmedPhone) {
       toast.error(t('toastPhoneRequired'));
       return;
     }
 
-    // Same rule as the create form: a changed number must start with `+`
-    // and a country code (issue #586). Unchanged numbers — including the
-    // digits-only form the inbound webhook stores — are left alone so a
-    // name/email edit is never blocked by the phone field.
-    const phoneChanged = editPhone.trim() !== (contact?.phone ?? '');
-    if (phoneChanged && !parseInternationalPhone(editPhone)) {
-      toast.error(t('toastPhoneNeedsCountryCode'));
-      return;
+    let finalPhone = trimmedPhone;
+    if (trimmedPhone) {
+      // Auto-prefix Bangladesh mobile numbers (e.g. 01712345678 -> +8801712345678)
+      if (/^01[3-9]\d{8}$/.test(trimmedPhone)) {
+        finalPhone = `+880${trimmedPhone.slice(1)}`;
+      }
+      const phoneChanged = finalPhone !== (contact?.phone ?? '');
+      if (phoneChanged && !parseInternationalPhone(finalPhone)) {
+        toast.error(t('toastPhoneNeedsCountryCode'));
+        return;
+      }
+    } else if (currentIsPsid && contact?.phone) {
+      // Retain PSID if phone input was left blank for a Messenger user
+      finalPhone = contact.phone;
     }
 
     setSavingDetails(true);
+    const updatePayload: Record<string, any> = {
+      name: editName.trim() || null,
+      phone: finalPhone,
+      email: editEmail.trim() || null,
+      company: editCompany.trim() || null,
+      address: editAddress.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    // If customer had a PSID and now has a real phone number, save the PSID to messenger_id
+    if (currentIsPsid && trimmedPhone && contact?.phone && trimmedPhone !== contact.phone) {
+      updatePayload.messenger_id = contact.phone;
+    }
+
     const { error } = await supabase
       .from('contacts')
-      .update({
-        name: editName.trim() || null,
-        phone: editPhone.trim(),
-        email: editEmail.trim() || null,
-        company: editCompany.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', contactId);
 
     if (error) {
-      toast.error(t('toastUpdateFailed'));
+      // Graceful fallback if address column is not cached yet in PostgREST schema
+      if (error.message?.includes('address')) {
+        const fallback = { ...updatePayload };
+        delete fallback.address;
+        await supabase.from('contacts').update(fallback).eq('id', contactId);
+        toast.success(t('toastUpdated'));
+        fetchContact();
+        onUpdated();
+      } else {
+        toast.error(t('toastUpdateFailed'));
+      }
     } else {
       toast.success(t('toastUpdated'));
       fetchContact();
@@ -490,6 +524,12 @@ export function ContactDetailView({
                         {cleanMail}
                       </span>
                     )}
+                    {contact.address && (
+                      <span className="flex items-center gap-1 max-w-[220px] truncate text-foreground/80" title={contact.address}>
+                        <MapPin className="size-3 shrink-0 text-primary" />
+                        <span className="truncate">{contact.address}</span>
+                      </span>
+                    )}
                     {contact.company && contact.company !== 'Facebook Messenger' && (
                       <span className="flex items-center gap-1">
                         <Building2 className="size-3" />
@@ -597,14 +637,27 @@ export function ContactDetailView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs flex items-center justify-between">
-                      <span>{isPsid ? 'Phone Number' : t('phone')} <span className="text-red-400">*</span></span>
-                      {isPsid && <span className="text-[10px] text-muted-foreground">PSID stored</span>}
+                      <span>{isPsid ? 'Phone Number' : t('phone')} {!isPsid && <span className="text-red-400">*</span>}</span>
+                      {isPsid && <span className="text-[10px] text-muted-foreground">PSID preserved</span>}
                     </Label>
                     <Input
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
-                      placeholder={isPsid ? '+1234567890' : undefined}
+                      placeholder={isPsid ? 'e.g. +880 1712-345678' : undefined}
                       className="bg-muted border-border text-foreground h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs flex items-center gap-1.5">
+                      <MapPin className="size-3 text-muted-foreground" />
+                      Address / Delivery Location
+                    </Label>
+                    <Textarea
+                      value={editAddress}
+                      onChange={(e) => setEditAddress(e.target.value)}
+                      placeholder="e.g. House 12, Road 5, Dhanmondi, Dhaka"
+                      className="bg-muted border-border text-foreground min-h-[58px] text-sm resize-none"
+                      rows={2}
                     />
                   </div>
                   <div className="space-y-1.5">

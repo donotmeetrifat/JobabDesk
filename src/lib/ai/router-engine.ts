@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
+import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -208,6 +209,16 @@ export async function handleIncomingCustomerMessage({
     } catch (_cErr) {
       // safe fallback
     }
+  }
+
+  // Auto extract contact info (phone/address/email) from customer's chat message into their own contact
+  if (contactId && messageText) {
+    autoUpdateContactFromChatMessage({
+      contactId,
+      accountId: account?.id || accountId,
+      messageText,
+      supabase: client,
+    }).catch((e) => console.warn('[AI Router Engine] Failed to auto-update contact info:', e))
   }
 
   // Jittered Human Typing Simulation (800ms - 1500ms delay) to mimic natural human typing & avoid bot ban flags

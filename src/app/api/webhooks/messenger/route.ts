@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
+import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -682,7 +683,17 @@ export async function POST(req: Request) {
       })
     }
 
-    // 4. Process AI auto-reply if not an echo message
+    // 4. Auto-extract customer phone / address / info from inbound chat
+    if (!isEcho && contactId && displayText) {
+      autoUpdateContactFromChatMessage({
+        contactId,
+        accountId,
+        messageText: displayText,
+        supabase: db,
+      }).catch((e) => console.error('[Messenger Webhook] Auto-extract failed:', e))
+    }
+
+    // 5. Process AI auto-reply if not an echo message
     if (!isEcho) {
       const effectiveMessageText =
         messageText ||

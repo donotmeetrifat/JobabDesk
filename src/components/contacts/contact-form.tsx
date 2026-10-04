@@ -25,8 +25,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, MapPin } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { isFacebookPsid } from '@/lib/contacts/auto-extract';
 
 interface ContactFormProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function ContactForm({
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
@@ -74,7 +76,10 @@ export function ContactForm({
   useEffect(() => {
     if (open) {
       setName(contact?.name ?? '');
-      setPhone(contact?.phone ?? '');
+      // If phone is a Facebook PSID, keep input empty so user enters real phone
+      const isPsid = isFacebookPsid(contact?.phone);
+      setPhone(isPsid ? '' : (contact?.phone ?? ''));
+      setAddress(contact?.address ?? '');
       const rawEmail = contact?.email ?? '';
       setEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
       const rawCompany = contact?.company ?? '';
@@ -128,21 +133,27 @@ export function ContactForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!phone.trim()) {
+    const currentIsPsid = isEdit && isFacebookPsid(contact?.phone);
+    const trimmedPhone = phone.trim();
+
+    if (!currentIsPsid && !trimmedPhone) {
       toast.error(t('phoneRequired'));
       return;
     }
 
-    // A number typed here must carry its country code (leading `+`):
-    // "4155551212" reads as a US number to the person typing it but is
-    // delivered to +41 (Switzerland) by Meta (issue #586). Only checked
-    // when the number actually changed — contacts created by the inbound
-    // webhook store Meta's digits-only form, and editing their name must
-    // not be blocked by a phone the user never touched.
-    const phoneChanged = !isEdit || phone.trim() !== (contact?.phone ?? '');
-    if (phoneChanged && !parseInternationalPhone(phone)) {
-      toast.error(t('phoneNeedsCountryCode'));
-      return;
+    let finalPhone = trimmedPhone;
+    if (trimmedPhone) {
+      // Auto-prefix Bangladesh numbers if entered as 01... (11 digits)
+      if (/^01[3-9]\d{8}$/.test(trimmedPhone)) {
+        finalPhone = `+880${trimmedPhone.slice(1)}`;
+      }
+      const phoneChanged = !isEdit || finalPhone !== (contact?.phone ?? '');
+      if (phoneChanged && !parseInternationalPhone(finalPhone)) {
+        toast.error(t('phoneNeedsCountryCode'));
+        return;
+      }
+    } else if (currentIsPsid && contact?.phone) {
+      finalPhone = contact.phone;
     }
 
     // Hard-block an exact duplicate on create (the DB unique index is
@@ -165,32 +176,64 @@ export function ContactForm({
       let contactId = contact?.id;
 
       if (isEdit && contactId) {
+        const updatePayload: Record<string, any> = {
+          name: name.trim() || null,
+          phone: finalPhone,
+          email: email.trim() || null,
+          company: company.trim() || null,
+          address: address.trim() || null,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (currentIsPsid && trimmedPhone && contact?.phone && trimmedPhone !== contact.phone) {
+          updatePayload.messenger_id = contact.phone;
+        }
+
         const { error } = await supabase
           .from('contacts')
-          .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq('id', contactId);
-        if (error) throw error;
+
+        if (error) {
+          if (error.message?.includes('address')) {
+            const fallback = { ...updatePayload };
+            delete fallback.address;
+            const { error: err2 } = await supabase.from('contacts').update(fallback).eq('id', contactId);
+            if (err2) throw err2;
+          } else {
+            throw error;
+          }
+        }
       } else {
+        const insertPayload: Record<string, any> = {
+          user_id: user.id,
+          account_id: accountId,
+          name: name.trim() || null,
+          phone: finalPhone,
+          email: email.trim() || null,
+          company: company.trim() || null,
+          address: address.trim() || null,
+        };
+
         const { data, error } = await supabase
           .from('contacts')
-          .insert({
-            user_id: user.id,
-            account_id: accountId,
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-          })
+          .insert(insertPayload)
           .select('id')
           .single();
-        if (error) throw error;
-        contactId = data.id;
+
+        if (error) {
+          if (error.message?.includes('address')) {
+            const fallback = { ...insertPayload };
+            delete fallback.address;
+            const { data: d2, error: err2 } = await supabase.from('contacts').insert(fallback).select('id').single();
+            if (err2) throw err2;
+            contactId = d2.id;
+          } else {
+            throw error;
+          }
+        } else {
+          contactId = data.id;
+        }
       }
 
       // Sync tags
@@ -309,6 +352,20 @@ export function ContactForm({
                 {t('phoneHint')}
               </p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-address" className="text-muted-foreground flex items-center gap-1.5">
+              <MapPin className="size-3.5 text-muted-foreground" />
+              Address / Delivery Location
+            </Label>
+            <Input
+              id="cf-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. House 12, Road 5, Dhanmondi, Dhaka"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
           </div>
 
           <div className="space-y-2">
