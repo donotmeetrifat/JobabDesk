@@ -180,10 +180,14 @@ function InboxPageInner() {
         }
         return [fetched, ...prev];
       });
+      if (deepLinkConvId && fetched.id === deepLinkConvId) {
+        setActiveConversation(fetched);
+        setActiveContact(fetched.contact ?? null);
+      }
     } finally {
       hydratingConvIdsRef.current.delete(convId);
     }
-  }, []);
+  }, [deepLinkConvId]);
 
   // Check WhatsApp & Facebook Messenger connection status on mount
   useEffect(() => {
@@ -718,6 +722,9 @@ function InboxPageInner() {
               ),
             );
           }
+        } else {
+          // If the deep-linked conversation is not on the first page, fetch it directly
+          hydrateConversation(deepLinkConvId);
         }
       } else if (
         !deepLinkConvId &&
@@ -868,6 +875,32 @@ function InboxPageInner() {
           prev
             ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
             : prev
+        );
+      }
+    },
+    [activeConversation]
+  );
+
+  const handleContactUpdated = useCallback(
+    (updated: Contact) => {
+      setActiveContact(updated);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.contact_id === updated.id || (activeConversation && c.id === activeConversation.id)
+            ? { ...c, contact: updated }
+            : c
+        )
+      );
+    },
+    [activeConversation]
+  );
+
+  const handleConversationUpdatedFromSidebar = useCallback(
+    (updates: Partial<Conversation>) => {
+      if (activeConversation) {
+        setActiveConversation((prev) => (prev ? { ...prev, ...updates } : prev));
+        setConversations((prev) =>
+          prev.map((c) => (c.id === activeConversation.id ? { ...c, ...updates } : c))
         );
       }
     },
@@ -1026,24 +1059,8 @@ function InboxPageInner() {
               contact={activeContact}
               conversation={activeConversation}
               pageId={messengerPageId}
-              onContactUpdated={(updated) => {
-                setActiveContact(updated);
-                setConversations((prev) =>
-                  prev.map((c) =>
-                    c.contact_id === updated.id || (activeConversation && c.id === activeConversation.id)
-                      ? { ...c, contact: updated }
-                      : c
-                  )
-                );
-              }}
-              onConversationUpdated={(updates) => {
-                if (activeConversation) {
-                  setActiveConversation((prev) => (prev ? { ...prev, ...updates } : prev));
-                  setConversations((prev) =>
-                    prev.map((c) => (c.id === activeConversation.id ? { ...c, ...updates } : c))
-                  );
-                }
-              }}
+              onContactUpdated={handleContactUpdated}
+              onConversationUpdated={handleConversationUpdatedFromSidebar}
             />
           </div>
         )}

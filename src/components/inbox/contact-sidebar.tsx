@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
-import { extractCustomerInfoFromMessage } from "@/lib/contacts/auto-extract";
+import { extractCustomerInfoFromMessage } from "@/lib/contacts/extract-info";
 import { toast } from "sonner";
 
 interface ContactSidebarProps {
@@ -38,17 +38,21 @@ export function ContactSidebar({
 }: ContactSidebarProps) {
   const tThread = useTranslations("Inbox.messageThread");
 
-  const effectiveContact: Contact | null = contact || (conversation ? {
-    id: conversation.contact_id || conversation.id,
-    user_id: conversation.user_id || "",
-    account_id: conversation.account_id || "",
-    phone: "",
-    name: "Messenger User",
-    created_at: conversation.created_at,
-    updated_at: conversation.updated_at,
-    company: "Facebook Messenger",
-    ai_auto_reply_muted: conversation.ai_autoreply_disabled,
-  } : null);
+  const effectiveContact: Contact | null = useMemo(() => {
+    if (contact) return contact;
+    if (!conversation) return null;
+    return {
+      id: conversation.contact_id || conversation.id,
+      user_id: conversation.user_id || "",
+      account_id: conversation.account_id || "",
+      phone: "",
+      name: "Messenger User",
+      created_at: conversation.created_at,
+      updated_at: conversation.updated_at,
+      company: "Facebook Messenger",
+      ai_auto_reply_muted: conversation.ai_autoreply_disabled,
+    };
+  }, [contact, conversation]);
 
   const { accountId } = useAuth();
   const [phoneCopied, setPhoneCopied] = useState(false);
@@ -57,6 +61,20 @@ export function ContactSidebar({
   const [aiMuted, setAiMuted] = useState(
     Boolean(contact?.ai_auto_reply_muted ?? conversation?.ai_autoreply_disabled ?? false)
   );
+
+  // Store latest callbacks in refs so effects don't loop on parent re-renders
+  const onContactUpdatedRef = useRef(onContactUpdated);
+  useEffect(() => {
+    onContactUpdatedRef.current = onContactUpdated;
+  });
+
+  const onConversationUpdatedRef = useRef(onConversationUpdated);
+  useEffect(() => {
+    onConversationUpdatedRef.current = onConversationUpdated;
+  });
+
+  // Track conversations that had auto-extraction run to guarantee strictly 1 run per conversation
+  const scannedConvsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setAiMuted(
@@ -80,7 +98,7 @@ export function ContactSidebar({
         },
         (payload) => {
           if (payload.new) {
-            onContactUpdated?.(payload.new as Contact);
+            onContactUpdatedRef.current?.(payload.new as Contact);
           }
         }
       )
@@ -89,12 +107,15 @@ export function ContactSidebar({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [effectiveContact?.id, onContactUpdated]);
+  }, [effectiveContact?.id]);
 
-  // If address or phone is missing, check recent messages and auto-populate
+  // If address or phone is missing, check recent messages and auto-populate (run once per conversation)
   useEffect(() => {
     if (!effectiveContact?.id || !conversation?.id || !accountId) return;
+    if (scannedConvsRef.current.has(conversation.id)) return;
     if (effectiveContact.address && effectiveContact.phone?.startsWith("+")) return;
+
+    scannedConvsRef.current.add(conversation.id);
 
     const supabase = createClient();
     supabase
@@ -110,7 +131,9 @@ export function ContactSidebar({
           if (m.content_text) {
             const info = extractCustomerInfoFromMessage(m.content_text);
             const needsAddress = !effectiveContact.address && Boolean(info.address);
-            const needsPhone = (!effectiveContact.phone || !effectiveContact.phone.startsWith("+")) && Boolean(info.phone);
+            const needsPhone =
+              (!effectiveContact.phone || !effectiveContact.phone.startsWith("+")) &&
+              Boolean(info.phone);
 
             if (needsAddress || needsPhone) {
               try {
@@ -124,7 +147,9 @@ export function ContactSidebar({
                 });
                 if (res.ok) {
                   const json = await res.json();
-                  if (json.contact) onContactUpdated?.(json.contact);
+                  if (json.contact) {
+                    onContactUpdatedRef.current?.(json.contact);
+                  }
                 }
               } catch {}
               break;
@@ -132,7 +157,7 @@ export function ContactSidebar({
           }
         }
       });
-  }, [effectiveContact?.id, effectiveContact?.address, effectiveContact?.phone, conversation?.id, accountId, onContactUpdated]);
+  }, [conversation?.id, effectiveContact?.id, effectiveContact?.address, effectiveContact?.phone, accountId]);
 
   const handleToggleAiMute = useCallback(async () => {
     const targetId = contact?.id || conversation?.contact_id || conversation?.id;
@@ -159,10 +184,10 @@ export function ContactSidebar({
 
       const data = await res.json();
       if (data?.contact) {
-        onContactUpdated?.(data.contact);
+        onContactUpdatedRef.current?.(data.contact);
       }
       if (conversation?.id) {
-        onConversationUpdated?.({ ai_autoreply_disabled: next });
+        onConversationUpdatedRef.current?.({ ai_autoreply_disabled: next });
       }
 
       toast.success(next ? "AI auto-reply muted for this customer" : "AI auto-reply resumed");
@@ -172,7 +197,7 @@ export function ContactSidebar({
     } finally {
       setTogglingAiMute(false);
     }
-  }, [aiMuted, contact?.id, conversation?.id, conversation?.contact_id, onContactUpdated, onConversationUpdated]);
+  }, [aiMuted, contact?.id, conversation?.id, conversation?.contact_id]);
 
   const handleCopy = (text: string, type: "phone" | "address") => {
     if (!text) return;
@@ -196,40 +221,23 @@ export function ContactSidebar({
     );
   }
 
-  const isMessenger =
+  const isMessenger = Boolean(
     effectiveContact.company === "Facebook Messenger" ||
     effectiveContact.channel === "messenger" ||
-    Boolean(effectiveContact.messenger_id) ||
-    (effectiveContact.phone && !effectiveContact.phone.startsWith("+") && !isNaN(Number(effectiveContact.phone)));
+    effectiveContact.messenger_id ||
+    (effectiveContact.phone && !effectiveContact.phone.startsWith("+") && !isNaN(Number(effectiveContact.phone)))
+  );
 
-  // Resolve real Facebook PSID (Page-Scoped ID) for deep-linking
-  const rawFbId =
+  // Resolve real Facebook PSID (Page-Scoped ID) synchronously for deep-linking
+  const targetFbId =
     effectiveContact.messenger_id ||
     effectiveContact.wa_user_id ||
-    (effectiveContact.phone && !effectiveContact.phone.startsWith("+") && !isNaN(Number(effectiveContact.phone)) && effectiveContact.phone.length >= 10
+    (effectiveContact.phone &&
+      !effectiveContact.phone.startsWith("+") &&
+      !isNaN(Number(effectiveContact.phone)) &&
+      effectiveContact.phone.length >= 10
       ? effectiveContact.phone
       : null);
-
-  const [resolvedFbId, setResolvedFbId] = useState<string | null>(rawFbId);
-
-  useEffect(() => {
-    if (rawFbId) {
-      setResolvedFbId(rawFbId);
-    } else if (isMessenger && effectiveContact?.id) {
-      const supabase = createClient();
-      supabase
-        .from("contacts")
-        .select("messenger_id, wa_user_id")
-        .eq("id", effectiveContact.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data?.messenger_id) setResolvedFbId(data.messenger_id);
-          else if (data?.wa_user_id) setResolvedFbId(data.wa_user_id);
-        });
-    }
-  }, [rawFbId, isMessenger, effectiveContact?.id]);
-
-  const targetFbId = resolvedFbId || rawFbId;
 
   // Specific thread URL for Meta Business Suite
   const metaInboxUrl = targetFbId
