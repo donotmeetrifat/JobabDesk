@@ -777,11 +777,23 @@ ${conversationHistoryText ? conversationHistoryText : '(Start of new conversatio
 Current Customer Message:
 "${messageText}"
 
-=== ORDER CAPTURE INSTRUCTION ===
-If the customer has agreed to order, confirmed an order, or provided their delivery address and phone number for products discussed:
-Warmly thank them, note their delivery details and order summary with prices, and state payment options (e.g. bKash or Cash on Delivery).
-AND you MUST also extract the structured order information into an "order" object in the JSON output!
+=== ORDER CAPTURE & CHECKOUT INSTRUCTIONS ===
+1. PAYMENT METHOD:
+   - If the customer wants to order and gives an address/number, check if they specified their payment method (Cash on Delivery / bKash / Nagad / Rocket).
+   - If they have NOT specified how they want to pay, politely ask whether they prefer Cash on Delivery or digital payment (bKash/Nagad/Rocket).
+   - If they chose bKash/Nagad/Rocket, acknowledge it and state that payment details can be completed, or send our payment number if provided.
 
+2. ORDER STATUS IS "UNDER REVIEW" (PENDING APPROVAL):
+   - When taking the order, inform the customer that their order has been placed and is currently UNDER REVIEW / AWAITING VERIFICATION (পর্যালোচনার অধীনে) by our team.
+   - Example (Bengali): "ধন্যবাদ! আপনার অর্ডারটি গ্রহণ করা হয়েছে এবং এটি পর্যালোচনার অধীনে রয়েছে। আমাদের টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করবে।"
+   - Example (English): "Thank you! Your order has been placed and is currently under review by our store team. We will verify and confirm it shortly."
+   - Do NOT say "Order has been confirmed and dispatched" — it is pending manual approval by the shop owner in JobabDesk!
+
+3. ACCURATE PRODUCT PRICING (ZERO TOLERANCE FOR PHONE NUMBER PRICES):
+   - Only use actual catalog product prices (e.g. ৳1000, ৳50).
+   - NEVER, under any circumstance, use a customer's phone number or bKash number (such as 01326596251) as a product price, unit price, or total!
+
+4. STRUCTURED ORDER OUTPUT:
 Return ONLY a valid JSON object:
 {
   "intent": "product_inquiry" | "order_status" | "general_faq" | "human_escalation",
@@ -792,6 +804,7 @@ Return ONLY a valid JSON object:
     "customer_name": "string or null",
     "customer_phone": "string or null",
     "customer_address": "string or null",
+    "payment_method": "cod" | "bkash" | "nagad" | "rocket" | "bank_transfer",
     "items": [
       {
         "product_name": "string",

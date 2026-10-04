@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import type { Order, OrderStatus } from '@/types/orders'
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 interface OrderDetailDialogProps {
   open: boolean
@@ -73,6 +73,25 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
     }
   }
 
+  const handleUpdatePayment = async (updates: { payment_status?: PaymentStatus; payment_method?: PaymentMethod }) => {
+    setUpdating(true)
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update payment information')
+      toast.success('Payment updated successfully')
+      onStatusUpdated()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Payment update failed')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   const currentStepIndex = STEPPER_STAGES.findIndex((s) => s.id === order.status)
   const isCancelled = order.status === 'cancelled'
   const isNew = order.status === 'new'
@@ -94,9 +113,36 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
               </span>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-            <X className="size-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {order.conversation_id ? (
+              <a
+                href={`/inbox?c=${order.conversation_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-semibold transition-colors"
+                title="Open the real chat conversation with customer"
+              >
+                <MessageSquare className="size-3.5" />
+                <span>View Chat</span>
+                <ExternalLink className="size-3" />
+              </a>
+            ) : customerId ? (
+              <a
+                href={`/inbox?contact=${customerId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-semibold transition-colors"
+                title="Open customer conversation"
+              >
+                <MessageSquare className="size-3.5" />
+                <span>View Chat</span>
+                <ExternalLink className="size-3" />
+              </a>
+            ) : null}
+            <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -285,17 +331,40 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
 
             {/* Payment Summary Card */}
             <div className="rounded-xl border bg-card p-4 space-y-3">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <CreditCard className="size-4 text-primary" /> Payment Summary
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <CreditCard className="size-4 text-primary" /> Payment Summary
+                </h3>
+                <span className="text-[10px] text-muted-foreground font-mono">Editable</span>
+              </div>
               <div className="space-y-2 text-xs">
-                <div className="flex justify-between border-b pb-1.5">
+                <div className="flex items-center justify-between border-b pb-2">
                   <span className="text-muted-foreground">Payment Method:</span>
-                  <span className="font-mono uppercase font-semibold text-foreground">{order.payment_method}</span>
+                  <select
+                    value={order.payment_method}
+                    disabled={updating}
+                    onChange={(e) => handleUpdatePayment({ payment_method: e.target.value as PaymentMethod })}
+                    className="rounded-md border bg-background px-2.5 py-1 text-xs font-semibold uppercase text-foreground outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  >
+                    <option value="cod">Cash on Delivery (COD)</option>
+                    <option value="bkash">bKash</option>
+                    <option value="nagad">Nagad</option>
+                    <option value="rocket">Rocket</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                  </select>
                 </div>
-                <div className="flex justify-between border-b pb-1.5">
+                <div className="flex items-center justify-between border-b pb-2">
                   <span className="text-muted-foreground">Payment Status:</span>
-                  <span className="capitalize font-semibold text-foreground">{order.payment_status}</span>
+                  <select
+                    value={order.payment_status}
+                    disabled={updating}
+                    onChange={(e) => handleUpdatePayment({ payment_status: e.target.value as PaymentStatus })}
+                    className="rounded-md border bg-background px-2.5 py-1 text-xs font-bold capitalize text-foreground outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                  >
+                    <option value="unpaid">Unpaid</option>
+                    <option value="partial">Partial</option>
+                    <option value="paid">Paid</option>
+                  </select>
                 </div>
                 {order.payment_reference && (
                   <div className="flex justify-between border-b pb-1.5">

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { sendOrderStatusNotification } from '@/lib/orders/order-notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,18 @@ export async function POST(
 
     if (error || !updatedOrder) {
       return NextResponse.json({ error: error?.message ?? 'Order not found' }, { status: 404 })
+    }
+
+    // Automatically notify customer via chat when order is confirmed or cancelled
+    if (status === 'confirmed' || status === 'cancelled') {
+      sendOrderStatusNotification({
+        order: updatedOrder,
+        newStatus: status,
+        supabase,
+        accountId,
+      }).catch((notifyErr) => {
+        console.warn('[api/orders/[id]/status] Notification warning:', notifyErr)
+      })
     }
 
     return NextResponse.json({ order: updatedOrder })

@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink } from 'lucide-react'
+import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import type { Order, OrderStatus, PaymentStatus } from '@/types/orders'
 
@@ -15,6 +15,7 @@ interface OrderTableProps {
   onDelete: (id: string) => void
   onApprove?: (order: Order) => void
   onCancel?: (order: Order) => void
+  onUpdatePaymentStatus?: (order: Order, paymentStatus: PaymentStatus) => void
 }
 
 const STATUS_BADGES: Record<OrderStatus, { label: string; style: string }> = {
@@ -70,6 +71,7 @@ export function OrderTable({
   onDelete,
   onApprove,
   onCancel,
+  onUpdatePaymentStatus,
 }: OrderTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id))
 
@@ -185,24 +187,29 @@ export function OrderTable({
                   )}
                 </td>
 
-                {/* Ordered Products Summary */}
-                <td className="px-3 py-3 max-w-[220px]">
+                {/* Ordered Products */}
+                <td className="px-3 py-3 min-w-[200px] max-w-[280px]">
                   {items.length > 0 ? (
-                    <div className="space-y-0.5">
-                      {items.slice(0, 2).map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between gap-1 text-[11px] truncate">
-                          <span className="font-medium text-foreground truncate">{item.product_name}</span>
-                          <span className="text-muted-foreground shrink-0 font-mono">x{item.quantity}</span>
+                    <div className="flex flex-col gap-1">
+                      {items.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-1.5 px-2 py-0.5 rounded bg-muted/60 dark:bg-muted/40 border border-border/40 text-[11px]"
+                        >
+                          <span className="font-medium text-foreground truncate max-w-[160px]" title={item.product_name}>
+                            {item.product_name}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0 font-mono text-[10px] text-muted-foreground">
+                            <span className="text-foreground font-semibold">×{item.quantity}</span>
+                            {item.unit_price > 0 && (
+                              <span>৳{item.unit_price.toLocaleString()}</span>
+                            )}
+                          </div>
                         </div>
                       ))}
-                      {items.length > 2 && (
-                        <span className="text-[10px] text-primary font-medium">
-                          +{items.length - 2} more items
-                        </span>
-                      )}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground italic">1 item</span>
+                    <span className="text-muted-foreground italic text-[11px]">No items</span>
                   )}
                 </td>
 
@@ -213,11 +220,18 @@ export function OrderTable({
 
                 {/* Payment */}
                 <td className="px-3 py-3 whitespace-nowrap">
-                  <div className="flex flex-col gap-0.5 items-start">
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${paymentInfo.style}`}>
-                      {paymentInfo.label}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground uppercase font-mono">
+                  <div className="flex flex-col gap-1 items-start">
+                    <select
+                      value={order.payment_status}
+                      onChange={(e) => onUpdatePaymentStatus?.(order, e.target.value as PaymentStatus)}
+                      title="Click to change payment status"
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold cursor-pointer outline-none transition-colors ${paymentInfo.style}`}
+                    >
+                      <option value="unpaid">Unpaid</option>
+                      <option value="partial">Partial</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                    <span className="text-[10px] font-mono font-medium text-muted-foreground uppercase px-1">
                       {order.payment_method}
                     </span>
                   </div>
@@ -266,6 +280,29 @@ export function OrderTable({
                         <Ban className="size-3.5" />
                       </button>
                     )}
+
+                    {/* View Chat in Inbox */}
+                    {order.conversation_id ? (
+                      <a
+                        href={`/inbox?c=${order.conversation_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open Conversation in Inbox"
+                        className="rounded-md p-1.5 text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <MessageSquare className="size-3.5" />
+                      </a>
+                    ) : customerId ? (
+                      <a
+                        href={`/inbox?contact=${customerId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open Customer Conversation in Inbox"
+                        className="rounded-md p-1.5 text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <MessageSquare className="size-3.5" />
+                      </a>
+                    ) : null}
 
                     {/* View Details */}
                     <button

@@ -219,15 +219,6 @@ export async function POST(req: Request) {
           messageText,
           supabase: db,
         }).catch((e) => console.warn('[WhatsApp] Auto-update contact error:', e))
-
-        detectAndCreateOrderFromChat({
-          accountId,
-          contactId,
-          customerPhone,
-          channel: 'whatsapp',
-          messageText,
-          supabase: db,
-        }).catch((e) => console.warn('[WhatsApp] Auto-create order error:', e))
       }
     } catch {
       // quiet catch if table schema slightly differs

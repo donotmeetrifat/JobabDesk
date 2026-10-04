@@ -129,43 +129,79 @@ export async function detectAndCreateOrderFromChat({
     return null
   }
 
+  // Ensure store products are loaded from DB if not passed
+  let catalogProducts = storeProducts || []
+  if (catalogProducts.length === 0) {
+    try {
+      const { data: dbProducts } = await db
+        .from('products')
+        .select('id, name, price, sku, category')
+        .eq('account_id', accountId)
+      if (dbProducts && dbProducts.length > 0) {
+        catalogProducts = dbProducts
+      }
+    } catch (_pErr) {
+      // safe fallback
+    }
+  }
+
+  // Helper to validate realistic product prices (reject phone numbers, bKash numbers, etc.)
+  const isPlausiblePrice = (val: any): boolean => {
+    if (val === null || val === undefined) return false
+    const num = Number(val)
+    if (isNaN(num) || num <= 0) return false
+    const str = String(val).replace(/,/g, '').trim()
+    if (str.startsWith('01') || str.startsWith('880') || str.startsWith('+880')) return false
+    if (str.length >= 9) return false
+    if (num > 200000) return false
+    return true
+  }
+
+  const NON_PRODUCT_WORDS = /^(bkash|b-kash|b_kash|বিকাশ|nagad|নগদ|rocket|রকেট|upay|উপায়|cod|cash on delivery|ক্যাশ|ক্যাশ অন ডেলিভারি|delivery|charge|fee|subtotal|total|discount|phone|mobile|number|address|contact|order|taka|tk|bdt|bangladesh|customer order)$/i
+
   // 3. Resolve Items
-  const items: ExtractedOrderItem[] = []
+  let items: ExtractedOrderItem[] = []
 
   if (llmOrderData?.items && llmOrderData.items.length > 0) {
     for (const item of llmOrderData.items) {
-      const pName = item.product_name?.trim() || 'Product'
-      const unitPrice = Math.max(0, Number(item.unit_price) || 0)
+      const pName = item.product_name?.trim() || ''
+      if (!pName || NON_PRODUCT_WORDS.test(pName)) continue
+
+      const rawPrice = Number(item.unit_price) || 0
+      let unitPrice = isPlausiblePrice(rawPrice) ? rawPrice : 0
       const qty = Math.max(1, Number(item.quantity) || 1)
 
-      // Try matching with store products
-      const matched = storeProducts.find(
+      // Try matching with catalog products
+      const matched = catalogProducts.find(
         (sp) => sp.name.toLowerCase() === pName.toLowerCase() ||
                 pName.toLowerCase().includes(sp.name.toLowerCase()) ||
                 sp.name.toLowerCase().includes(pName.toLowerCase())
       )
 
+      if (matched?.price && (unitPrice === 0 || !isPlausiblePrice(unitPrice))) {
+        unitPrice = Number(matched.price)
+      }
+
       items.push({
         product_id: matched?.id || null,
         product_name: matched?.name || pName,
         product_sku: matched?.sku || item.product_sku || null,
-        unit_price: matched?.price && unitPrice === 0 ? Number(matched.price) : unitPrice,
+        unit_price: unitPrice,
         quantity: qty,
-        total: (matched?.price && unitPrice === 0 ? Number(matched.price) : unitPrice) * qty,
+        total: unitPrice * qty,
       })
     }
   }
 
-  // If no items extracted by LLM, extract from conversation history & store products
+  // If no items extracted by LLM, extract from conversation text & catalog products
   if (items.length === 0) {
     const fullText = `${conversationHistoryText}\n${messageText}`
 
-    // Scan store products mentioned in conversation
-    for (const prod of storeProducts) {
+    // 1) Scan catalog products mentioned in conversation
+    for (const prod of catalogProducts) {
       const prodNameEscaped = prod.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(`(?:\\b|\\s|^)${prodNameEscaped}(?:\\b|\\s|$)`, 'i')
       if (regex.test(fullText)) {
-        // Find quantity if specified, default to 1
         const price = Math.max(0, Number(prod.price) || 0)
         items.push({
           product_id: prod.id || null,
@@ -178,36 +214,64 @@ export async function detectAndCreateOrderFromChat({
       }
     }
 
-    // Pattern matching for quoted prices like: "Simple Skincare (৳1,000)" or "Canva Pro (৳50)"
+    // 2) Parse bullet points or quotes like: "- Simple Skincare: ৳1,000" or "**Canva Pro**: ৳50"
+    if (items.length === 0) {
+      const bulletRegex = /(?:^|\n)\s*[-*•]?\s*(?:\*{1,2})?([A-Za-z0-9\s]{2,40}?)(?:\*{1,2})?\s*[:–—\-]\s*[৳Tk\s]*([0-9,]+)/gi
+      let bMatch: RegExpExecArray | null
+      while ((bMatch = bulletRegex.exec(fullText)) !== null) {
+        const pName = bMatch[1].trim()
+        const pPrice = parseInt(bMatch[2].replace(/,/g, ''), 10)
+        if (pName && !NON_PRODUCT_WORDS.test(pName) && isPlausiblePrice(pPrice)) {
+          if (!items.some(i => i.product_name.toLowerCase() === pName.toLowerCase())) {
+            items.push({
+              product_id: null,
+              product_name: pName,
+              product_sku: null,
+              unit_price: pPrice,
+              quantity: 1,
+              total: pPrice,
+            })
+          }
+        }
+      }
+    }
+
+    // 3) Pattern matching for quoted prices: "Product Name (৳1,000)"
     if (items.length === 0) {
       const priceQuoteRegex = /([A-Za-z0-9\s]{2,35})\s*\([৳Tk\s]*([0-9,]+)\)/gi
       let match: RegExpExecArray | null
       while ((match = priceQuoteRegex.exec(fullText)) !== null) {
         const pName = match[1].trim()
         const pPrice = parseInt(match[2].replace(/,/g, ''), 10)
-        if (pName && !isNaN(pPrice) && pPrice > 0 && !items.some(i => i.product_name.toLowerCase() === pName.toLowerCase())) {
-          items.push({
-            product_id: null,
-            product_name: pName,
-            product_sku: null,
-            unit_price: pPrice,
-            quantity: 1,
-            total: pPrice,
-          })
+        if (pName && !NON_PRODUCT_WORDS.test(pName) && isPlausiblePrice(pPrice)) {
+          if (!items.some(i => i.product_name.toLowerCase() === pName.toLowerCase())) {
+            items.push({
+              product_id: null,
+              product_name: pName,
+              product_sku: null,
+              unit_price: pPrice,
+              quantity: 1,
+              total: pPrice,
+            })
+          }
         }
       }
     }
   }
 
-  // If still no items could be identified, fallback to a general order item
+  // Filter out any invalid items
+  items = items.filter(i => !NON_PRODUCT_WORDS.test(i.product_name))
+
+  // Fallback if still no items could be identified
   if (items.length === 0) {
+    const fallbackPrice = isPlausiblePrice(llmOrderData?.total) ? Number(llmOrderData!.total) : 0
     items.push({
       product_id: null,
       product_name: 'Customer Order',
       product_sku: null,
-      unit_price: llmOrderData?.total || 0,
+      unit_price: fallbackPrice,
       quantity: 1,
-      total: llmOrderData?.total || 0,
+      total: fallbackPrice,
     })
   }
 
@@ -217,8 +281,8 @@ export async function detectAndCreateOrderFromChat({
   const deliveryCharge = Math.max(0, Number(llmOrderData?.delivery_charge) || 0)
   let total = Math.max(0, subtotal - discount + deliveryCharge)
 
-  if (llmOrderData?.total && llmOrderData.total > 0 && total === 0) {
-    total = llmOrderData.total
+  if (total === 0 && isPlausiblePrice(llmOrderData?.total)) {
+    total = Number(llmOrderData!.total)
     subtotal = total
     if (items[0]) {
       items[0].unit_price = total
@@ -228,15 +292,27 @@ export async function detectAndCreateOrderFromChat({
 
   // 5. Payment method resolution
   let paymentMethod: PaymentMethod = 'cod'
-  const lowerMsg = `${messageText} ${conversationHistoryText}`.toLowerCase()
-  if (lowerMsg.includes('bkash') || lowerMsg.includes('বিকাশ')) {
-    paymentMethod = 'bkash'
-  } else if (lowerMsg.includes('nagad') || lowerMsg.includes('নগদ')) {
-    paymentMethod = 'nagad'
-  } else if (lowerMsg.includes('rocket') || lowerMsg.includes('রকেট')) {
-    paymentMethod = 'rocket'
-  } else if (lowerMsg.includes('bank transfer')) {
-    paymentMethod = 'bank_transfer'
+
+  // Priority 1: LLM structured order output
+  if (llmOrderData?.payment_method) {
+    const pm = llmOrderData.payment_method.toLowerCase().trim()
+    if (['bkash', 'nagad', 'rocket', 'bank_transfer', 'cod', 'card'].includes(pm)) {
+      paymentMethod = pm as PaymentMethod
+    }
+  }
+
+  // Priority 2: Check ONLY the customer's current message for explicit choice
+  if (paymentMethod === 'cod') {
+    const custMsg = messageText.toLowerCase()
+    if (/\b(?:bkash|b-kash|বিকাশ)\b/.test(custMsg)) {
+      paymentMethod = 'bkash'
+    } else if (/\b(?:nagad|নগদ)\b/.test(custMsg)) {
+      paymentMethod = 'nagad'
+    } else if (/\b(?:rocket|রকেট)\b/.test(custMsg)) {
+      paymentMethod = 'rocket'
+    } else if (/\b(?:bank transfer)\b/.test(custMsg)) {
+      paymentMethod = 'bank_transfer'
+    }
   }
 
   // 6. Deduplication Check: Look for an existing 'new' order created in the last 1 hour

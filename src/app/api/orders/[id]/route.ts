@@ -131,6 +131,12 @@ export async function DELETE(
     const { supabase, accountId } = await requireRole('agent')
     const { id } = await params
 
+    // Explicitly remove order items first
+    await supabase
+      .from('order_items')
+      .delete()
+      .eq('order_id', id)
+
     const { error } = await supabase
       .from('orders')
       .delete()

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { OrderTable } from './order-table'
 import { OrderDialog } from './order-dialog'
 import { OrderDetailDialog } from './order-detail-dialog'
-import type { Order, OrderStats } from '@/types/orders'
+import type { Order, OrderStats, PaymentStatus } from '@/types/orders'
 
 export function OrdersShell() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -197,6 +197,24 @@ export function OrdersShell() {
     fetchOrders()
   }
 
+  const handleUpdatePaymentStatus = async (order: Order, paymentStatus: PaymentStatus) => {
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_status: paymentStatus }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to update payment status')
+      }
+      toast.success(`Payment marked as ${paymentStatus}`)
+      fetchOrders()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update payment status')
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header Row */}
@@ -362,6 +380,7 @@ export function OrdersShell() {
         onDelete={handleDelete}
         onApprove={handleApprove}
         onCancel={handleCancelOrder}
+        onUpdatePaymentStatus={handleUpdatePaymentStatus}
       />
 
       {/* Dialogs */}
