@@ -83,12 +83,24 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, contact_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
+
+    // Per-contact AI mute check:
+    const targetContactId = contactId || conv.contact_id
+    if (targetContactId) {
+      const { data: contact } = await db
+        .from('contacts')
+        .select('ai_auto_reply_muted')
+        .eq('id', targetContactId)
+        .maybeSingle()
+      if (contact?.ai_auto_reply_muted === true) return
+    }
+
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return

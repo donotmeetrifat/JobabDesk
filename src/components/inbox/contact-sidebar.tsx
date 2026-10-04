@@ -24,13 +24,21 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { toast } from "sonner";
 
 interface ContactSidebarProps {
   contact: Contact | null;
   conversation?: Conversation | null;
+  onContactUpdated?: (updatedContact: Contact) => void;
+  onConversationUpdated?: (updates: Partial<Conversation>) => void;
 }
 
-export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  conversation,
+  onContactUpdated,
+  onConversationUpdated,
+}: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -43,6 +51,7 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
     created_at: conversation.created_at,
     updated_at: conversation.updated_at,
     company: "Facebook Messenger",
+    ai_auto_reply_muted: conversation.ai_autoreply_disabled,
   } : null);
 
   const { accountId } = useAuth();
@@ -52,26 +61,58 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
-  const [aiMuted, setAiMuted] = useState(effectiveContact?.ai_auto_reply_muted ?? false);
+  const [togglingAiMute, setTogglingAiMute] = useState(false);
+  const [aiMuted, setAiMuted] = useState(
+    Boolean(contact?.ai_auto_reply_muted ?? conversation?.ai_autoreply_disabled ?? false)
+  );
 
   useEffect(() => {
-    setAiMuted(effectiveContact?.ai_auto_reply_muted ?? false);
-  }, [effectiveContact?.ai_auto_reply_muted]);
+    setAiMuted(
+      Boolean(contact?.ai_auto_reply_muted ?? conversation?.ai_autoreply_disabled ?? false)
+    );
+  }, [contact?.ai_auto_reply_muted, conversation?.ai_autoreply_disabled]);
 
   const handleToggleAiMute = useCallback(async () => {
-    if (!contact) return;
+    const targetId = contact?.id || conversation?.contact_id || conversation?.id;
+    if (!targetId) return;
+
     const next = !aiMuted;
     setAiMuted(next);
+    setTogglingAiMute(true);
+
     try {
-      await fetch(`/api/contacts/${contact.id}/ai-mute`, {
+      const res = await fetch(`/api/contacts/${targetId}/ai-mute`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ai_auto_reply_muted: next }),
+        body: JSON.stringify({
+          ai_auto_reply_muted: next,
+          conversation_id: conversation?.id,
+        }),
       });
-    } catch {
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || "Failed to update AI mute status");
+      }
+
+      const data = await res.json();
+      if (data?.contact) {
+        onContactUpdated?.(data.contact);
+      }
+      onConversationUpdated?.({ ai_autoreply_disabled: next });
+
+      toast.success(
+        next
+          ? "AI auto-reply muted for this customer"
+          : "AI auto-reply enabled for this customer"
+      );
+    } catch (err: any) {
       setAiMuted(!next);
+      toast.error(err?.message || "Failed to update AI mute status");
+    } finally {
+      setTogglingAiMute(false);
     }
-  }, [contact, aiMuted]);
+  }, [contact, conversation, aiMuted, onContactUpdated, onConversationUpdated]);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -275,8 +316,9 @@ export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
               <span className="text-xs font-medium text-foreground">Mute AI for this Customer</span>
               <button
                 type="button"
+                disabled={togglingAiMute}
                 onClick={handleToggleAiMute}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
                   aiMuted ? "bg-amber-600" : "bg-muted-foreground/30"
                 }`}
               >

@@ -163,16 +163,46 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
-  // Check Per-Contact AI Mute Status
-  if (contactId || customerPhone) {
+  // 1. Check Conversation-Level AI Auto-Reply & Human Assignment Status
+  if (conversationId && channel !== 'sandbox') {
+    try {
+      const { data: convData } = await client
+        .from('conversations')
+        .select('id, ai_autoreply_disabled, assigned_agent_id, contact_id')
+        .eq('id', conversationId)
+        .maybeSingle()
+
+      if (convData) {
+        if (convData.ai_autoreply_disabled === true) {
+          console.log(`[AI Router Engine] AI Auto-Reply disabled for conversation ${conversationId}`)
+          return null
+        }
+        if (convData.assigned_agent_id) {
+          console.log(`[AI Router Engine] Conversation ${conversationId} is assigned to human agent (${convData.assigned_agent_id})`)
+          return null
+        }
+        if (!contactId && convData.contact_id) {
+          contactId = convData.contact_id
+        }
+      }
+    } catch (_convErr) {
+      // safe fallback
+    }
+  }
+
+  // 2. Check Per-Contact AI Mute Status
+  if ((contactId || customerPhone) && channel !== 'sandbox') {
     try {
       let query = client.from('contacts').select('id, ai_auto_reply_muted')
-      if (contactId) query = query.eq('id', contactId)
-      else if (customerPhone) query = query.eq('phone', customerPhone)
+      if (contactId) {
+        query = query.eq('id', contactId)
+      } else if (customerPhone) {
+        query = query.or(`phone.eq.${customerPhone},messenger_id.eq.${customerPhone}`)
+      }
 
       const { data: contactData } = await query.maybeSingle()
-      if (contactData?.ai_auto_reply_muted === true && channel !== 'sandbox') {
-        // Customer has AI Auto-Reply Muted - leave for human agent
+      if (contactData?.ai_auto_reply_muted === true) {
+        console.log(`[AI Router Engine] Customer AI is muted for contact ${contactData.id} — skipping auto-reply`)
         return null
       }
     } catch (_cErr) {

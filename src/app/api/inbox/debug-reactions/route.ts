@@ -39,6 +39,24 @@ export async function GET() {
       .order('created_at', { ascending: false })
       .limit(10)
 
+    // 3b. Inspect conversation and contact for mute status
+    const targetConvId = messages?.[0]?.conversation_id || 'f7bdd5b5-e9a1-4ad4-83f9-989a18dde09e'
+    const { data: convInfo } = await admin
+      .from('conversations')
+      .select('id, contact_id, account_id, channel, ai_autoreply_disabled, assigned_agent_id')
+      .eq('id', targetConvId)
+      .maybeSingle()
+
+    let contactInfo: any = null
+    if (convInfo?.contact_id) {
+      const { data: ct, error: ctErr } = await admin
+        .from('contacts')
+        .select('id, account_id, name, phone, channel, ai_auto_reply_muted')
+        .eq('id', convInfo.contact_id)
+        .maybeSingle()
+      contactInfo = { contact: ct, error: ctErr }
+    }
+
     // 4. Check connected Facebook Pages and their Webhook Subscriptions
     const { data: accounts } = await admin
       .from('accounts')
@@ -120,6 +138,8 @@ export async function GET() {
       webhookLogs: webhookLogs || [],
       pageSubscriptions,
       recentMessages: messages || [],
+      convInfo,
+      contactInfo,
       errors: { rErr, logErr, mErr },
     })
   } catch (err: any) {
