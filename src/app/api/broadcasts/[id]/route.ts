@@ -47,6 +47,40 @@ export async function GET(
   }
 }
 
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const db = getAdminClient()
+    const body = await req.json()
+
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    }
+    if (body.ai_context !== undefined) updatePayload.ai_context = body.ai_context
+    if (body.name !== undefined) updatePayload.name = body.name
+    if (body.status !== undefined) updatePayload.status = body.status
+    if (body.template_variables !== undefined) updatePayload.template_variables = body.template_variables
+
+    const { data: updated, error } = await db
+      .from('broadcasts')
+      .update(updatePayload)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, broadcast: updated })
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || 'Internal server error' }, { status: 500 })
+  }
+}
+
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

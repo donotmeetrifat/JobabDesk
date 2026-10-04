@@ -99,6 +99,7 @@ export async function sendOrderStatusNotification({
       nagad: 'Nagad (নগদ)',
       rocket: 'Rocket (রকেট)',
       bank_transfer: 'Bank Transfer (ব্যাংক ট্রান্সফার)',
+      free: 'Free Promotional Campaign (সম্পূর্ণ ফ্রি)',
     }
     const paymentStatusMap: Record<string, string> = {
       unpaid: 'পরিশোধিত নয় / আনপেইড',
@@ -107,8 +108,12 @@ export async function sendOrderStatusNotification({
       refunded: 'রিফান্ড করা হয়েছে',
     }
 
-    const paymentMethodLabel = paymentMethodMap[order.payment_method] || order.payment_method || 'Cash on Delivery'
-    const paymentStatusLabel = paymentStatusMap[order.payment_status] || order.payment_status || 'আনপেইড'
+    const isFree = order.payment_method === 'free' || totalAmount === 0
+    const paymentMethodLabel = isFree
+      ? 'Free Promotional Campaign (সম্পূর্ণ ফ্রি)'
+      : (paymentMethodMap[order.payment_method] || order.payment_method || 'Cash on Delivery')
+    const paymentStatusLabel = isFree ? 'ফ্রি অর্ডার' : (paymentStatusMap[order.payment_status] || order.payment_status || 'আনপেইড')
+    const totalAmountDisplay = isFree ? '৳0 (বিনামূল্যে / Free Offer)' : `৳${totalAmount.toLocaleString()}`
 
     const isDigital = Boolean(order.is_digital) || checkIsDigitalOrder(items)
     const emailDestination = order.customer_email || contact?.email || 'চ্যাটে ডেলিভারি'
@@ -116,7 +121,7 @@ export async function sendOrderStatusNotification({
     let notificationText = ''
     if (newStatus === 'confirmed') {
       if (isDigital) {
-        notificationText = `🎉 আপনার ডিজিটাল অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
+        notificationText = `🎉 আপনার ${isFree ? 'ফ্রি ' : ''}ডিজিটাল অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
 
 প্রিয় ${customerName},
 আপনার অর্ডার #${orderNum} সফলভাবে যাচাই ও নিশ্চিত করা হয়েছে। আমরা দ্রুত আপনার ডিজিটাল অ্যাক্সেস / সাবস্ক্রিপশন প্রস্তুত করে আপনার ইমেইল ও চ্যাটে পাঠিয়ে দিচ্ছি!
@@ -124,13 +129,13 @@ export async function sendOrderStatusNotification({
 📦 পণ্যের বিবরণ:
 ${itemListText}
 
-💰 সর্বমোট মূল্য: ৳${totalAmount.toLocaleString()}
+💰 সর্বমোট মূল্য: ${totalAmountDisplay}
 📧 ডেলিভারি মাধ্যম: ডিজিটাল ডেলিভারি (${emailDestination})
-💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel} (${paymentStatusLabel})
+💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel}
 
 ধন্যবাদ আমাদের সাথে থাকার জন্য! যেকোনো প্রয়োজনে এখানে মেসেজ করতে পারেন।`
       } else {
-        notificationText = `🎉 আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
+        notificationText = `🎉 আপনার ${isFree ? 'ফ্রি ' : ''}অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে!
 
 প্রিয় ${customerName},
 আপনার অর্ডার #${orderNum} সফলভাবে যাচাই ও নিশ্চিত করা হয়েছে। আমরা এখনই পার্সেলটি ডেলিভারির জন্য প্রস্তুত করছি!
@@ -138,9 +143,9 @@ ${itemListText}
 📦 পণ্যের বিবরণ:
 ${itemListText}
 
-💰 সর্বমোট মূল্য: ৳${totalAmount.toLocaleString()}
+💰 সর্বমোট মূল্য: ${totalAmountDisplay}
 📍 ডেলিভারি ঠিকানা: ${order.customer_address || 'উল্লেখ নেই'}
-💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel} (${paymentStatusLabel})
+💳 পেমেন্ট মাধ্যম: ${paymentMethodLabel}
 
 ধন্যবাদ আমাদের সাথে থাকার জন্য! পণ্য ডেলিভারি হওয়া পর্যন্ত যেকোনো প্রয়োজনে এখানে মেসেজ করতে পারেন।`
       }

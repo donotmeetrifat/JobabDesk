@@ -190,8 +190,18 @@ export async function detectAndCreateOrderFromChat({
                 sp.name.toLowerCase().includes(pName.toLowerCase())
       )
 
+      const isFreeItem =
+        llmOrderData?.payment_method === 'free' ||
+        Number(llmOrderData?.total) === 0 ||
+        (rawPrice === 0 && Boolean(llmOrderData?.notes && /\b(?:free|বিনামূল্যে|giveaway|ফ্রি)\b/i.test(llmOrderData.notes))) ||
+        (matched && Number(matched.price) === 0)
+
       if (matched?.price && (unitPrice === 0 || !isPlausiblePrice(unitPrice))) {
-        unitPrice = Number(matched.price)
+        if (isFreeItem) {
+          unitPrice = 0
+        } else {
+          unitPrice = Number(matched.price)
+        }
       }
 
       items.push({
@@ -309,62 +319,84 @@ export async function detectAndCreateOrderFromChat({
   const custMsg = messageText.toLowerCase()
   const combinedText = `${conversationHistoryText}\n${messageText}`.toLowerCase()
 
+  // Detect if this is a Free Promotional Offer / Giveaway / ৳0 Order
+  const isFreeOrder =
+    llmOrderData?.payment_method === 'free' ||
+    (llmOrderData?.total !== undefined && Number(llmOrderData?.total) === 0 && Boolean(llmOrderData?.notes && /\b(?:free|বিনামূল্যে|giveaway|ফ্রি)\b/i.test(llmOrderData.notes))) ||
+    (items.length > 0 && items.every((i) => i.unit_price === 0))
+
+  if (isFreeOrder) {
+    total = 0
+    subtotal = 0
+    items.forEach((i) => {
+      i.unit_price = 0
+      i.total = 0
+    })
+  }
+
   let explicitPaymentMethod: PaymentMethod | null = null
   let paymentReference: string | null = null
   let isPaymentConfirmed = false
 
-  // Check for explicit Transaction ID or payment reference
-  const trxMatch = messageText.match(/\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i)
-  if (trxMatch && trxMatch[1]) {
-    paymentReference = trxMatch[1].trim()
+  if (isFreeOrder) {
+    explicitPaymentMethod = 'free'
     isPaymentConfirmed = true
-  }
-
-  // Check for payment sent phrases
-  const paymentSentRegex = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান|টাকা\s*দিছি)\b/i
-  if (paymentSentRegex.test(custMsg) || paymentReference) {
-    isPaymentConfirmed = true
-  }
-
-  if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(custMsg)) {
-    explicitPaymentMethod = 'bkash'
-  } else if (/\b(?:nagad|নগদ)\b/i.test(custMsg)) {
-    explicitPaymentMethod = 'nagad'
-  } else if (/\b(?:rocket|রকেট)\b/i.test(custMsg)) {
-    explicitPaymentMethod = 'rocket'
-  } else if (/\b(?:bank transfer|bank|ব্যাংক)\b/i.test(custMsg)) {
-    explicitPaymentMethod = 'bank_transfer'
-  } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে|delivery te taka|হাতে পেয়ে)\b/i.test(custMsg)) {
-    if (!isDigital) {
-      explicitPaymentMethod = 'cod'
+    paymentReference = 'FREE_PROMO'
+  } else {
+    // Check for explicit Transaction ID or payment reference
+    const trxMatch = messageText.match(/\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i)
+    if (trxMatch && trxMatch[1]) {
+      paymentReference = trxMatch[1].trim()
       isPaymentConfirmed = true
     }
-  }
 
-  // If physical and not in current message, check if customer already confirmed COD in recent conversation
-  if (!explicitPaymentMethod && !isDigital) {
-    if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি)\b/i.test(combinedText)) {
-      explicitPaymentMethod = 'cod'
+    // Check for payment sent phrases
+    const paymentSentRegex = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান|টাকা\s*দিছি)\b/i
+    if (paymentSentRegex.test(custMsg) || paymentReference) {
       isPaymentConfirmed = true
     }
-  }
 
-  // Check LLM order data payment method
-  if (!explicitPaymentMethod && llmOrderData?.payment_method) {
-    const pm = llmOrderData.payment_method.toLowerCase().trim()
-    if (['bkash', 'nagad', 'rocket', 'bank_transfer'].includes(pm)) {
-      explicitPaymentMethod = pm as PaymentMethod
-    } else if (pm === 'cod' && !isDigital) {
-      if (/\b(?:cod|cash on delivery|ক্যাশ)\b/i.test(combinedText)) {
+    if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(custMsg)) {
+      explicitPaymentMethod = 'bkash'
+    } else if (/\b(?:nagad|নগদ)\b/i.test(custMsg)) {
+      explicitPaymentMethod = 'nagad'
+    } else if (/\b(?:rocket|রকেট)\b/i.test(custMsg)) {
+      explicitPaymentMethod = 'rocket'
+    } else if (/\b(?:bank transfer|bank|ব্যাংক)\b/i.test(custMsg)) {
+      explicitPaymentMethod = 'bank_transfer'
+    } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে|delivery te taka|হাতে পেয়ে)\b/i.test(custMsg)) {
+      if (!isDigital) {
         explicitPaymentMethod = 'cod'
         isPaymentConfirmed = true
+      }
+    }
+
+    // If physical and not in current message, check if customer already confirmed COD in recent conversation
+    if (!explicitPaymentMethod && !isDigital) {
+      if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি)\b/i.test(combinedText)) {
+        explicitPaymentMethod = 'cod'
+        isPaymentConfirmed = true
+      }
+    }
+
+    // Check LLM order data payment method
+    if (!explicitPaymentMethod && llmOrderData?.payment_method) {
+      const pm = llmOrderData.payment_method.toLowerCase().trim()
+      if (['bkash', 'nagad', 'rocket', 'bank_transfer'].includes(pm)) {
+        explicitPaymentMethod = pm as PaymentMethod
+      } else if (pm === 'cod' && !isDigital) {
+        if (/\b(?:cod|cash on delivery|ক্যাশ)\b/i.test(combinedText)) {
+          explicitPaymentMethod = 'cod'
+          isPaymentConfirmed = true
+        }
       }
     }
   }
 
   // 6. Completeness Validation:
-  // - Digital Products: Require Phone, Email, and Confirmed Payment (prepaid). COD is forbidden.
-  // - Physical Products: Require Phone, Physical Address, and Confirmed Payment Method (COD or bKash/Nagad).
+  // - Free Products: Only Require Phone + Email (digital) or Phone + Delivery Address (physical). ZERO payment/TrxID needed.
+  // - Digital Paid Products: Require Phone, Email, and Confirmed Payment (prepaid). COD is forbidden.
+  // - Physical Paid Products: Require Phone, Physical Address, and Confirmed Payment Method (COD or bKash/Nagad).
   const hasPhone = Boolean(phone)
   const hasAddress = Boolean(address && address.length >= 6)
   const hasEmail = Boolean(email && email.includes('@'))
@@ -375,17 +407,17 @@ export async function detectAndCreateOrderFromChat({
   if (isDigital) {
     if (!hasPhone) missingRequirements.push('phone')
     if (!hasEmail) missingRequirements.push('email')
-    if (!explicitPaymentMethod || explicitPaymentMethod === 'cod' || !isPaymentConfirmed) {
+    if (!isFreeOrder && (!explicitPaymentMethod || explicitPaymentMethod === 'cod' || !isPaymentConfirmed)) {
       missingRequirements.push('payment_confirmation')
     }
-    isOrderComplete = hasPhone && hasEmail && isPaymentConfirmed && Boolean(explicitPaymentMethod) && explicitPaymentMethod !== 'cod'
+    isOrderComplete = hasPhone && hasEmail && (isFreeOrder || (isPaymentConfirmed && Boolean(explicitPaymentMethod) && explicitPaymentMethod !== 'cod'))
   } else {
     if (!hasPhone) missingRequirements.push('phone')
     if (!hasAddress) missingRequirements.push('delivery_address')
-    if (!explicitPaymentMethod) {
+    if (!isFreeOrder && !explicitPaymentMethod) {
       missingRequirements.push('payment_method')
     }
-    isOrderComplete = hasPhone && hasAddress && Boolean(explicitPaymentMethod)
+    isOrderComplete = hasPhone && hasAddress && (isFreeOrder || Boolean(explicitPaymentMethod))
   }
 
   // Update contact information in CRM even if order is not fully complete yet
@@ -403,11 +435,12 @@ export async function detectAndCreateOrderFromChat({
 
   // If required information is not complete, DO NOT create an order!
   if (!isOrderComplete) {
-    console.log(`[auto-create-order] Order not completed yet. Digital: ${isDigital}. Missing: ${missingRequirements.join(', ')}`)
+    console.log(`[auto-create-order] Order not completed yet. Digital: ${isDigital}. Free: ${isFreeOrder}. Missing: ${missingRequirements.join(', ')}`)
     return null
   }
 
-  const finalPaymentMethod: PaymentMethod = explicitPaymentMethod || (isDigital ? 'bkash' : 'cod')
+  const finalPaymentMethod: PaymentMethod = isFreeOrder ? 'free' : (explicitPaymentMethod || (isDigital ? 'bkash' : 'cod'))
+  const finalPaymentStatus: PaymentStatus = isFreeOrder ? 'paid' : (isPaymentConfirmed && finalPaymentMethod !== 'cod' ? 'paid' : 'unpaid')
 
   // 7. Deduplication Check: Look for an existing 'new' order created in the last 15 minutes
   try {
@@ -434,11 +467,11 @@ export async function detectAndCreateOrderFromChat({
       const isSameItems = existingItems.length > 0 && items.length > 0 &&
         existingItems.every((ei: any) => items.some(ni => ni.product_name.toLowerCase() === ei.product_name.toLowerCase()))
 
-      if (hasPlaceholder || isSameItems) {
+        if (hasPlaceholder || isSameItems) {
         const updates: Record<string, any> = {
           updated_at: new Date().toISOString(),
           payment_method: finalPaymentMethod,
-          payment_status: isPaymentConfirmed && finalPaymentMethod !== 'cod' ? 'paid' : 'unpaid',
+          payment_status: finalPaymentStatus,
         }
         if (address) updates.customer_address = address
         if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
@@ -468,7 +501,10 @@ export async function detectAndCreateOrderFromChat({
         try {
           await db.from('orders').update(updates).eq('id', existingOrder.id)
         } catch {
-          // If customer_email or is_digital columns not in schema, update without them
+          if (updates.payment_method === 'free') {
+            updates.payment_method = 'bkash'
+            updates.notes = `[Free Promo - ৳0] ${existingOrder.notes || ''}`
+          }
           delete updates.customer_email
           delete updates.is_digital
           await db.from('orders').update(updates).eq('id', existingOrder.id)
@@ -497,7 +533,11 @@ export async function detectAndCreateOrderFromChat({
 
   // 9. Insert New Order with status 'new' (Pending Shop Owner Approval)
   const finalCustomerName = resolvedName || (phone ? `Customer (${phone.slice(-4)})` : 'Messenger Customer')
-  const orderNotes = llmOrderData?.notes || `Automatically captured by AI Assistant via ${channel} (${isDigital ? 'Digital Product' : 'Physical Product'})`
+  const orderNotes = llmOrderData?.notes || (
+    isFreeOrder
+      ? `Promotional free order (৳0) captured by AI Assistant via ${channel} (${isDigital ? 'Digital Product' : 'Physical Product'})`
+      : `Automatically captured by AI Assistant via ${channel} (${isDigital ? 'Digital Product' : 'Physical Product'})`
+  )
 
   const orderPayload: Record<string, any> = {
     account_id: accountId,
@@ -509,7 +549,7 @@ export async function detectAndCreateOrderFromChat({
     is_digital: isDigital,
     status: 'new' as OrderStatus,
     payment_method: finalPaymentMethod,
-    payment_status: isPaymentConfirmed && finalPaymentMethod !== 'cod' ? ('paid' as PaymentStatus) : ('unpaid' as PaymentStatus),
+    payment_status: finalPaymentStatus,
     payment_reference: paymentReference || null,
     subtotal,
     discount,
@@ -542,8 +582,21 @@ export async function detectAndCreateOrderFromChat({
     orderErr = retry.error
   }
 
+  // Fallback 2: If insert failed due to payment_method check constraint (if DB migration 071 is pending)
+  if (orderErr && (orderErr.message?.includes('payment_method') || orderErr.message?.includes('orders_payment_method_check'))) {
+    console.warn('[auto-create-order] Retrying insert with fallback payment_method=bkash:', orderErr.message)
+    orderPayload.payment_method = 'bkash'
+    orderPayload.notes = `[Free Promo - ৳0] ${orderPayload.notes || ''}`
+    const retry = await db
+      .from('orders')
+      .insert(orderPayload)
+      .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, created_at')
+      .single()
+    order = retry.data
+    orderErr = retry.error
+  }
 
-  // Fallback 1: If insert failed because conversation_id column doesn't exist in Supabase schema:
+  // Fallback 3: If insert failed because conversation_id column doesn't exist in Supabase schema:
   if (orderErr && orderPayload.conversation_id) {
     console.warn('[auto-create-order] Retrying insert without conversation_id:', orderErr.message)
     delete orderPayload.conversation_id
@@ -556,7 +609,7 @@ export async function detectAndCreateOrderFromChat({
     orderErr = retry.error
   }
 
-  // Fallback 2: If insert failed because contact_id foreign key constraint failed:
+  // Fallback 4: If insert failed because contact_id foreign key constraint failed:
   if (orderErr && orderPayload.contact_id) {
     console.warn('[auto-create-order] Retrying insert without contact_id:', orderErr.message)
     delete orderPayload.contact_id

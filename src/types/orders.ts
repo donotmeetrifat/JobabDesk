@@ -1,5 +1,5 @@
 export type OrderStatus = 'new' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
-export type PaymentMethod = 'cod' | 'bkash' | 'rocket' | 'nagad' | 'bank_transfer'
+export type PaymentMethod = 'cod' | 'bkash' | 'rocket' | 'nagad' | 'bank_transfer' | 'free'
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
 
 export interface OrderItem {
