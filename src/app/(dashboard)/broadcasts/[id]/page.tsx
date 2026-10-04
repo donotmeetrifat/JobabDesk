@@ -166,8 +166,16 @@ export default function BroadcastDetailPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const supabase = createClient();
+      const res = await fetch(`/api/broadcasts/${broadcastId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBroadcast(data.broadcast);
+        setRecipients(data.recipients ?? []);
+        return;
+      }
 
+      // Fallback to Supabase client
+      const supabase = createClient();
       const { data: bc, error: bcError } = await supabase
         .from('broadcasts')
         .select('*')

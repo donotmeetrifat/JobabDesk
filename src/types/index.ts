@@ -422,9 +422,12 @@ export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'repli
 export interface Broadcast {
   id: string;
   user_id: string;
+  account_id?: string | null;
   name: string;
+  channel?: 'whatsapp' | 'messenger' | 'all';
   template_name: string;
   template_language: string;
+  message_text?: string;
   template_variables?: Record<string, unknown>;
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;
@@ -447,6 +450,7 @@ export interface Broadcast {
 export interface BroadcastRecipient {
   id: string;
   broadcast_id: string;
+  channel?: 'whatsapp' | 'messenger';
   /**
    * Nullable after migration 004 — becomes NULL when the referenced
    * contact is deleted (ON DELETE SET NULL). History preserved; the

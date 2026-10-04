@@ -10,7 +10,6 @@ import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-templa
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
-import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -25,9 +24,9 @@ export default function NewBroadcastPage() {
   const router = useRouter();
   const t = useTranslations('Broadcasts.new');
   const { accountId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
+  const [channel, setChannel] = useState<'all' | 'whatsapp' | 'messenger'>('all');
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
   const [audience, setAudience] = useState<{
     type: 'all' | 'tags' | 'custom_field' | 'csv';
@@ -45,43 +44,58 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   async function handleSend() {
     if (!template) return;
 
     try {
-      const broadcastId = await createAndSendBroadcast({
-        name,
-        template,
-        audience: {
-          type: audience.type,
-          tagIds: audience.tagIds,
-          customField: audience.customField,
-          csvContacts: audience.csvContacts,
-          excludeTagIds: audience.excludeTagIds,
-        },
-        variables,
-        headerMediaUrl,
+      setIsProcessing(true);
+      setProgress(20);
+
+      const campaignName = name.trim() || template.name || 'Omnichannel Broadcast';
+
+      const res = await fetch('/api/broadcasts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: campaignName,
+          channel,
+          template_name: template.id === 'custom' ? '' : template.name,
+          template_language: template.language ?? 'en_US',
+          message_text: template.body_text,
+          header_media_url: headerMediaUrl,
+          audience: {
+            type: audience.type,
+            tagIds: audience.tagIds,
+            customField: audience.customField,
+            csvContacts: audience.csvContacts,
+            excludeTagIds: audience.excludeTagIds,
+          },
+          variables,
+        }),
       });
-      router.push(`/broadcasts/${broadcastId}`);
-    } catch (err) {
-      // Previously swallowed with console.error — the wizard would
-      // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
+
+      setProgress(75);
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch broadcast');
+      }
+
+      setProgress(100);
+      toast.success('Broadcast campaign launched successfully!');
+      router.push(`/broadcasts/${data.broadcastId}`);
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : 'Broadcast dispatch failed';
       console.error('Broadcast failed:', err);
       toast.error(message);
+    } finally {
+      setIsProcessing(false);
     }
   }
 
-  /**
-   * Writes a draft broadcast row — no recipients, no sending. The user
-   * can revisit it via the list page to finish the flow later. We
-   * don't persist the in-progress audience/variable config here
-   * because the current schema doesn't carry it past `audience_filter`
-   * and `template_variables`; those are enough for the user to
-   * recognize the draft but not to exactly round-trip into the wizard.
-   * A full resume-draft UX is a future polish.
-   */
   async function handleSaveDraft() {
     if (!template || !name.trim()) {
       toast.error(t('toastGiveName'));
@@ -96,37 +110,39 @@ export default function NewBroadcastPage() {
       toast.error(t('toastNotSignedIn'));
       return;
     }
-    if (!accountId) {
-      toast.error(t('toastNotLinked'));
-      return;
-    }
 
-    const { error } = await supabase.from('broadcasts').insert({
-      user_id: user.id,
-      account_id: accountId,
-      name: name.trim(),
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
-      template_variables: variables,
-      audience_filter: {
-        type: audience.type,
-        tagIds: audience.tagIds,
-      },
-      status: 'draft',
-      total_recipients: 0,
-      sent_count: 0,
-      delivered_count: 0,
-      read_count: 0,
-      replied_count: 0,
-      failed_count: 0,
-    });
+    try {
+      const { error } = await supabase.from('broadcasts').insert({
+        user_id: user.id,
+        account_id: accountId,
+        name: name.trim(),
+        channel,
+        template_name: template.id === 'custom' ? 'Custom Message' : template.name,
+        template_language: template.language ?? 'en_US',
+        message_text: template.body_text,
+        template_variables: variables,
+        audience_filter: {
+          type: audience.type,
+          tagIds: audience.tagIds,
+        },
+        status: 'draft',
+        total_recipients: 0,
+        sent_count: 0,
+        delivered_count: 0,
+        read_count: 0,
+        replied_count: 0,
+        failed_count: 0,
+      });
 
-    if (error) {
-      toast.error(t('toastFailedDraft', { error: error.message }));
-      return;
+      if (error) {
+        toast.error(t('toastFailedDraft', { error: error.message }));
+        return;
+      }
+      toast.success(t('toastDraftSaved'));
+      router.push('/broadcasts');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save draft');
     }
-    toast.success(t('toastDraftSaved'));
-    router.push('/broadcasts');
   }
 
   return (
@@ -190,6 +206,8 @@ export default function NewBroadcastPage() {
         >
           {currentStep === 0 && (
             <Step1ChooseTemplate
+              channel={channel}
+              onChannelChange={setChannel}
               selectedTemplate={template}
               onSelect={setTemplate}
               onNext={() => setCurrentStep(1)}
