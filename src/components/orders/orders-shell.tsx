@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Banknote } from 'lucide-react'
+import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Banknote, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { OrderTable } from './order-table'
@@ -21,6 +21,7 @@ export function OrdersShell() {
     new: 0,
     processing: 0,
     delivered: 0,
+    cancelled: 0,
     totalRevenue: 0,
   })
 
@@ -268,7 +269,7 @@ export function OrdersShell() {
       </div>
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div
           onClick={() => setStatusFilter((prev) => (prev === 'new' ? 'all' : 'new'))}
           className={`rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs cursor-pointer transition-all hover:border-amber-500/50 ${
@@ -304,6 +305,24 @@ export function OrdersShell() {
           </div>
           <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 text-emerald-600">
             <CheckCircle className="size-5" />
+          </div>
+        </div>
+
+        <div
+          onClick={() => setStatusFilter((prev) => (prev === 'cancelled' ? 'all' : 'cancelled'))}
+          className={`rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs cursor-pointer transition-all hover:border-red-500/50 ${
+            statusFilter === 'cancelled' ? 'ring-2 ring-red-500/40 border-red-500 bg-red-500/5' : ''
+          }`}
+          title="Click to filter by Cancelled Orders"
+        >
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+              Cancelled
+            </p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{stats.cancelled}</p>
+          </div>
+          <div className="rounded-xl bg-red-500/10 p-2.5 text-red-600 dark:text-red-400">
+            <XCircle className="size-5" />
           </div>
         </div>
 

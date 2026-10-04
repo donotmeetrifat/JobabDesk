@@ -48,5 +48,6 @@ export interface OrderStats {
   new: number
   processing: number
   delivered: number
+  cancelled: number
   totalRevenue: number
 }

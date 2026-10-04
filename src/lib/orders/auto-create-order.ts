@@ -36,6 +36,8 @@ export interface AutoOrderPayload {
   messageText: string
   conversationHistoryText?: string
   llmOrderData?: {
+    action?: 'create' | 'update_items' | 'update' | 'cancel'
+    is_cancelled?: boolean
     is_order?: boolean
     is_digital?: boolean
     customer_name?: string | null
@@ -126,6 +128,83 @@ export async function detectAndCreateOrderFromChat({
   if (llmOrderData?.customer_email && !email) email = llmOrderData.customer_email
   if (llmOrderData?.customer_name && (!resolvedName || resolvedName === 'Messenger User')) {
     resolvedName = llmOrderData.customer_name
+  }
+
+  // 1b. Detect Order Cancellation Intent
+  const isLlmCancel = Boolean(llmOrderData?.action === 'cancel' || llmOrderData?.is_cancelled)
+  const cancelKeywords = /\b(?:cancel|cancle|cancelled|cancelling|বাতিল|ক্যানসেল|ক্যান্সেল|বাদ|বাতিল\s*করুন|বাতিল\s*করে\s*দিন|বাতিল\s*কর্ডেন|cancel\s*order|order\s*cancel|cancel\s*my\s*order|order\s*cancel\s*kore\s*din|eita\s*nibo\s*na|nibo\s*na|nebo\s*na|lagbe\s*na|dorkar\s*nai|নিব\s*না|নেব\s*না|লাগবে\s*না|দরকার\s*নাই|চাই\s*না|chai\s*na|order\s*lagbe\s*na|order\s*dorkar\s*nai|order\s*nibo\s*na)\b/i
+  const isCancelRequest = isLlmCancel || cancelKeywords.test(messageText)
+
+  const changeKeywords = /\b(?:change|palte|bodle|poriborton|bodol|poriborte|instead|onno\s*ta|onno\s*product|অন্য\s*পণ্য|পরিবর্তন|পাল্টে|বদলে|বদল|পরিবর্তে)\b/i
+  const isProductChange =
+    Boolean(llmOrderData?.action === 'update_items' || llmOrderData?.action === 'update') ||
+    changeKeywords.test(messageText)
+
+  // Pure Cancellation: Customer explicitly wants to cancel and is not switching to another product
+  if (isCancelRequest && !isProductChange) {
+    let cancelQuery = db
+      .from('orders')
+      .select('id, order_number, status, notes, total, customer_name, customer_phone')
+      .eq('account_id', accountId)
+      .in('status', ['new', 'confirmed', 'processing'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (conversationId) {
+      cancelQuery = cancelQuery.eq('conversation_id', conversationId)
+    } else if (contactId) {
+      cancelQuery = cancelQuery.eq('contact_id', contactId)
+    } else if (phone) {
+      cancelQuery = cancelQuery.eq('customer_phone', phone)
+    }
+
+    let { data: ordersToCancel } = await cancelQuery
+    if ((!ordersToCancel || ordersToCancel.length === 0) && (contactId || phone)) {
+      let fbQuery = db
+        .from('orders')
+        .select('id, order_number, status, notes, total, customer_name, customer_phone')
+        .eq('account_id', accountId)
+        .in('status', ['new', 'confirmed', 'processing'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (contactId && phone) {
+        fbQuery = fbQuery.or(`contact_id.eq.${contactId},customer_phone.eq.${phone}`)
+      } else if (contactId) {
+        fbQuery = fbQuery.eq('contact_id', contactId)
+      } else if (phone) {
+        fbQuery = fbQuery.eq('customer_phone', phone)
+      }
+      const res = await fbQuery
+      ordersToCancel = res.data
+    }
+
+    const orderToCancel = ordersToCancel?.[0]
+    if (orderToCancel) {
+      const cancelNote = `[Cancelled by customer in chat on ${new Date().toLocaleDateString('en-GB')}]`
+      const updatedNotes = orderToCancel.notes
+        ? `${orderToCancel.notes}\n${cancelNote}`
+        : cancelNote
+
+      const { data: updatedOrder, error: cancelErr } = await db
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          notes: updatedNotes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderToCancel.id)
+        .select('id, account_id, order_number, total, status, customer_name, customer_phone, customer_address, notes, created_at')
+        .single()
+
+      if (!cancelErr && updatedOrder) {
+        console.log(`[auto-create-order] Order #${updatedOrder.order_number || updatedOrder.id} successfully marked as Cancelled by customer`)
+        return updatedOrder
+      }
+    }
+
+    // Crucial: Under NO circumstances create a new order when customer intended to cancel!
+    return null
   }
 
   // 2. Check if this turn represents an order intent
@@ -442,36 +521,72 @@ export async function detectAndCreateOrderFromChat({
   const finalPaymentMethod: PaymentMethod = isFreeOrder ? 'free' : (explicitPaymentMethod || (isDigital ? 'bkash' : 'cod'))
   const finalPaymentStatus: PaymentStatus = isFreeOrder ? 'paid' : (isPaymentConfirmed && finalPaymentMethod !== 'cod' ? 'paid' : 'unpaid')
 
-  // 7. Deduplication Check: Look for an existing 'new' order created in the last 15 minutes
+  // 7. Deduplication & Existing Order Update Check:
+  // If an active/pending order exists for this customer, update it (especially when changing products or completing details)
   try {
     let existingQuery = db
       .from('orders')
-      .select('id, customer_phone, customer_address, notes, subtotal, total, created_at, order_items(id, product_name, quantity, unit_price)')
+      .select('id, order_number, customer_phone, customer_address, customer_email, notes, subtotal, total, status, is_digital, created_at, order_items(id, product_name, quantity, unit_price)')
       .eq('account_id', accountId)
-      .eq('status', 'new')
-      .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
+      .in('status', ['new', 'confirmed'])
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (contactId) {
+    if (conversationId) {
+      existingQuery = existingQuery.eq('conversation_id', conversationId)
+    } else if (contactId) {
       existingQuery = existingQuery.eq('contact_id', contactId)
+    } else if (phone) {
+      existingQuery = existingQuery.eq('customer_phone', phone)
     }
 
-    const { data: existingOrders } = await existingQuery
+    let { data: existingOrders } = await existingQuery
+
+    if ((!existingOrders || existingOrders.length === 0) && (contactId || phone)) {
+      let fbQuery = db
+        .from('orders')
+        .select('id, order_number, customer_phone, customer_address, customer_email, notes, subtotal, total, status, is_digital, created_at, order_items(id, product_name, quantity, unit_price)')
+        .eq('account_id', accountId)
+        .in('status', ['new', 'confirmed'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (contactId && phone) {
+        fbQuery = fbQuery.or(`contact_id.eq.${contactId},customer_phone.eq.${phone}`)
+      } else if (contactId) {
+        fbQuery = fbQuery.eq('contact_id', contactId)
+      } else if (phone) {
+        fbQuery = fbQuery.eq('customer_phone', phone)
+      }
+      const res = await fbQuery
+      existingOrders = res.data
+    }
+
     const existingOrder = existingOrders?.[0]
 
     if (existingOrder) {
       const existingItems = existingOrder.order_items || []
       const hasPlaceholder = existingItems.length === 0 || existingItems.some((i: any) => i.product_name === 'Customer Order')
-      
       const isSameItems = existingItems.length > 0 && items.length > 0 &&
         existingItems.every((ei: any) => items.some(ni => ni.product_name.toLowerCase() === ei.product_name.toLowerCase()))
 
-        if (hasPlaceholder || isSameItems) {
+      const shouldUpdateExisting = Boolean(isProductChange || hasPlaceholder || isSameItems || conversationId)
+
+      if (shouldUpdateExisting) {
+        const changeNote = isProductChange
+          ? `[Product changed by customer to ${items.map(i => i.product_name).join(', ')} on ${new Date().toLocaleDateString('en-GB')}]`
+          : null
+
+        let updatedNotes = existingOrder.notes || ''
+        if (changeNote) {
+          updatedNotes = updatedNotes ? `${updatedNotes}\n${changeNote}` : changeNote
+        }
+
         const updates: Record<string, any> = {
           updated_at: new Date().toISOString(),
           payment_method: finalPaymentMethod,
           payment_status: finalPaymentStatus,
+          notes: updatedNotes || existingOrder.notes,
         }
         if (address) updates.customer_address = address
         if (phone && !isFacebookPsid(phone)) updates.customer_phone = phone
@@ -480,7 +595,8 @@ export async function detectAndCreateOrderFromChat({
         if (paymentReference) updates.payment_reference = paymentReference
         updates.is_digital = isDigital
 
-        if (items.length > 0 && hasPlaceholder) {
+        // Update items and recalculate financials if items changed or was placeholder
+        if (items.length > 0 && (hasPlaceholder || isProductChange || !isSameItems)) {
           updates.subtotal = subtotal
           updates.total = total
           updates.delivery_charge = deliveryCharge
@@ -510,12 +626,12 @@ export async function detectAndCreateOrderFromChat({
           await db.from('orders').update(updates).eq('id', existingOrder.id)
         }
 
-        console.log(`[auto-create-order] Updated existing order ${existingOrder.id}`)
+        console.log(`[auto-create-order] Updated existing order #${existingOrder.order_number || existingOrder.id}: product(s)=${items.map(i => i.product_name).join(', ')}, total=৳${total}`)
         return existingOrder
       }
     }
   } catch (dedupeErr) {
-    console.warn('[auto-create-order] Deduplication check failed:', dedupeErr)
+    console.warn('[auto-create-order] Deduplication/update check failed:', dedupeErr)
   }
 
   // 8. Verify Contact ID exists in contacts table to prevent Foreign Key constraint violation

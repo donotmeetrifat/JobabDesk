@@ -344,8 +344,14 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 <div className="flex items-center gap-3 text-red-700 dark:text-red-300">
                   <AlertOctagon className="size-5 shrink-0" />
                   <div>
-                    <p className="font-semibold text-sm">Order Cancelled</p>
-                    <p className="text-xs opacity-90">This order is marked as cancelled.</p>
+                    <p className="font-semibold text-sm">
+                      {order.notes?.toLowerCase().includes('cancelled by customer') ? 'Cancel by customer' : 'Order Cancelled'}
+                    </p>
+                    <p className="text-xs opacity-90">
+                      {order.notes?.toLowerCase().includes('cancelled by customer')
+                        ? 'This order was cancelled by the customer in chat.'
+                        : 'This order is marked as cancelled.'}
+                    </p>
                   </div>
                 </div>
                 <button

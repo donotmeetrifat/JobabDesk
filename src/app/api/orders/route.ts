@@ -50,6 +50,7 @@ export async function GET(req: Request) {
       new: allOrders.filter(o => o.status === 'new').length,
       processing: allOrders.filter(o => o.status === 'processing').length,
       delivered: allOrders.filter(o => o.status === 'delivered').length,
+      cancelled: allOrders.filter(o => o.status === 'cancelled').length,
       totalRevenue: allOrders
         .filter(o => o.status !== 'cancelled')
         .reduce((sum, o) => sum + (Number(o.total) || 0), 0),

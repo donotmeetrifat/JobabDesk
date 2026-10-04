@@ -122,7 +122,15 @@ export function OrderTable({
         <tbody className="divide-y divide-border/60">
           {orders.map((order) => {
             const isSelected = selectedIds.has(order.id)
-            const statusInfo = STATUS_BADGES[order.status] ?? STATUS_BADGES.new
+            const isCancelledByCustomer =
+              order.status === 'cancelled' &&
+              Boolean(order.notes && /cancelled by customer/i.test(order.notes))
+            const statusInfo = isCancelledByCustomer
+              ? {
+                  label: 'Cancel by customer',
+                  style: 'bg-rose-500/15 text-rose-600 border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-400 font-semibold',
+                }
+              : (STATUS_BADGES[order.status] ?? STATUS_BADGES.new)
             const paymentInfo = PAYMENT_BADGES[order.payment_status] ?? PAYMENT_BADGES.unpaid
             const items = order.order_items ?? []
             const customerId = order.contact_id || order.contact?.id

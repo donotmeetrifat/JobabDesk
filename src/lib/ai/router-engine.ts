@@ -968,13 +968,29 @@ ${businessContext}
    - ORDER STATUS COMMUNICATION:
      * Once all required details are provided, inform the customer that their order has been placed and is currently under review by our store team.
 
-6. MULTIMODAL & PRODUCT PHOTO RULES:
+6. ORDER CANCELLATION & PRODUCT SWITCH/CHANGE RULES (CRITICAL MANDATE):
+   - A. CANCELLATION REQUESTS:
+     * When a customer says they want to cancel an order, cancel a product, or don't want it anymore (e.g. "order cancel korun", "ami order nite chai na", "cancel my order", "Canva Pro cancel", "eita lagbe na", "nibo na"):
+     * YOU MUST NOT CREATE A NEW ORDER! Set "order": { "action": "cancel", "is_order": false, "is_cancelled": true }.
+     * Reply politely confirming that their order has been cancelled:
+       - Bengali: "আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে। ভবিষ্যতে যেকোনো প্রয়োজনে আমরা আপনার পাশে আছি। ধন্যবাদ!"
+       - Banglish: "Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhabisshote jekono proyojone amader janaben. Dhonnobad!"
+       - English: "Your order has been successfully cancelled as requested. Please let us know whenever you need anything in the future. Thank you!"
+   - B. PRODUCT CHANGE / REPLACEMENT REQUESTS:
+     * When a customer previously placed an order but now wants to order a DIFFERENT product or swap products (e.g. "Canva Pro nibo na, ami Netflix nibo", "Canva change kore Netflix din", "ami onno product ta nite chai", "change my order to [Product]"):
+     * Set "order": { "action": "update_items", "is_order": true, "items": [{ "product_name": "[New Product Name]", "unit_price": [price], "quantity": 1 }], ... }
+     * Confirm the switch politely:
+       - Bengali: "অবশ্যই! আপনার অর্ডারটি পরিবর্তন করে [নতুন পণ্য] (৳[মূল্য]) দিয়ে আপডেট করা হয়েছে।"
+       - Banglish: "Obosshoy! Apnar order ti change kore [New Product] (৳[price]) diye update kora hoyeche."
+       - English: "Certainly! Your order has been updated to [New Product] (৳[price])."
+
+7. MULTIMODAL & PRODUCT PHOTO RULES:
    - You CAN directly view images/photos! Never say you cannot view photos.
    - Inspect the photo, identify the brand & product, check if it's in our Catalog & Inventory.
    - If in stock: State price and ask if they'd like to order (in 1-2 sentences).
    - If not in stock: State what it is, mention we don't have that exact brand right now, and suggest our closest alternative from the catalog (in 1-2 sentences).
 
-7. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
+8. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
    - ${langGuidance}
    - Persona: ${toneGuidance}
    - Addressing: ${communicationGuidance}
@@ -1014,6 +1030,8 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
   "reply": "string (strictly 2-3 short, human salesman sentences in the customer's language)",
   "confidence": 0.95,
   "order": {
+    "action": "create" | "update_items" | "cancel",
+    "is_cancelled": boolean,
     "is_order": true,
     "is_digital": boolean,
     "customer_name": "string or null",
@@ -1036,11 +1054,13 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
   }
 }
 Note on "order":
-Set "is_order": true ONLY when ALL required information has been provided by the customer:
-- For Free products (৳0 or active free promotion): requires only Email and Phone (for digital) or Address and Phone (for physical). No payment or TrxID is required! Set total: 0, subtotal: 0, delivery_charge: 0, payment_method: "free", payment_confirmed: true.
-- For Paid products: requires Email, Phone, and confirmed prepaid payment (for digital), or Delivery address, Phone, and confirmed payment method (for physical).
-If any required information is missing, set "is_order": false so the order is NOT prematurely placed!
-Set "order": null if the customer is merely asking a question without ordering.`
+- For Cancellation: Set "action": "cancel", "is_cancelled": true, "is_order": false. DO NOT CREATE AN ORDER!
+- For Product Switch/Change: Set "action": "update_items", "is_order": true, with the new product in "items".
+- For New Order: Set "is_order": true ONLY when ALL required information has been provided:
+  * Free products (৳0 / promo): requires only Email & Phone (digital) or Address & Phone (physical). No payment or TrxID! Set total: 0, payment_method: "free".
+  * Paid products: requires Email, Phone, & prepaid payment (digital) or Delivery address, Phone, & payment method (physical).
+If required information is missing, set "is_order": false so the order is NOT prematurely placed!
+Set "order": null if the customer is merely asking a question without ordering or cancelling.`
 
   // 3-TIER UNSTOPPABLE FALLBACK CHAIN
 
@@ -1419,12 +1439,40 @@ Set "order": null if the customer is merely asking a question without ordering.`
     }
   }
 
+  // Check if customer wants to Cancel an order or Change product
+  const cancelKeywords = /\b(?:cancel|cancle|cancelled|cancelling|বাতিল|ক্যানসেল|ক্যান্সেল|বাদ|বাতিল\s*করুন|বাতিল\s*করে\s*দিন|বাতিল\s*কর্ডেন|cancel\s*order|order\s*cancel|cancel\s*my\s*order|order\s*cancel\s*kore\s*din|eita\s*nibo\s*na|nibo\s*na|nebo\s*na|lagbe\s*na|dorkar\s*nai|নিব\s*না|নেব\s*না|লাগবে\s*না|দরকার\s*নাই|চাই\s*না|chai\s*na|order\s*lagbe\s*na|order\s*dorkar\s*nai|order\s*nibo\s*na)\b/i
+  const changeKeywords = /\b(?:change|palte|bodle|poriborton|bodol|poriborte|instead|onno\s*ta|onno\s*product|অন্য\s*পণ্য|পরিবর্তন|পাল্টে|বদলে|বদল|পরিবর্তে)\b/i
+  const isLlmCancel = Boolean(llmOrderData?.action === 'cancel' || llmOrderData?.is_cancelled)
+  const isCancelRequest = isLlmCancel || cancelKeywords.test(messageText)
+  const isProductChange =
+    Boolean(llmOrderData?.action === 'update_items' || llmOrderData?.action === 'update') ||
+    changeKeywords.test(messageText)
+
   // Completeness check:
+  // For Cancel orders: NO info required (do not ask for address/phone/payment!)
   // For Free orders: NO payment or TrxID required! Only Email+Phone (digital) or Address+Phone (physical)
   // For Paid orders: Payment method / confirmation is strictly required
   let missingInfo: 'payment_method' | 'email' | 'address' | 'phone' | null = null
 
-  if (isFreeOrder) {
+  if (isCancelRequest && !isProductChange) {
+    if (llmOrderData) {
+      llmOrderData.is_order = false
+      llmOrderData.action = 'cancel'
+      llmOrderData.is_cancelled = true
+    }
+    missingInfo = null
+
+    // Ensure AI response confirms cancellation politely and never asks for order details or says order placed
+    if (aiClaimsOrderPlaced || /\b(?:trx(?:id)?|payment|bkash|nagad|send\s*(?:the)?\s*payment|টাকা|পেমেন্ট|address|ঠিকানা|ইমেইল|email|01326596251)\b/i.test(aiReply) || !/\b(?:cancel|বাতিল|ক্যানসেল)\b/i.test(aiReply)) {
+      if (detectedLang === 'bn') {
+        aiReply = `আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে। ভবিষ্যতে যেকোনো প্রয়োজনে আমরা আপনার পাশে আছি। ধন্যবাদ!`
+      } else if (detectedLang === 'banglish') {
+        aiReply = `Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhabisshote jekono proyojone amader janaben. Dhonnobad!`
+      } else {
+        aiReply = `Your order has been successfully cancelled as requested. Please let us know whenever you need anything in the future. Thank you!`
+      }
+    }
+  } else if (isFreeOrder) {
     if (isOrderDigital) {
       if (!effectiveEmail) missingInfo = 'email'
       else if (!effectivePhone) missingInfo = 'phone'
@@ -1442,6 +1490,11 @@ Set "order": null if the customer is merely asking a question without ordering.`
       else if (!effectivePhone) missingInfo = 'phone'
       else if (!explicitPaymentMethod) missingInfo = 'payment_method'
     }
+  }
+
+  if (isProductChange && llmOrderData) {
+    llmOrderData.action = 'update_items'
+    llmOrderData.is_order = true
   }
 
   // Handle Free Order Completion:
