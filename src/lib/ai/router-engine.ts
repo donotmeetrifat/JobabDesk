@@ -213,28 +213,42 @@ export function buildOfflineReply({
   let reply = ''
 
   const textLower = messageText.toLowerCase().trim()
-  const matchedProduct = products.find((p) => p?.name && textLower.includes(p.name.toLowerCase()))
+  const matchedProducts = products.filter((p) => p?.name && textLower.includes(p.name.toLowerCase()))
+  const matchedProduct = matchedProducts[0] || null
 
   // 0. If an image was sent but offline fallback is active
   if (activeMediaUrl) {
     intent = 'product_inquiry'
     if (detectedLang === 'banglish') {
-      reply = 'Apnar pathano chobi ti ami peyechi! Amader team ekhoni chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
+      reply = 'Apnar pathano chobi ti ami peyechi! Amader team chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
     } else if (detectedLang === 'bn') {
-      reply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের প্রতিনিধি এখনই ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, অনুগ্রহ করে একটু অপেক্ষা করুন।'
+      reply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের টিম ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, একটু অপেক্ষা করুন।'
     } else {
       reply = 'I have received your product photo! Our team is reviewing the image right now to check availability and price for you.'
     }
   }
-  // 1. Matched Product Inquiry
-  else if (matchedProduct) {
+  // 1. Matched Product(s) Inquiry or Order Request
+  else if (matchedProducts.length > 0) {
     intent = 'product_inquiry'
-    if (detectedLang === 'banglish') {
-      reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
-    } else if (detectedLang === 'bn') {
-      reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
+    if (matchedProducts.length > 1) {
+      const namesAndPrices = matchedProducts.map((p) => `${p.name} (৳${p.price})`).join(' & ')
+      const namesAndPricesBn = matchedProducts.map((p) => `${p.name} (৳${p.price})`).join(' এবং ')
+      const totalPrice = matchedProducts.reduce((sum, p) => sum + (Number(p.price) || 0), 0)
+      if (detectedLang === 'banglish') {
+        reply = `Ji oboshoy! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address ar phone number ta diben please?`
+      } else if (detectedLang === 'bn') {
+        reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার ঠিকানা ও ফোন নম্বরটি দিন।`
+      } else {
+        reply = `Sure! ${namesAndPrices} are both available. Total comes to ৳${totalPrice.toLocaleString()}. Please share your delivery address and phone number to confirm your order!`
+      }
     } else {
-      reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
+      if (detectedLang === 'banglish') {
+        reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
+      } else if (detectedLang === 'bn') {
+        reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
+      } else {
+        reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
+      }
     }
   }
   // 2. Payment Methods Inquiry
@@ -353,6 +367,122 @@ export function buildOfflineReply({
   }
 
   return { intent, reply }
+}
+
+export interface ParsedAIResult {
+  intent: DetectedIntent
+  reply: string
+  order: any | null
+}
+
+export function parseAndSanitizeAiResponse(raw: string): ParsedAIResult | null {
+  if (!raw || typeof raw !== 'string') return null
+
+  // 1. Strip markdown code fences (```json ... ``` or ``` ... ```)
+  let clean = raw.trim()
+  if (clean.startsWith('```')) {
+    clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  }
+
+  // 2. Extract outermost JSON object if surrounded by extra commentary
+  const firstBrace = clean.indexOf('{')
+  const lastBrace = clean.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    clean = clean.substring(firstBrace, lastBrace + 1).trim()
+  }
+
+  let parsed: any = null
+
+  // 3. Try standard JSON.parse
+  try {
+    parsed = JSON.parse(clean)
+  } catch {
+    // 4. Try repairing common LLM escape errors (e.g. \Y, \C, invalid backslashes like \n\Your)
+    try {
+      const repairedEscapes = clean.replace(/\\([^"\\/bfnrtu])/g, '$1')
+      parsed = JSON.parse(repairedEscapes)
+    } catch {
+      // 5. Try fixing literal unescaped newlines inside JSON strings
+      try {
+        const repairedNewlines = clean
+          .replace(/\\([^"\\/bfnrtu])/g, '$1')
+          .replace(/\r?\n/g, '\\n')
+        parsed = JSON.parse(repairedNewlines)
+      } catch {
+        // Fall through to regex extraction
+      }
+    }
+  }
+
+  let intent: DetectedIntent = 'general_faq'
+  let replyText = ''
+  let orderData: any = null
+
+  if (parsed && typeof parsed === 'object') {
+    if (parsed.intent && typeof parsed.intent === 'string') {
+      intent = parsed.intent as DetectedIntent
+    }
+    if (parsed.reply && typeof parsed.reply === 'string') {
+      replyText = parsed.reply.trim()
+    }
+    if (parsed.order && typeof parsed.order === 'object') {
+      orderData = parsed.order
+    }
+  }
+
+  // 6. Regex fallback extraction if replyText was not parsed properly
+  if (!replyText) {
+    const replyMatch = clean.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    if (replyMatch && replyMatch[1]) {
+      replyText = replyMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .replace(/\\t/g, ' ')
+        .trim()
+    } else {
+      const multilineMatch = clean.match(/"reply"\s*:\s*"([\s\S]*?)(?="\s*,\s*"(?:confidence|order|intent|items)|"\s*\})/)
+      if (multilineMatch && multilineMatch[1]) {
+        replyText = multilineMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, '\\')
+          .trim()
+      }
+    }
+
+    const intentMatch = clean.match(/"intent"\s*:\s*"([^"]+)"/)
+    if (intentMatch && intentMatch[1]) {
+      intent = intentMatch[1] as DetectedIntent
+    }
+
+    const orderMatch = clean.match(/"order"\s*:\s*(\{[\s\S]*?\})\s*(?:,\s*"|\})/)
+    if (orderMatch && orderMatch[1]) {
+      try {
+        orderData = JSON.parse(orderMatch[1])
+      } catch {}
+    }
+  }
+
+  // 7. STRICT ZERO-JSON FAILSAFE:
+  // If replyText starts with '{' or has JSON keys like '"intent":', it is corrupted raw JSON!
+  if (
+    !replyText ||
+    replyText.trim().startsWith('{') ||
+    replyText.includes('"intent":') ||
+    replyText.includes('"reply":') ||
+    replyText.includes('"confidence":') ||
+    replyText.includes('"order":')
+  ) {
+    console.warn('[AI Router Engine] replyText contained raw JSON artifacts. Rejecting to prevent customer leak.', replyText)
+    return null
+  }
+
+  return {
+    intent,
+    reply: replyText,
+    order: orderData,
+  }
 }
 
 export async function handleIncomingCustomerMessage({
@@ -713,50 +843,48 @@ You are chatting live with a customer on Facebook Messenger / WhatsApp.
 === STORE IDENTITY & SETTINGS ===
 ${businessContext}
 
-=== CRITICAL HUMAN SALESMAN RULES (MUST FOLLOW) ===
-1. SPEAK LIKE A REAL HUMAN SALESMAN, NEVER A ROBOT:
-   - Talk naturally, warmly, and helpfully.
-   - ABSOLUTELY NO REPETITIVE GREETINGS OR WELCOME PHRASES:
-     * NEVER say "Thank you for reaching out to [Store]! How can we assist you today?".
-     * NEVER greet the customer again if there is prior conversation history or if they asked a specific question.
-     * When a customer asks about payment methods, delivery rates, return policy, or products, ANSWER THEIR QUESTION IMMEDIATELY AND DIRECTLY!
-   - NO ROBOTIC TEMPLATES: Never repeat phrases like "Hello Bhaiya/Apu! We have [Product] available in our store...".
+=== STRICT REAL-MARKET CHAT RULES (MANDATORY) ===
+1. SHORT, CRISP, HUMAN SALESMAN (STRICTLY 2 TO 3 SHORT SENTENCES / 35-50 WORDS MAX):
+   - In real-world Facebook Messenger & WhatsApp e-commerce in Bangladesh, customers read on mobile and hate long walls of text. Long paragraphs kill sales.
+   - Your reply MUST be short, warm, natural, and direct: STRICTLY 2 to 3 sentences maximum!
+   - NEVER write long marketing paragraphs or flowery speeches.
 
-2. MULTIMODAL & PRODUCT PHOTO RULES:
-   - YOU CAN DIRECTLY VIEW AND INSPECT PHOTOS/IMAGES! NEVER say "I am unable to view the photo directly in the chat" or ask the customer to type the product name because you can't see pictures.
-   - When a customer sends or asks about a product photo:
-     1. Inspect the photo carefully: Identify the exact brand, product name, variant, volume/size, packaging, and purpose.
-     2. Cross-reference with our CATALOG & INVENTORY above:
-        - If we have this exact item in stock: Enthusiastically confirm! Quote the price (৳), confirm stock, highlight benefits, and ask if they would like to place an order now!
-        - If we do NOT carry that exact brand or product: Name what product is in their photo (e.g. "Eita holo No7 Radiant Results Purifying Foaming Cleanser..."), politely let them know we don't have this exact brand right now, but enthusiastically recommend our best matching alternative from our store catalog (e.g. our cleansers or skincare in stock with prices and benefits)!
-        - If they just sent a photo with no text, warmly identify what product it is and ask how you can help or if they'd like to order!
+2. NO UNSOLICITED PRODUCT LECTURES / ESSAYS:
+   - When a customer says they want to order or asks about products (e.g. "i want to order Simple Skincare & Nivea Cleansing Cream", "order korte chai", "দাম কত?"):
+     * Confirm availability & price in ONE concise sentence: "Great choice! Simple Skincare (৳1,000) and Nivea Cleansing Cream (৳950) are both in stock. Total is ৳1,950."
+     * Directly ask for delivery details in ONE sentence: "Please share your delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad) to confirm your order!"
+     * ZERO UNSOLICITED ESSAYS: NEVER lecture about skin hydration, natural moisture balance, ingredients, or feature lists unless the customer explicitly asked "What does this product do?" or "What are the benefits?".
+   - ONLY explain product features if the customer EXPLICITLY asks (e.g. "What are the features?", "Canva-te ki ki ache?"). Even then, keep it to 1-2 punchy sentences!
 
-3. ANSWER THE ACTUAL QUESTION WITH EXPERT DETAIL:
-   - If they ask about Payment Methods (e.g. "Payment Methods?", "kivabe pay korbo?", "bKash ache?"):
-     * Directly list the accepted payment options: Cash on Delivery (COD) all over Bangladesh, bKash, and Nagad.
-     * Conclude with a helpful question to assist with their order!
-   - If they ask about Delivery Rates / Return Policy:
-     * Clearly state the rates and policies from Store Settings.
-   - When a customer asks for details about a product (e.g. "give me some detail about canva", "what are the features?", "how does it work?"):
-     * Thoroughly explain what the product is, its key benefits, and why it's great for them!
-     * For example, for Canva Pro: explain that it gives unlimited access to millions of premium graphic templates, 100M+ stock photos, AI background remover, brand kits, magic resize, and high-resolution exports without watermarks.
-     * For software/subscriptions, explain that they get full access on their own email with instant delivery.
-     * For physical products (skincare, gadgets, clothing), explain the benefits, ingredients/specs, and results.
-     * Do NOT just mindlessly repeat "the price is ৳50 and it is in stock". Address what they asked!
+3. NATURAL HUMAN SALESPERSON STYLE (NO ROBOTIC FLATTERY):
+   - Talk like an authentic, polite, and helpful human store manager in Bangladesh.
+   - NO over-the-top robotic flattery ("That is an excellent choice, Sir!", "We are thrilled and delighted beyond measure!").
+   - NO canned repetitive welcomes ("Thank you for reaching out to [Store]! How can we assist you today?").
+   - Greet briefly and naturally if starting a conversation, or jump straight into the answer if conversation is already underway.
 
-4. CLOSE THE SALE (CALL TO ACTION):
-   - Always conclude with a natural, gentle question to help them buy, e.g.:
-     "Do you want me to process your order now, Bhaiya?" or "Which email should we activate it on?" or "Would you like to order today?"
+4. REAL MARKET ORDER CAPTURE & CONFIRMATION:
+   - When customer wants to order, ask for:
+     1. Delivery Address
+     2. Contact Phone Number
+     3. Payment Method (Cash on Delivery / bKash / Nagad)
+   - When taking or booking an order, inform the customer that their order has been placed and is currently UNDER REVIEW / AWAITING VERIFICATION (পর্যালোচনার অধীনে) by our store team.
+   - Never say "Order has been dispatched" or "Order confirmed" immediately before manual store review.
 
-5. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
+5. MULTIMODAL & PRODUCT PHOTO RULES:
+   - You CAN directly view images/photos! Never say you cannot view photos.
+   - Inspect the photo, identify the brand & product, check if it's in our Catalog & Inventory.
+   - If in stock: State price and ask if they'd like to order (in 1-2 sentences).
+   - If not in stock: State what it is, mention we don't have that exact brand right now, and suggest our closest alternative from the catalog (in 1-2 sentences).
+
+6. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
    - ${langGuidance}
    - Persona: ${toneGuidance}
    - Addressing: ${communicationGuidance}
-   - ABSOLUTE PROHIBITION: You must NEVER, under any circumstance, generate Arabic script (عربى / اردو), Urdu, or Devanagari script. Our business operates in Bangladesh and communicates strictly in English, Bengali (বাংলা script), or Banglish according to what the customer speaks.
-   - Match the customer's language strictly:
-     * English customer input -> 100% English reply using Latin alphabet.
-     * Bengali customer input (বাংলা) -> Bengali reply using Bengali script (বাংলা বর্ণমালা).
-     * Banglish customer input -> Banglish reply using English/Latin alphabet.
+   - ABSOLUTE PROHIBITION: NEVER generate Arabic script (عربى / اردو), Urdu, or Devanagari script.
+   - Strictly match customer language:
+     * English customer -> 100% English reply in Latin alphabet.
+     * Bengali customer (বাংলা) -> Bengali reply using Bengali script (বাংলা বর্ণমালা).
+     * Banglish customer -> Banglish reply using Latin alphabet.
    - Currency symbol: Always use the Bangladeshi Taka symbol '৳' or 'Tk' with product prices (e.g. ৳1,000). The symbol '৳' does NOT mean the customer is writing in Bengali.
 
 === CATALOG & INVENTORY ===
@@ -777,27 +905,11 @@ ${conversationHistoryText ? conversationHistoryText : '(Start of new conversatio
 Current Customer Message:
 "${messageText}"
 
-=== ORDER CAPTURE & CHECKOUT INSTRUCTIONS ===
-1. PAYMENT METHOD:
-   - If the customer wants to order and gives an address/number, check if they specified their payment method (Cash on Delivery / bKash / Nagad / Rocket).
-   - If they have NOT specified how they want to pay, politely ask whether they prefer Cash on Delivery or digital payment (bKash/Nagad/Rocket).
-   - If they chose bKash/Nagad/Rocket, acknowledge it and state that payment details can be completed, or send our payment number if provided.
-
-2. ORDER STATUS IS "UNDER REVIEW" (PENDING APPROVAL):
-   - When taking the order, inform the customer that their order has been placed and is currently UNDER REVIEW / AWAITING VERIFICATION (পর্যালোচনার অধীনে) by our team.
-   - Example (Bengali): "ধন্যবাদ! আপনার অর্ডারটি গ্রহণ করা হয়েছে এবং এটি পর্যালোচনার অধীনে রয়েছে। আমাদের টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করবে।"
-   - Example (English): "Thank you! Your order has been placed and is currently under review by our store team. We will verify and confirm it shortly."
-   - Do NOT say "Order has been confirmed and dispatched" — it is pending manual approval by the shop owner in JobabDesk!
-
-3. ACCURATE PRODUCT PRICING (ZERO TOLERANCE FOR PHONE NUMBER PRICES):
-   - Only use actual catalog product prices (e.g. ৳1000, ৳50).
-   - NEVER, under any circumstance, use a customer's phone number or bKash number (such as 01326596251) as a product price, unit price, or total!
-
-4. STRUCTURED ORDER OUTPUT:
-Return ONLY a valid JSON object:
+=== STRUCTURED OUTPUT REQUIREMENT ===
+Return ONLY a valid JSON object. No explanation, no markdown text outside the JSON.
 {
   "intent": "product_inquiry" | "order_status" | "general_faq" | "human_escalation",
-  "reply": "string (your natural, persuasive human salesman reply)",
+  "reply": "string (strictly 2-3 short, human salesman sentences in the customer's language)",
   "confidence": 0.95,
   "order": {
     "is_order": true,
@@ -862,7 +974,10 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
         const resp = await ai.models.generateContent({
           model: gModel,
           contents: [{ role: 'user', parts }],
-          config: { temperature: 0.65 },
+          config: {
+            temperature: 0.4,
+            responseMimeType: 'application/json',
+          },
         })
         const txt = resp.text?.trim()
         if (txt) {
@@ -916,7 +1031,8 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
               { role: 'system', content: systemPrompt },
               { role: 'user', content: messageText },
             ],
-            temperature: 0.65,
+            response_format: { type: 'json_object' },
+            temperature: 0.4,
           }),
         })
         const groqJson = await groqResp.json()
@@ -998,7 +1114,8 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
           body: JSON.stringify({
             model: orModel,
             messages,
-            temperature: 0.65,
+            response_format: { type: 'json_object' },
+            temperature: 0.4,
           }),
         })
         const orJson = await openRouterResp.json()
@@ -1045,23 +1162,27 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
     intent = offline.intent
     aiReply = offline.reply
   } else {
-    // Parse LLM rawResponse JSON
-    try {
-      const cleaned = rawResponse
-        .replace(/^[\s\S]*?\{/, '{')
-        .replace(/\}[^}]*$/, '}')
-        .trim()
-      const parsed = JSON.parse(cleaned) as {
-        intent?: DetectedIntent
-        reply?: string
-        order?: any
-      }
-      intent = parsed.intent || 'general_faq'
-      aiReply = parsed.reply || rawResponse
-      llmOrderData = parsed.order || null
-    } catch {
-      intent = 'general_faq'
-      aiReply = rawResponse
+    // Parse LLM rawResponse JSON safely using parseAndSanitizeAiResponse
+    const parsed = parseAndSanitizeAiResponse(rawResponse)
+    if (parsed) {
+      intent = parsed.intent
+      aiReply = parsed.reply
+      llmOrderData = parsed.order
+    } else {
+      console.warn('[AI Router Engine] Failed to parse or sanitize rawResponse into valid reply. Falling back to offline matcher. Raw:', rawResponse)
+      providerUsed = 'offline_dictionary'
+      modelUsed = 'offline-rule-matcher'
+      const fallbackOffline = buildOfflineReply({
+        detectedLang,
+        messageText,
+        products,
+        recentOrders,
+        account,
+        conversationHistoryText,
+        activeMediaUrl,
+      })
+      intent = fallbackOffline.intent
+      aiReply = fallbackOffline.reply
     }
   }
 
@@ -1071,6 +1192,29 @@ Note: If no order is being placed or confirmed in this turn, set "order": null.`
     (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(aiReply))
   ) {
     console.warn('[AI Router Engine] AI output violated language/script guardrail. Falling back to offline reply. Raw:', aiReply)
+    providerUsed = 'offline_dictionary'
+    modelUsed = 'offline-rule-matcher'
+    const fallbackOffline = buildOfflineReply({
+      detectedLang,
+      messageText,
+      products,
+      recentOrders,
+      account,
+      conversationHistoryText,
+      activeMediaUrl,
+    })
+    intent = fallbackOffline.intent
+    aiReply = fallbackOffline.reply
+  }
+
+  // CRITICAL FAILSAFE: Under NO circumstances can raw JSON ever leak to a customer!
+  if (
+    aiReply.trim().startsWith('{') ||
+    aiReply.includes('"intent"') ||
+    aiReply.includes('"reply"') ||
+    aiReply.includes('"confidence"')
+  ) {
+    console.error('[AI Router Engine] CRITICAL: JSON detected in aiReply before sending to customer! Discarding and using offline reply.', aiReply)
     providerUsed = 'offline_dictionary'
     modelUsed = 'offline-rule-matcher'
     const fallbackOffline = buildOfflineReply({
