@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Conversation } from "@/types";
+import type { Contact, Conversation, Message } from "@/types";
 import {
   Phone,
   Mail,
@@ -18,12 +18,13 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
-import { extractCustomerInfoFromMessage } from "@/lib/contacts/extract-info";
+import { extractCustomerInfoFromMessage, isFacebookPsid } from "@/lib/contacts/extract-info";
 import { toast } from "sonner";
 
 interface ContactSidebarProps {
   contact: Contact | null;
   conversation?: Conversation | null;
+  messages?: Message[];
   pageId?: string | null;
   onContactUpdated?: (updatedContact: Contact) => void;
   onConversationUpdated?: (updates: Partial<Conversation>) => void;
@@ -32,6 +33,7 @@ interface ContactSidebarProps {
 export function ContactSidebar({
   contact,
   conversation,
+  messages: propMessages,
   pageId,
   onContactUpdated,
   onConversationUpdated,
@@ -73,8 +75,8 @@ export function ContactSidebar({
     onConversationUpdatedRef.current = onConversationUpdated;
   });
 
-  // Track conversations that had auto-extraction run to guarantee strictly 1 run per conversation
-  const scannedConvsRef = useRef<Set<string>>(new Set());
+  // Track conversation scan signature to avoid redundant network queries
+  const lastScannedSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     setAiMuted(
@@ -109,55 +111,90 @@ export function ContactSidebar({
     };
   }, [effectiveContact?.id]);
 
-  // If address or phone is missing, check recent messages and auto-populate (run once per conversation)
+  // If address or phone is missing, check recent messages and auto-populate
   useEffect(() => {
     if (!effectiveContact?.id || !conversation?.id || !accountId) return;
-    if (scannedConvsRef.current.has(conversation.id)) return;
-    if (effectiveContact.address && effectiveContact.phone?.startsWith("+")) return;
 
-    scannedConvsRef.current.add(conversation.id);
+    const needsPhone = !effectiveContact.phone || isFacebookPsid(effectiveContact.phone);
+    const needsAddress = !effectiveContact.address;
 
+    // Both phone and address are already complete
+    if (!needsPhone && !needsAddress) return;
+
+    // Build signature to deduplicate scans while messages haven't changed
+    const latestMessageCount = propMessages?.length ?? 0;
+    const scanSignature = `${conversation.id}_${effectiveContact.id}_${latestMessageCount}_${effectiveContact.phone || ''}_${effectiveContact.address || ''}`;
+    if (lastScannedSignatureRef.current === scanSignature) return;
+    lastScannedSignatureRef.current = scanSignature;
+
+    const processCandidateMessages = async (msgs: Array<{ content_text?: string | null; sender_type?: string }>) => {
+      let extractedPhone: string | undefined;
+      let extractedAddress: string | undefined;
+
+      // Scan from newest to oldest
+      for (const m of msgs) {
+        if (m.content_text) {
+          const info = extractCustomerInfoFromMessage(m.content_text);
+          if (needsPhone && !extractedPhone && info.phone) {
+            extractedPhone = info.phone;
+          }
+          if (needsAddress && !extractedAddress && info.address) {
+            extractedAddress = info.address;
+          }
+          if ((!needsPhone || extractedPhone) && (!needsAddress || extractedAddress)) {
+            break;
+          }
+        }
+      }
+
+      if (extractedPhone || extractedAddress) {
+        try {
+          const res = await fetch(`/api/contacts/${effectiveContact.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: extractedAddress || undefined,
+              phone: extractedPhone || undefined,
+            }),
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.contact) {
+              onContactUpdatedRef.current?.(json.contact);
+            }
+          }
+        } catch (err) {
+          console.error("[contact-sidebar] Auto-extract update error:", err);
+        }
+      }
+    };
+
+    if (propMessages && propMessages.length > 0) {
+      // Filter customer messages from props
+      const customerMsgs = propMessages
+        .filter((m) => m.sender_type === "customer")
+        .slice(-25)
+        .reverse();
+      if (customerMsgs.length > 0) {
+        processCandidateMessages(customerMsgs);
+        return;
+      }
+    }
+
+    // Otherwise fetch recent customer messages from Supabase
     const supabase = createClient();
     supabase
       .from("messages")
-      .select("content_text")
+      .select("content_text, sender_type")
       .eq("conversation_id", conversation.id)
       .eq("sender_type", "customer")
       .order("created_at", { ascending: false })
-      .limit(6)
-      .then(async ({ data: msgs }) => {
+      .limit(25)
+      .then(({ data: msgs }) => {
         if (!msgs || msgs.length === 0) return;
-        for (const m of msgs) {
-          if (m.content_text) {
-            const info = extractCustomerInfoFromMessage(m.content_text);
-            const needsAddress = !effectiveContact.address && Boolean(info.address);
-            const needsPhone =
-              (!effectiveContact.phone || !effectiveContact.phone.startsWith("+")) &&
-              Boolean(info.phone);
-
-            if (needsAddress || needsPhone) {
-              try {
-                const res = await fetch(`/api/contacts/${effectiveContact.id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    address: info.address || undefined,
-                    phone: info.phone || undefined,
-                  }),
-                });
-                if (res.ok) {
-                  const json = await res.json();
-                  if (json.contact) {
-                    onContactUpdatedRef.current?.(json.contact);
-                  }
-                }
-              } catch {}
-              break;
-            }
-          }
-        }
+        processCandidateMessages(msgs);
       });
-  }, [conversation?.id, effectiveContact?.id, effectiveContact?.address, effectiveContact?.phone, accountId]);
+  }, [conversation?.id, effectiveContact?.id, effectiveContact?.address, effectiveContact?.phone, accountId, propMessages]);
 
   const handleToggleAiMute = useCallback(async () => {
     const targetId = contact?.id || conversation?.contact_id || conversation?.id;
@@ -225,13 +262,14 @@ export function ContactSidebar({
     effectiveContact.company === "Facebook Messenger" ||
     effectiveContact.channel === "messenger" ||
     effectiveContact.messenger_id ||
-    (effectiveContact.phone && !effectiveContact.phone.startsWith("+") && !isNaN(Number(effectiveContact.phone)))
+    isFacebookPsid(effectiveContact.phone)
   );
 
   // Resolve real Facebook PSID (Page-Scoped ID) synchronously for deep-linking
   const targetFbId =
     effectiveContact.messenger_id ||
     effectiveContact.wa_user_id ||
+    (isFacebookPsid(effectiveContact.phone) ? effectiveContact.phone : null) ||
     (effectiveContact.phone &&
       !effectiveContact.phone.startsWith("+") &&
       !isNaN(Number(effectiveContact.phone)) &&
@@ -252,11 +290,7 @@ export function ContactSidebar({
     : "https://www.messenger.com";
 
   // Format phone display: hide raw Facebook PSID numbers from Phone field
-  const isPhoneRawPsid =
-    effectiveContact.phone &&
-    !effectiveContact.phone.startsWith("+") &&
-    effectiveContact.phone.length >= 14 &&
-    /^\d+$/.test(effectiveContact.phone);
+  const isPhoneRawPsid = Boolean(effectiveContact.phone && isFacebookPsid(effectiveContact.phone));
 
   const displayPhone = isPhoneRawPsid ? null : effectiveContact.phone || null;
 

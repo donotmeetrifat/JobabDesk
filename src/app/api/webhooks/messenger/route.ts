@@ -535,9 +535,9 @@ export async function POST(req: Request) {
     let contactId = ''
     const { data: existingContact } = await db
       .from('contacts')
-      .select('id, name, avatar_url')
+      .select('id, name, avatar_url, phone, address')
       .eq('account_id', accountId)
-      .eq('phone', customerPsid)
+      .or(`phone.eq.${customerPsid},messenger_id.eq.${customerPsid}`)
       .maybeSingle()
 
     if (existingContact) {

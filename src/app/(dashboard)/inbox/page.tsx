@@ -13,6 +13,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { extractCustomerInfoFromMessage, isFacebookPsid } from "@/lib/contacts/extract-info";
 import Link from "next/link";
 import { toast } from "sonner";
 import { WifiOff, RefreshCw, KeyRound, ExternalLink, X, MessageCircle, Trash2 } from "lucide-react";
@@ -494,6 +495,77 @@ function InboxPageInner() {
     }
   }, [handleSyncMessenger]);
 
+  // Automatically synchronizes extracted customer contact details (phone, address)
+  // across activeContact state, conversation list preview, and Postgres database
+  const syncExtractedContactInfo = useCallback(
+    (contactId: string, info: { phone?: string | null; address?: string | null }) => {
+      if (!contactId || (!info.phone && !info.address)) return;
+
+      // Optimistically update activeContact if it matches
+      setActiveContact((prev) => {
+        if (!prev || prev.id !== contactId) return prev;
+        const next = { ...prev };
+        let changed = false;
+        if (info.phone && (!prev.phone || isFacebookPsid(prev.phone))) {
+          next.phone = info.phone;
+          changed = true;
+        }
+        if (info.address && !prev.address) {
+          next.address = info.address;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+
+      // Optimistically update conversation list contact
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.contact_id !== contactId && c.contact?.id !== contactId) return c;
+          const currentContact = c.contact;
+          if (!currentContact) return c;
+          return {
+            ...c,
+            contact: {
+              ...currentContact,
+              phone:
+                info.phone && (!currentContact.phone || isFacebookPsid(currentContact.phone))
+                  ? info.phone
+                  : currentContact.phone,
+              address: info.address && !currentContact.address ? info.address : currentContact.address,
+            },
+          };
+        })
+      );
+
+      // Persist to database in background
+      fetch(`/api/contacts/${contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: info.phone || undefined,
+          address: info.address || undefined,
+        }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (json?.contact) {
+            setActiveContact((prev) =>
+              prev?.id === json.contact.id ? { ...prev, ...json.contact } : prev
+            );
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.contact_id === json.contact.id || c.contact?.id === json.contact.id
+                  ? { ...c, contact: { ...(c.contact || {}), ...json.contact } }
+                  : c
+              )
+            );
+          }
+        })
+        .catch(() => {});
+    },
+    []
+  );
+
   // Handle realtime message events
   const handleMessageEvent = useCallback(
     (event: { eventType: string; new: Message; old: Partial<Message> }) => {
@@ -514,6 +586,17 @@ function InboxPageInner() {
             );
             return [...withoutOptimistic, newMsg];
           });
+
+          // If incoming message from customer contains phone/address, update contact immediately
+          if (newMsg.sender_type === "customer" && newMsg.content_text) {
+            const targetContactId = activeContact?.id || activeConversation.contact_id;
+            if (targetContactId) {
+              const info = extractCustomerInfoFromMessage(newMsg.content_text);
+              if (info.phone || info.address) {
+                syncExtractedContactInfo(targetContactId, info);
+              }
+            }
+          }
         }
 
         // Update conversation list preview. We need to know *synchronously*
@@ -829,16 +912,60 @@ function InboxPageInner() {
   }, [activeConversation?.id, activeConversation?.contact_id, activeContact]);
 
 
-  const handleMessagesLoaded = useCallback((loaded: Message[]) => {
-    setMessages(loaded);
-  }, []);
+  const handleMessagesLoaded = useCallback(
+    (loaded: Message[]) => {
+      setMessages(loaded);
 
-  const handleNewMessage = useCallback((msg: Message) => {
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === msg.id)) return prev;
-      return [...prev, msg];
-    });
-  }, []);
+      // Auto-extract customer info from loaded messages if activeContact needs phone or address
+      const targetContactId = activeContact?.id || activeConversation?.contact_id;
+      if (
+        targetContactId &&
+        (!activeContact?.address || !activeContact?.phone || isFacebookPsid(activeContact?.phone))
+      ) {
+        let foundPhone: string | undefined;
+        let foundAddress: string | undefined;
+
+        // Scan from newest to oldest
+        for (let i = loaded.length - 1; i >= 0; i--) {
+          const m = loaded[i];
+          if (m.sender_type === "customer" && m.content_text) {
+            const info = extractCustomerInfoFromMessage(m.content_text);
+            if (!foundPhone && info.phone) foundPhone = info.phone;
+            if (!foundAddress && info.address) foundAddress = info.address;
+            if (foundPhone && foundAddress) break;
+          }
+        }
+
+        if (foundPhone || foundAddress) {
+          syncExtractedContactInfo(targetContactId, {
+            phone: foundPhone,
+            address: foundAddress,
+          });
+        }
+      }
+    },
+    [activeContact, activeConversation?.contact_id, syncExtractedContactInfo]
+  );
+
+  const handleNewMessage = useCallback(
+    (msg: Message) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+
+      if (msg.sender_type === "customer" && msg.content_text) {
+        const contactId = activeContact?.id || activeConversation?.contact_id;
+        if (contactId) {
+          const info = extractCustomerInfoFromMessage(msg.content_text);
+          if (info.phone || info.address) {
+            syncExtractedContactInfo(contactId, info);
+          }
+        }
+      }
+    },
+    [activeContact?.id, activeConversation?.contact_id, syncExtractedContactInfo]
+  );
 
   const handleUpdateMessage = useCallback(
     (id: string, updates: Partial<Message>) => {
@@ -1058,6 +1185,7 @@ function InboxPageInner() {
             <ContactSidebar
               contact={activeContact}
               conversation={activeConversation}
+              messages={messages}
               pageId={messengerPageId}
               onContactUpdated={handleContactUpdated}
               onConversationUpdated={handleConversationUpdatedFromSidebar}

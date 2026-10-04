@@ -1,7 +1,17 @@
+const BENGALI_TO_ASCII_DIGITS: Record<string, string> = {
+  '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
+  '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9',
+}
+
+export function normalizeBengaliDigits(str: string): string {
+  if (!str) return ''
+  return str.replace(/[০-৯]/g, (d) => BENGALI_TO_ASCII_DIGITS[d] || d)
+}
+
 export function isFacebookPsid(phone?: string | null): boolean {
   if (!phone) return false
   const trimmed = phone.trim()
-  return !trimmed.startsWith('+') && trimmed.length >= 15 && /^\d+$/.test(trimmed)
+  return !trimmed.startsWith('+') && trimmed.length >= 14 && /^\d+$/.test(trimmed)
 }
 
 export function cleanEmail(email?: string | null): string | null {
@@ -20,17 +30,20 @@ export interface ExtractedCustomerInfo {
 
 /**
  * Robust extractor for phone, address, and email from customer chat messages.
- * Handles English, Bengali script, and Banglish formats.
+ * Handles English, Bengali script, Banglish formats, and common misspellings (e.g. "Adreass:").
  */
 export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerInfo {
   if (!text || typeof text !== 'string') return {}
 
   const result: ExtractedCustomerInfo = {}
-  const cleanText = text.trim()
+  const rawClean = text.trim()
+  const cleanText = normalizeBengaliDigits(rawClean)
 
   // 1. PHONE EXTRACTION
+  // Match Bangladesh numbers: 013-019 (11 digits), +880 1..., +8801..., 8801...
+  // Handles prefixes ("num: ", "phone: ", "phn: ", "ph: "), spaces, hyphens, and delimiters
   const bdPhoneRegex =
-    /(?:(?:num(?:ber)?|phone|mobile|cell|contact|call|ফোন|নাম্বার|মোবাইল)\s*[:=-]?\s*)?(?:(?:\+|00)?880[-\s]?|0)?(1[3-9][0-9]{2}[-\s]?[0-9]{3}[-\s]?[0-9]{3})\b/i
+    /(?:(?:num(?:ber)?|phone|mobile|cell|contact|call|phn|mob|ph|ফোন|নাম্বার|মোবাইল)\s*[:=-]?\s*)?(?:(?:\+|00)?880[-\s]?|0)?(1[3-9][0-9]{2}[-\s]?[0-9]{3}[-\s]?[0-9]{3})\b/i
   const bdMatch = cleanText.match(bdPhoneRegex)
   if (bdMatch) {
     const rawDigits = bdMatch[0].replace(/\D/g, '')
@@ -65,8 +78,9 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   }
 
   // 3. ADDRESS EXTRACTION
+  // Look for explicit prefix: Address: ..., Adreass: ..., Adress: ..., Addres: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
   const explicitAddressRegex =
-    /(?:(?:delivery\s*add?re+ss?|shipping\s*add?re+ss?|home\s*add?re+ss?|add?re+ss?|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
+    /(?:(?:delivery\s*ad{1,2}r?e?a?s{1,2}|shipping\s*ad{1,2}r?e?a?s{1,2}|home\s*ad{1,2}r?e?a?s{1,2}|ad{1,2}r?e?a?s{1,2}|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
   const explicitMatch = cleanText.match(explicitAddressRegex)
   if (explicitMatch && explicitMatch[1]) {
     const addr = explicitMatch[1].trim()
@@ -75,7 +89,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     }
   }
 
-  // Fallback keyword scanning
+  // If no explicit prefix, check multi-line or address keyword clusters
   if (!result.address) {
     const lines = cleanText.split(/[\r\n]+/)
     const addressKeywords = [
@@ -103,17 +117,29 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     }
   }
 
+  // Clean address prefix if still present
+  if (result.address) {
+    result.address = result.address
+      .replace(/^(?:(?:delivery\s*|shipping\s*|home\s*)?ad{1,2}r?e?a?s{1,2}|thikana|ঠিকানা|বাসার\s*ঠিকানা|বাসা|লোকেশন|location)\s*[:=-]\s*/i, '')
+      .trim()
+  }
+
+  // If address contains the phone number, clean it out so the address is pure
   if (result.address && result.phone) {
     const rawDigits = result.phone.replace(/\D/g, '')
     const localNumber = rawDigits.startsWith('880') ? rawDigits.slice(3) : rawDigits.startsWith('0') ? rawDigits.slice(1) : rawDigits
     const stripRegex = new RegExp(
-      `[\\s,।|•-]*((?:phone|mobile|cell|contact|call|ফোন|নাম্বার|মোবাইল)[:\\s-]*)?(?:\\+?880|0)?${localNumber}[^\\n\\r]*$`,
+      `[\\s,।|•-]*((?:phone|mobile|cell|contact|call|phn|mob|ph|num(?:ber)?|ফোন|নাম্বার|মোবাইল)[:\\s-]*)?(?:\\+?880|0)?${localNumber}[^\\n\\r]*$`,
       'i'
     )
-    result.address = result.address.replace(stripRegex, '').trim()
+    result.address = result.address
+      .replace(stripRegex, '')
+      .replace(/[\s,।|•-]*((?:phone|mobile|cell|contact|call|phn|mob|ph|num(?:ber)?|ফোন|নাম্বার|মোবাইল)[:\s-]*)$/i, '')
+      .replace(/[,\s.]+$/, '')
+      .trim()
   }
 
-  // 4. NAME EXTRACTION
+  // 4. NAME EXTRACTION (Optional)
   const nameRegex = /(?:my\s*name\s*is|name\s*[:=-]|naam\s*[:=-]|নাম\s*[:=-])\s*([a-zA-Z\s\u0980-\u09FF]{2,30})/i
   const nameMatch = cleanText.match(nameRegex)
   if (nameMatch && nameMatch[1]) {

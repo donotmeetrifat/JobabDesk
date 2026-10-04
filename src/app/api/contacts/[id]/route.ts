@@ -59,13 +59,29 @@ export async function PATCH(
       }
     }
 
-    const { data: updatedContact, error } = await supabase
+    let { data: updatedContact, error } = await supabase
       .from('contacts')
       .update(updates)
       .eq('id', id)
       .eq('account_id', accountId)
       .select()
       .maybeSingle()
+
+    // If updating phone caused a unique constraint collision (23505),
+    // retry updating the remaining fields (address, name, etc.) without phone
+    if (error && error.code === '23505' && updates.phone) {
+      console.warn('[api/contacts/[id]] Phone collision detected, retrying without phone:', updates.phone)
+      delete updates.phone
+      const retryResult = await supabase
+        .from('contacts')
+        .update(updates)
+        .eq('id', id)
+        .eq('account_id', accountId)
+        .select()
+        .maybeSingle()
+      updatedContact = retryResult.data
+      error = retryResult.error
+    }
 
     if (error) {
       console.error('[api/contacts/[id]] Update error:', error)

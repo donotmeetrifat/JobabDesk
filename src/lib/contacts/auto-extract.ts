@@ -1,136 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
+import {
+  extractCustomerInfoFromMessage,
+  isFacebookPsid,
+  cleanEmail,
+  normalizeBengaliDigits,
+  type ExtractedCustomerInfo,
+} from './extract-info'
 
-export function isFacebookPsid(phone?: string | null): boolean {
-  if (!phone) return false
-  const trimmed = phone.trim()
-  return !trimmed.startsWith('+') && trimmed.length >= 15 && /^\d+$/.test(trimmed)
-}
-
-export function cleanEmail(email?: string | null): string | null {
-  if (!email) return null
-  const trimmed = email.trim()
-  if (trimmed.toLowerCase().endsWith('@facebook.com')) return null
-  return trimmed
-}
-
-export interface ExtractedCustomerInfo {
-  phone?: string | null
-  address?: string | null
-  email?: string | null
-  name?: string | null
-}
-
-/**
- * Robust extractor for phone, address, and email from customer chat messages.
- * Handles English, Bengali script, and Banglish formats.
- */
-export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerInfo {
-  if (!text || typeof text !== 'string') return {}
-
-  const result: ExtractedCustomerInfo = {}
-  const cleanText = text.trim()
-
-  // 1. PHONE EXTRACTION
-  // Match Bangladesh numbers: 013-019 (11 digits), +880 1..., +8801..., 8801...
-  // Handles prefixes ("num: ", "phone: "), spaces, hyphens, and delimiters: 01712-345678, +880 1613-441083
-  const bdPhoneRegex =
-    /(?:(?:num(?:ber)?|phone|mobile|cell|contact|call|ফোন|নাম্বার|মোবাইল)\s*[:=-]?\s*)?(?:(?:\+|00)?880[-\s]?|0)?(1[3-9][0-9]{2}[-\s]?[0-9]{3}[-\s]?[0-9]{3})\b/i
-  const bdMatch = cleanText.match(bdPhoneRegex)
-  if (bdMatch) {
-    const rawDigits = bdMatch[0].replace(/\D/g, '')
-    if (rawDigits.length === 11 && rawDigits.startsWith('01')) {
-      result.phone = `+880${rawDigits.slice(1)}`
-    } else if (rawDigits.length === 13 && rawDigits.startsWith('8801')) {
-      result.phone = `+${rawDigits}`
-    } else if (rawDigits.endsWith(bdMatch[1].replace(/\D/g, ''))) {
-      result.phone = `+880${bdMatch[1].replace(/\D/g, '')}`
-    } else if (rawDigits.length >= 10 && rawDigits.length <= 15) {
-      result.phone = `+${rawDigits}`
-    }
-  }
-
-  // Fallback: International E.164 phone numbers (+1..., +44..., etc.)
-  if (!result.phone) {
-    const intlPhoneRegex = /\+([1-9]\d{7,14})\b/
-    const intlMatch = cleanText.match(intlPhoneRegex)
-    if (intlMatch && !isFacebookPsid(intlMatch[1])) {
-      result.phone = `+${intlMatch[1]}`
-    }
-  }
-
-  // 2. EMAIL EXTRACTION
-  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/
-  const emailMatch = cleanText.match(emailRegex)
-  if (emailMatch) {
-    const candidate = emailMatch[0].toLowerCase()
-    if (!candidate.endsWith('@facebook.com')) {
-      result.email = candidate
-    }
-  }
-
-  // 3. ADDRESS EXTRACTION
-  // Look for explicit prefix: Address: ..., Adreess: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
-  const explicitAddressRegex =
-    /(?:(?:delivery\s*add?re+ss?|shipping\s*add?re+ss?|home\s*add?re+ss?|add?re+ss?|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
-  const explicitMatch = cleanText.match(explicitAddressRegex)
-  if (explicitMatch && explicitMatch[1]) {
-    const addr = explicitMatch[1].trim()
-    if (addr.length >= 5) {
-      result.address = addr
-    }
-  }
-
-  // If no explicit prefix, check multi-line or address keyword clusters
-  if (!result.address) {
-    const lines = cleanText.split(/[\r\n]+/)
-    const addressKeywords = [
-      'road', 'house', 'sector', 'block', 'flat', 'floor', 'apt', 'lane', 'avenue',
-      'dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barisal',
-      'rangpur', 'mymensingh', 'comilla', 'cumilla', 'gazipur', 'narayanganj', 'savar',
-      'uttara', 'mirpur', 'dhanmondi', 'gulshan', 'banani', 'mohammadpur', 'jatrabari',
-      'badda', 'rampura', 'bashundhara', 'malibagh', 'motijheel', 'khilgaon', 'farmgate',
-      'রোড', 'বাসা', 'বাড়ি', 'বাড়ি', 'সেক্টর', 'ব্লক', 'ঢাকা', 'চট্টগ্রাম', 'সিলেট',
-      'রাজশাহী', 'খুলনা', 'বরিশাল', 'রংপুর', 'ময়মনসিংহ', 'কুমিল্লা', 'মিরপুর', 'উত্তরা',
-      'ধানমন্ডি', 'গুলশান', 'বনানী', 'মোহাম্মদপুর'
-    ]
-
-    for (const line of lines) {
-      const trimmedLine = line.trim()
-      // Skip lines that are just the phone number or greeting
-      if (trimmedLine.length < 8) continue
-      if (result.phone && trimmedLine.includes(result.phone)) continue
-
-      const lowerLine = trimmedLine.toLowerCase()
-      const matchesKeyword = addressKeywords.some((kw) => lowerLine.includes(kw))
-      if (matchesKeyword) {
-        result.address = trimmedLine
-        break
-      }
-    }
-  }
-
-  // If address contains the phone number, clean it out so the address is pure
-  if (result.address && result.phone) {
-    const rawDigits = result.phone.replace(/\D/g, '')
-    const localNumber = rawDigits.startsWith('880') ? rawDigits.slice(3) : rawDigits.startsWith('0') ? rawDigits.slice(1) : rawDigits
-    const stripRegex = new RegExp(
-      `[\\s,।|•-]*((?:phone|mobile|cell|contact|call|ফোন|নাম্বার|মোবাইল)[:\\s-]*)?(?:\\+?880|0)?${localNumber}[^\\n\\r]*$`,
-      'i'
-    )
-    result.address = result.address.replace(stripRegex, '').trim()
-  }
-
-  // 4. NAME EXTRACTION (Optional)
-  const nameRegex = /(?:my\s*name\s*is|name\s*[:=-]|naam\s*[:=-]|নাম\s*[:=-])\s*([a-zA-Z\s\u0980-\u09FF]{2,30})/i
-  const nameMatch = cleanText.match(nameRegex)
-  if (nameMatch && nameMatch[1]) {
-    const candidateName = nameMatch[1].trim()
-    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http')) {
-      result.name = candidateName
-    }
-  }
-
-  return result
+export {
+  extractCustomerInfoFromMessage,
+  isFacebookPsid,
+  cleanEmail,
+  normalizeBengaliDigits,
+  type ExtractedCustomerInfo,
 }
 
 /**
@@ -144,7 +26,7 @@ export async function autoUpdateContactFromChatMessage(params: {
   supabase: any
 }): Promise<{ updated: boolean; updates: Record<string, any> }> {
   const { contactId, accountId, messageText, supabase } = params
-  if (!contactId || !accountId || !messageText) {
+  if (!contactId || !messageText) {
     return { updated: false, updates: {} }
   }
 
@@ -158,12 +40,11 @@ export async function autoUpdateContactFromChatMessage(params: {
   }
 
   try {
-    // 1. Fetch current contact state
+    // 1. Fetch current contact state (lookup by primary key contactId)
     const { data: contact, error: fetchErr } = await supabase
       .from('contacts')
       .select('*')
       .eq('id', contactId)
-      .eq('account_id', accountId)
       .maybeSingle()
 
     if (fetchErr || !contact) {
@@ -171,6 +52,7 @@ export async function autoUpdateContactFromChatMessage(params: {
       return { updated: false, updates: {} }
     }
 
+    const effectiveAccountId = contact.account_id || accountId
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     }
@@ -181,10 +63,9 @@ export async function autoUpdateContactFromChatMessage(params: {
     if (extracted.phone) {
       const isCurrentPsid = isFacebookPsid(contact.phone)
       if (isCurrentPsid || !contact.phone || contact.phone !== extracted.phone) {
-        // If current phone is a PSID, preserve it in messenger_id / wa_user_id
+        // If current phone is a PSID, preserve it in messenger_id
         if (isCurrentPsid) {
           updates.messenger_id = contact.phone
-          updates.wa_user_id = contact.phone
         }
         updates.phone = extracted.phone
         shouldUpdate = true
@@ -227,12 +108,30 @@ export async function autoUpdateContactFromChatMessage(params: {
       return { updated: false, updates: {} }
     }
 
+    // Guard: Prevent unique constraint violation on (account_id, phone_normalized)
+    // If another contact row already has this phone number, do NOT fail the whole update.
+    if (updates.phone && effectiveAccountId) {
+      const normalizedDigits = updates.phone.replace(/\D/g, '')
+      const { data: duplicateContact } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('account_id', effectiveAccountId)
+        .eq('phone_normalized', normalizedDigits)
+        .neq('id', contactId)
+        .limit(1)
+        .maybeSingle()
+
+      if (duplicateContact) {
+        console.warn(`[AutoExtract] Phone ${updates.phone} already belongs to contact ${duplicateContact.id}. Omitting phone update to avoid constraint collision; address/email will still update.`)
+        delete updates.phone
+      }
+    }
+
     // Execute atomic update for THIS EXACT CONTACT ONLY
     const { error: updateErr } = await supabase
       .from('contacts')
       .update(updates)
       .eq('id', contactId)
-      .eq('account_id', accountId)
 
     if (updateErr) {
       // If address column does not exist yet in schema cache, retry without address column
@@ -245,7 +144,6 @@ export async function autoUpdateContactFromChatMessage(params: {
             .from('contacts')
             .update(fallbackUpdates)
             .eq('id', contactId)
-            .eq('account_id', accountId)
         }
       } else {
         console.error('[AutoExtract] Error updating contact:', updateErr)
@@ -316,8 +214,8 @@ export async function backfillContactInfoFromChat(supabase: any) {
     }
 
     return { processed: conversations.length, updated: updatedCount }
-  } catch (e) {
-    console.error('[AutoExtract] Error in backfillContactInfoFromChat:', e)
-    return { error: String(e) }
+  } catch (err) {
+    console.error('[AutoExtract] Error in backfillContactInfoFromChat:', err)
+    return { processed: 0, updated: 0 }
   }
 }
