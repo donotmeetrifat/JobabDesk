@@ -39,6 +39,7 @@ import {
   Search,
   Plus,
   Upload,
+  Download,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -81,15 +82,23 @@ function cleanEmail(email?: string | null): string | null {
   return trimmed;
 }
 
-function getContactChannel(contact: Contact): 'messenger' | 'whatsapp' | 'other' {
-  if (
-    contact.company === 'Facebook Messenger' ||
+function getContactChannel(contact: Contact): 'messenger' | 'whatsapp' | 'all' | 'other' {
+  const hasRealPhone = Boolean(contact.phone && !isFacebookPsid(contact.phone));
+  const hasMessenger = Boolean(
+    contact.profile_url ||
+    contact.messenger_id ||
     isFacebookPsid(contact.phone) ||
+    contact.company === 'Facebook Messenger' ||
     contact.email?.toLowerCase().endsWith('@facebook.com')
-  ) {
+  );
+
+  if (contact.channel === 'all' || (hasRealPhone && hasMessenger)) {
+    return 'all';
+  }
+  if (contact.channel === 'messenger' || hasMessenger) {
     return 'messenger';
   }
-  if (contact.phone && (contact.phone.startsWith('+') || /^\d{7,14}$/.test(contact.phone))) {
+  if (hasRealPhone || contact.channel === 'whatsapp') {
     return 'whatsapp';
   }
   return 'other';
@@ -385,6 +394,153 @@ export default function ContactsPage() {
     setPage(0);
   }
 
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExportContacts() {
+    setExporting(true);
+    try {
+      let rowsToExport: ContactWithTags[] = [];
+
+      if (selected.size > 0) {
+        rowsToExport = contacts.filter((c) => selected.has(c.id));
+      } else {
+        let query = supabase
+          .from('contacts')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        const term = search.trim();
+        if (term) {
+          const like = `%${term}%`;
+          query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        const fetched = (data ?? []) as Contact[];
+
+        const contactIds = fetched.map((c) => c.id);
+        const { data: ctData } =
+          contactIds.length > 0
+            ? await supabase
+                .from('contact_tags')
+                .select('contact_id, tag_id')
+                .in('contact_id', contactIds)
+            : { data: [] };
+
+        const tagsByContact: Record<string, string[]> = {};
+        ctData?.forEach((ct: any) => {
+          if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
+          tagsByContact[ct.contact_id].push(ct.tag_id);
+        });
+
+        rowsToExport = fetched.map((c) => ({
+          ...c,
+          tags: (tagsByContact[c.id] ?? [])
+            .map((tid) => tagsMap[tid])
+            .filter(Boolean),
+        }));
+
+        if (selectedTagIds.length > 0) {
+          const filterSet = new Set(selectedTagIds);
+          rowsToExport = rowsToExport.filter((c) =>
+            c.tags?.some((t) => filterSet.has(t.id))
+          );
+        }
+      }
+
+      if (rowsToExport.length === 0) {
+        toast.info('No contacts to export');
+        setExporting(false);
+        return;
+      }
+
+      const escapeCsv = (val: any) => {
+        if (val === null || val === undefined) return '';
+        const str = String(val).trim();
+        if (
+          str.includes(',') ||
+          str.includes('"') ||
+          str.includes('\n') ||
+          str.includes('\r')
+        ) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const headers = [
+        'Name',
+        'Phone',
+        'Profile URL',
+        'Messenger ID',
+        'Email',
+        'Company',
+        'Address',
+        'Channel',
+        'Tags',
+        'Created At',
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      for (const c of rowsToExport) {
+        const isPsid = isFacebookPsid(c.phone);
+        const phone = isPsid ? '' : (c.phone ?? '');
+        const profileUrl =
+          c.profile_url ?? (isPsid ? `https://facebook.com/${c.phone}` : '');
+        const messengerId = c.messenger_id ?? (isPsid ? c.phone : '');
+        const cleanMail = cleanEmail(c.email) ?? '';
+        const company =
+          c.company === 'Facebook Messenger' ? '' : (c.company ?? '');
+        const channel = getContactChannel(c);
+        const tagNames = (c.tags ?? []).map((t) => t.name).join('; ');
+        const createdAt = c.created_at
+          ? new Date(c.created_at).toISOString().slice(0, 10)
+          : '';
+
+        csvRows.push(
+          [
+            escapeCsv(c.name || ''),
+            escapeCsv(phone),
+            escapeCsv(profileUrl),
+            escapeCsv(messengerId),
+            escapeCsv(cleanMail),
+            escapeCsv(company),
+            escapeCsv(c.address || ''),
+            escapeCsv(channel),
+            escapeCsv(tagNames),
+            escapeCsv(createdAt),
+          ].join(',')
+        );
+      }
+
+      const csvContent = '\uFEFF' + csvRows.join('\r\n');
+      const blob = new Blob([csvContent], {
+        type: 'text/csv;charset=utf-8;',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.download = `contacts_export_${dateStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(
+        t('toastExported', { count: rowsToExport.length }) ||
+          `Exported ${rowsToExport.length} contacts`
+      );
+    } catch (err: any) {
+      console.error('Export failed:', err);
+      toast.error(t('toastExportFailed') || 'Failed to export contacts');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -406,6 +562,19 @@ export default function ContactsPage() {
               {t('customFieldsBtn')}
             </Button>
           )}
+          <Button
+            variant="outline"
+            disabled={exporting || totalCount === 0}
+            onClick={handleExportContacts}
+            className="border-border text-muted-foreground hover:bg-muted"
+          >
+            {exporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+            {exporting ? t('exporting') : t('exportBtn')}
+          </Button>
           <GatedButton
             variant="outline"
             canAct={canEdit}
@@ -559,6 +728,20 @@ export default function ContactsPage() {
             >
               {t('clearSelection')}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={exporting}
+              onClick={handleExportContacts}
+              className="border-border text-foreground hover:bg-muted"
+            >
+              {exporting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              {exporting ? t('exporting') : `${t('exportBtn')} (${selected.size})`}
+            </Button>
             <GatedButton
               variant="destructive"
               size="sm"
@@ -686,7 +869,53 @@ export default function ContactsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground font-mono text-xs">
-                      {isPsid ? (
+                      {contact.phone && !isPsid ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-foreground/90">{contact.phone}</span>
+                          {contact.profile_url && (
+                            <a
+                              href={contact.profile_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 px-1.5 py-0.5 text-[10px] font-sans transition-colors"
+                              title={contact.profile_url}
+                            >
+                              <ExternalLink className="size-2.5" />
+                              <span>FB</span>
+                            </a>
+                          )}
+                        </div>
+                      ) : contact.profile_url ? (
+                        <div className="flex items-center gap-1.5 font-sans">
+                          <a
+                            href={contact.profile_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 hover:underline max-w-[140px] truncate"
+                            title={contact.profile_url}
+                          >
+                            <ExternalLink className="size-3 shrink-0" />
+                            <span className="truncate">Facebook Profile</span>
+                          </a>
+                          {isPsid && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(contact.phone);
+                                toast.success('Facebook ID copied');
+                              }}
+                              className="inline-flex items-center gap-0.5 rounded bg-muted/80 hover:bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors border border-border/50 shrink-0"
+                              title="Copy Facebook PSID"
+                            >
+                              <Copy className="size-2.5" />
+                              <span>ID</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : isPsid ? (
                         <div className="flex items-center gap-1.5" title={`Facebook User ID: ${contact.phone}`}>
                           <span className="text-muted-foreground/60 italic font-sans text-xs">No phone</span>
                           <button
@@ -703,8 +932,6 @@ export default function ContactsPage() {
                             <span>ID</span>
                           </button>
                         </div>
-                      ) : contact.phone ? (
-                        <span className="text-foreground/90">{contact.phone}</span>
                       ) : (
                         <span className="text-muted-foreground/60 text-xs">—</span>
                       )}
@@ -717,7 +944,12 @@ export default function ContactsPage() {
                       )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      {channel === 'messenger' ? (
+                      {channel === 'all' ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-semibold text-purple-600 dark:text-purple-400 border border-purple-500/20" title="Available on WhatsApp & Messenger">
+                          <Users className="size-3" />
+                          Omnichannel
+                        </span>
+                      ) : channel === 'messenger' ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2.5 py-0.5 text-xs font-semibold text-blue-500 border border-blue-500/20">
                           <MessageSquare className="size-3" />
                           Messenger

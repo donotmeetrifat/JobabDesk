@@ -455,6 +455,8 @@
       "subtitleZero": "Manage your contact list.",
       "customFieldsBtn": "Custom fields",
       "selectAllOnPage": "Select all contacts on this page",
+      "exportBtn": "এক্সপোর্ট CSV",
+      "exporting": "এক্সপোর্ট হচ্ছে...",
       "importBtn": "Import",
       "addContactBtn": "Add Contact",
       "searchPlaceholder": "Search by name, phone, or email...",
@@ -593,7 +595,7 @@
     },
     "importModal": {
       "title": "কন্টাক্ট ইমপোর্ট করুন",
-      "desc": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
+      "desc": "<phoneCode>phone</phoneCode> (WhatsApp) অথবা <profileCode>profile_url</profileCode> (Messenger) সহ CSV ফাইল আপলোড করুন। ঐচ্ছিক: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode>।",
       "uploadDropzone": "Click to choose a CSV file",
       "uploadHint": ".csv up to your browser limit",
       "rowsReady": "{count} row ready",

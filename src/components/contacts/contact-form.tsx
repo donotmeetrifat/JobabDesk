@@ -25,9 +25,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle, MapPin } from 'lucide-react';
+import { Loader2, AlertTriangle, MapPin, Link as LinkIcon, MessageSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { isFacebookPsid } from '@/lib/contacts/auto-extract';
+import { extractMessengerDetails } from '@/lib/contacts/profile-utils';
 
 interface ContactFormProps {
   open: boolean;
@@ -55,6 +56,7 @@ export function ContactForm({
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [profileUrl, setProfileUrl] = useState('');
   const [address, setAddress] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
@@ -79,6 +81,7 @@ export function ContactForm({
       // If phone is a Facebook PSID, keep input empty so user enters real phone
       const isPsid = isFacebookPsid(contact?.phone);
       setPhone(isPsid ? '' : (contact?.phone ?? ''));
+      setProfileUrl((contact as any)?.profile_url ?? (isPsid ? `https://facebook.com/${contact?.phone}` : ''));
       setAddress(contact?.address ?? '');
       const rawEmail = contact?.email ?? '';
       setEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
@@ -135,9 +138,10 @@ export function ContactForm({
 
     const currentIsPsid = isEdit && isFacebookPsid(contact?.phone);
     const trimmedPhone = phone.trim();
+    const trimmedProfile = profileUrl.trim();
 
-    if (!currentIsPsid && !trimmedPhone) {
-      toast.error(t('phoneRequired'));
+    if (!currentIsPsid && !trimmedPhone && !trimmedProfile) {
+      toast.error('Please enter a phone number (WhatsApp) or Facebook profile URL (Messenger)');
       return;
     }
 
@@ -154,7 +158,20 @@ export function ContactForm({
       }
     } else if (currentIsPsid && contact?.phone) {
       finalPhone = contact.phone;
+    } else {
+      finalPhone = '';
     }
+
+    let extractedMessenger: { profileUrl: string; messengerId?: string } = { profileUrl: '' };
+    if (trimmedProfile) {
+      extractedMessenger = extractMessengerDetails(trimmedProfile);
+    }
+    const finalChannel =
+      finalPhone && extractedMessenger.profileUrl
+        ? 'all'
+        : extractedMessenger.profileUrl
+        ? 'messenger'
+        : 'whatsapp';
 
     // Hard-block an exact duplicate on create (the DB unique index is
     // the real backstop; this avoids a round-trip + a raw error toast).
@@ -180,8 +197,17 @@ export function ContactForm({
           name: name.trim() || null,
           phone: finalPhone,
           email: email.trim() || null,
-          company: company.trim() || null,
+          company:
+            company.trim() ||
+            (extractedMessenger.profileUrl && !finalPhone
+              ? 'Facebook Messenger'
+              : null),
           address: address.trim() || null,
+          profile_url: extractedMessenger.profileUrl || null,
+          messenger_id:
+            extractedMessenger.messengerId ||
+            (contact?.messenger_id ?? (currentIsPsid ? contact?.phone : null)),
+          channel: finalChannel,
           updated_at: new Date().toISOString(),
         };
 
@@ -195,14 +221,15 @@ export function ContactForm({
           .eq('id', contactId);
 
         if (error) {
-          if (error.message?.includes('address')) {
-            const fallback = { ...updatePayload };
-            delete fallback.address;
-            const { error: err2 } = await supabase.from('contacts').update(fallback).eq('id', contactId);
-            if (err2) throw err2;
-          } else {
-            throw error;
-          }
+          const fallback = { ...updatePayload };
+          delete fallback.profile_url;
+          delete fallback.channel;
+          delete fallback.address;
+          const { error: err2 } = await supabase
+            .from('contacts')
+            .update(fallback)
+            .eq('id', contactId);
+          if (err2) throw err2;
         }
       } else {
         const insertPayload: Record<string, any> = {
@@ -211,8 +238,15 @@ export function ContactForm({
           name: name.trim() || null,
           phone: finalPhone,
           email: email.trim() || null,
-          company: company.trim() || null,
+          company:
+            company.trim() ||
+            (extractedMessenger.profileUrl && !finalPhone
+              ? 'Facebook Messenger'
+              : null),
           address: address.trim() || null,
+          profile_url: extractedMessenger.profileUrl || null,
+          messenger_id: extractedMessenger.messengerId || null,
+          channel: finalChannel,
         };
 
         const { data, error } = await supabase
@@ -222,15 +256,17 @@ export function ContactForm({
           .single();
 
         if (error) {
-          if (error.message?.includes('address')) {
-            const fallback = { ...insertPayload };
-            delete fallback.address;
-            const { data: d2, error: err2 } = await supabase.from('contacts').insert(fallback).select('id').single();
-            if (err2) throw err2;
-            contactId = d2.id;
-          } else {
-            throw error;
-          }
+          const fallback = { ...insertPayload };
+          delete fallback.profile_url;
+          delete fallback.channel;
+          delete fallback.address;
+          const { data: d2, error: err2 } = await supabase
+            .from('contacts')
+            .insert(fallback)
+            .select('id')
+            .single();
+          if (err2) throw err2;
+          contactId = d2.id;
         } else {
           contactId = data.id;
         }
@@ -308,7 +344,7 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-phone" className="text-muted-foreground">
-              {t('phoneLabel')} <span className="text-red-400">*</span>
+              {t('phoneLabel')}
             </Label>
             <Input
               id="cf-phone"
@@ -352,6 +388,23 @@ export function ContactForm({
                 {t('phoneHint')}
               </p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-profile-url" className="text-muted-foreground flex items-center gap-1.5">
+              <LinkIcon className="size-3.5 text-muted-foreground" />
+              Facebook Profile URL / Messenger
+            </Label>
+            <Input
+              id="cf-profile-url"
+              value={profileUrl}
+              onChange={(e) => setProfileUrl(e.target.value)}
+              placeholder="https://facebook.com/profile.php?id=... or username"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional for WhatsApp, or required for Messenger marketing when no phone is available.
+            </p>
           </div>
 
           <div className="space-y-2">

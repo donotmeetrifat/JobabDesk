@@ -120,6 +120,7 @@ export interface Contact {
   company?: string;
   address?: string | null;
   messenger_id?: string | null;
+  profile_url?: string | null;
   avatar_url?: string;
   channel?: string;
   ai_auto_reply_muted?: boolean;

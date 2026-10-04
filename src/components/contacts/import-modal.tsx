@@ -5,9 +5,11 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
   dedupeByPhone,
+  dedupeImportContacts,
   isUniqueViolation,
   normalizeKey,
 } from '@/lib/contacts/dedupe';
+import { normalizeProfileKey } from '@/lib/contacts/profile-utils';
 import {
   parseContactCsv,
   type ParsedContactRow,
@@ -36,6 +38,8 @@ import {
   XCircle,
   AlertTriangle,
   Tag,
+  MessageSquare,
+  Phone,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -133,8 +137,11 @@ export function ImportModal({
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
+  const [hasPhoneColumn, setHasPhoneColumn] = useState(false);
+  const [hasProfileUrlColumn, setHasProfileUrlColumn] = useState(false);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
+  const [hasAddressColumn, setHasAddressColumn] = useState(false);
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
     new Map()
   );
@@ -151,8 +158,11 @@ export function ImportModal({
   function reset() {
     setFile(null);
     setParsedRows([]);
+    setHasPhoneColumn(false);
+    setHasProfileUrlColumn(false);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
+    setHasAddressColumn(false);
     setTagColorByKey(new Map());
     setResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -173,22 +183,31 @@ export function ImportModal({
     const text = await selected.text();
     const {
       rows,
+      hasPhoneColumn: csvHasPhone,
+      hasProfileUrlColumn: csvHasProfile,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
+      hasAddressColumn: csvHasAddress,
     } = parseContactCsv(text);
 
     if (rows.length === 0) {
       toast.error(t('toastNoValidRows'));
       setParsedRows([]);
+      setHasPhoneColumn(false);
+      setHasProfileUrlColumn(false);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
+      setHasAddressColumn(false);
       setTagColorByKey(new Map());
       return;
     }
 
     setParsedRows(rows);
+    setHasPhoneColumn(csvHasPhone);
+    setHasProfileUrlColumn(csvHasProfile);
     setHasTagsColumn(csvHasTags);
     setHasCompanyColumn(csvHasCompany);
+    setHasAddressColumn(csvHasAddress);
 
     if (csvHasTags && accountId) {
       const { data: tags } = await supabase
@@ -226,33 +245,44 @@ export function ImportModal({
       const failedDetails: { phone: string; name?: string; reason: string }[] =
         [];
 
-      // 1) De-dupe within the file by normalized phone (keep first).
-      //    Rows with no usable phone at all are counted separately —
-      //    they never duplicated anything, so lumping them into
-      //    `skipped` would misreport them as dupes (see dedupeByPhone).
+      // 1) De-dupe within the file by phone or profile URL (keep first).
       const {
         unique,
         duplicates: inFileDupes,
         invalid: invalidPhone,
-      } = dedupeByPhone(parsedRows);
+      } = dedupeImportContacts(parsedRows);
       skipped += inFileDupes;
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
+      // 2) Skip numbers & profile URLs already in this account.
       const { data: existingRows } = await supabase
         .from('contacts')
-        .select('phone_normalized')
+        .select('phone_normalized, profile_url, messenger_id')
         .eq('account_id', accountId);
-      const existing = new Set(
+
+      const existingPhones = new Set(
         (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
+          .map((r: any) => r.phone_normalized)
+          .filter(Boolean)
+      );
+
+      const existingProfiles = new Set(
+        (existingRows ?? [])
+          .flatMap((r: any) => [
+            r.profile_url ? normalizeProfileKey(r.profile_url) : null,
+            r.messenger_id ? `fb:${r.messenger_id.trim()}` : null,
+          ])
+          .filter(Boolean)
       );
 
       const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
+        const phoneKey = row.phone ? normalizeKey(row.phone) : null;
+        const profileKey = normalizeProfileKey(row.profile_url || row.messenger_id);
+
+        if (phoneKey && existingPhones.has(phoneKey)) {
+          skipped++;
+          return false;
+        }
+        if (profileKey && existingProfiles.has(profileKey)) {
           skipped++;
           return false;
         }
@@ -275,21 +305,33 @@ export function ImportModal({
 
       const tagAssignments: ContactTagAssignment[] = [];
 
-      // 4) Batch insert the genuinely-new rows in chunks of 50. The DB
-      //    unique index is the backstop: a 23505 (race, or a format
-      //    that normalizes equal) counts as skipped, not failed.
+      // 4) Batch insert the genuinely-new rows in chunks of 50.
       const chunkSize = 50;
 
       for (let i = 0; i < toInsert.length; i += chunkSize) {
         const chunk = toInsert.slice(i, i + chunkSize);
-        const rows = chunk.map((row) => ({
-          user_id: user.id,
-          account_id: accountId,
-          phone: row.phone,
-          name: row.name || null,
-          email: row.email || null,
-          company: row.company || null,
-        }));
+        const rows = chunk.map((row) => {
+          const channel =
+            row.phone && row.profile_url
+              ? 'all'
+              : row.profile_url
+              ? 'messenger'
+              : 'whatsapp';
+          return {
+            user_id: user.id,
+            account_id: accountId,
+            phone: row.phone || '',
+            name: row.name || null,
+            email: row.email || null,
+            company:
+              row.company ||
+              (row.profile_url && !row.phone ? 'Facebook Messenger' : null),
+            address: row.address || null,
+            profile_url: row.profile_url || null,
+            messenger_id: row.messenger_id || null,
+            channel,
+          };
+        });
 
         const { data, error } = await supabase
           .from('contacts')
@@ -320,17 +362,13 @@ export function ImportModal({
               skipped++;
             } else {
               failed++;
-              // Keep the actual DB error instead of discarding it —
-              // "N contacts failed" with no reason attached left no
-              // way to tell an RLS/constraint failure from a fluke,
-              // let alone which contact it was.
               console.error(
                 '[contacts import] insert failed for',
-                row.phone,
+                row.phone || row.profile_url,
                 singleErr
               );
               failedDetails.push({
-                phone: row.phone,
+                phone: row.phone || row.profile_url || 'Unknown',
                 name: row.name ?? undefined,
                 reason:
                   (singleErr as { message?: string } | null)?.message ||
@@ -341,9 +379,6 @@ export function ImportModal({
         } else {
           const inserted = data ?? [];
           imported += inserted.length;
-          // inserted[j] ↔ chunk[j] only holds because a single INSERT
-          // preserves RETURNING order. If this path is ever split into
-          // parallel inserts, zip by phone or returned id instead.
           for (let j = 0; j < inserted.length; j++) {
             const source = chunk[j];
             if (!source || source.tagNames.length === 0) continue;
@@ -407,14 +442,31 @@ export function ImportModal({
   }
 
   const preview = parsedRows.slice(0, PREVIEW_LIMIT);
-  // Tags: OR — show when the CSV declares a column or preview rows carry
-  // values, so an all-empty tags column still renders for validation.
+  const previewHasPhone =
+    hasPhoneColumn || preview.some((row) => row.phone?.trim());
+  const previewHasProfile =
+    hasProfileUrlColumn ||
+    preview.some((row) => row.profile_url?.trim() || row.messenger_id?.trim());
   const previewHasTags =
     hasTagsColumn || preview.some((row) => row.tagNames.length > 0);
-  // Company: AND — hide unless the CSV declares it and preview has data,
-  // avoiding an all-dash column that wastes horizontal space.
   const previewHasCompany =
     hasCompanyColumn && preview.some((row) => row.company?.trim());
+  const previewHasAddress =
+    hasAddressColumn && preview.some((row) => row.address?.trim());
+
+  const channelStats = useMemo(() => {
+    let whatsapp = 0;
+    let messenger = 0;
+    let both = 0;
+    for (const r of parsedRows) {
+      const hasP = Boolean(r.phone?.trim());
+      const hasF = Boolean(r.profile_url?.trim() || r.messenger_id?.trim());
+      if (hasP && hasF) both++;
+      else if (hasF) messenger++;
+      else if (hasP) whatsapp++;
+    }
+    return { whatsapp, messenger, both };
+  }, [parsedRows]);
 
   const tagStats = useMemo(() => {
     const names = new Set<string>();
@@ -439,6 +491,7 @@ export function ImportModal({
               dangerouslySetInnerHTML={{
                 __html: t.markup('desc', {
                   phoneCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
+                  profileCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
                   nameCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
                   emailCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
                   companyCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
@@ -510,6 +563,23 @@ export function ImportModal({
                   {t('preview', { count: preview.length })}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {channelStats.whatsapp > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <Phone className="size-3" />
+                      {channelStats.whatsapp} WhatsApp
+                    </span>
+                  )}
+                  {channelStats.messenger > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                      <MessageSquare className="size-3" />
+                      {channelStats.messenger} Messenger
+                    </span>
+                  )}
+                  {channelStats.both > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 px-2 py-0.5 text-[11px] font-medium text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                      {channelStats.both} Both
+                    </span>
+                  )}
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
@@ -524,9 +594,16 @@ export function ImportModal({
                   <table className="w-full min-w-[32rem] text-xs">
                     <thead>
                       <tr className="border-b border-border bg-background/60">
-                        <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          {t('columns.phone')}
-                        </th>
+                        {previewHasPhone && (
+                          <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
+                            {t('columns.phone')}
+                          </th>
+                        )}
+                        {previewHasProfile && (
+                          <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
+                            Profile URL / Messenger
+                          </th>
+                        )}
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
                           {t('columns.name')}
                         </th>
@@ -536,6 +613,11 @@ export function ImportModal({
                         {previewHasCompany && (
                           <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
                             {t('columns.company')}
+                          </th>
+                        )}
+                        {previewHasAddress && (
+                          <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
+                            Address
                           </th>
                         )}
                         {previewHasTags && (
@@ -551,13 +633,40 @@ export function ImportModal({
                           key={i}
                           className="bg-popover/40 transition-colors hover:bg-muted/30"
                         >
-                          <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                            <PreviewCell
-                              value={row.phone}
-                              mono
-                              maxWidth="max-w-[7.5rem]"
-                            />
-                          </td>
+                          {previewHasPhone && (
+                            <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                              {row.phone ? (
+                                <PreviewCell
+                                  value={row.phone}
+                                  mono
+                                  maxWidth="max-w-[7.5rem]"
+                                />
+                              ) : (
+                                <span className="text-muted-foreground/60 italic text-[11px]">
+                                  No phone
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          {previewHasProfile && (
+                            <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                              {row.profile_url ? (
+                                <PreviewCell
+                                  value={row.profile_url}
+                                  mono
+                                  maxWidth="max-w-[10rem]"
+                                />
+                              ) : row.messenger_id ? (
+                                <span className="font-mono text-[11px] text-blue-500">
+                                  ID: {row.messenger_id}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/60 text-[11px]">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-popover-foreground">
                             <PreviewCell
                               value={row.name || '—'}
@@ -574,6 +683,14 @@ export function ImportModal({
                             <td className="px-3 py-2 text-muted-foreground">
                               <PreviewCell
                                 value={row.company || '—'}
+                                maxWidth="max-w-[7rem]"
+                              />
+                            </td>
+                          )}
+                          {previewHasAddress && (
+                            <td className="px-3 py-2 text-muted-foreground">
+                              <PreviewCell
+                                value={row.address || '—'}
                                 maxWidth="max-w-[7rem]"
                               />
                             </td>

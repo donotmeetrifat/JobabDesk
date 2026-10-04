@@ -79,6 +79,19 @@ describe("dedupeByPhone", () => {
     expect(duplicates).toBe(0);
     expect(invalid).toBe(1);
   });
+
+  it("accepts contacts with profile_url when phone is empty", () => {
+    const { unique, duplicates, invalid } = dedupeByPhone([
+      { phone: "", profile_url: "https://facebook.com/profile.php?id=100084729182371", name: "FB 1" },
+      { phone: "", profile_url: "https://facebook.com/profile.php?id=100084729182371", name: "FB 1 Dupe" },
+      { phone: "", profile_url: "https://facebook.com/another.user", name: "FB 2" },
+      { phone: "", profile_url: "" },
+    ]);
+    expect(unique).toHaveLength(2);
+    expect(unique.map((r) => r.name)).toEqual(["FB 1", "FB 2"]);
+    expect(duplicates).toBe(1);
+    expect(invalid).toBe(1);
+  });
 });
 
 describe("findExistingContact", () => {

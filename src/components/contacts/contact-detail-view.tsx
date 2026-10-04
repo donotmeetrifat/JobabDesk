@@ -47,6 +47,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { extractMessengerDetails } from '@/lib/contacts/profile-utils';
 
 function isFacebookPsid(phone?: string | null): boolean {
   if (!phone) return false;
@@ -88,9 +89,9 @@ export function ContactDetailView({
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
-  // Details tab
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editProfileUrl, setEditProfileUrl] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
@@ -132,6 +133,7 @@ export function ContactDetailView({
       setEditName(data.name ?? '');
       // If phone is a Facebook PSID, keep input empty so user enters real phone
       setEditPhone(isFacebookPsid(data.phone) ? '' : data.phone);
+      setEditProfileUrl(data.profile_url ?? '');
       setEditAddress(data.address ?? '');
       const rawEmail = data.email ?? '';
       setEditEmail(rawEmail.toLowerCase().endsWith('@facebook.com') ? '' : rawEmail);
@@ -227,9 +229,11 @@ export function ContactDetailView({
     const currentIsPsid = isFacebookPsid(contact?.phone);
     const trimmedPhone = editPhone.trim();
 
-    // If not a Facebook PSID contact, phone is required
-    if (!currentIsPsid && !trimmedPhone) {
-      toast.error(t('toastPhoneRequired'));
+    const trimmedProfileUrl = editProfileUrl.trim();
+
+    // Either phone or Facebook profile URL is required
+    if (!currentIsPsid && !trimmedPhone && !trimmedProfileUrl) {
+      toast.error('Please enter either a phone number or Facebook profile URL');
       return;
     }
 
@@ -247,12 +251,26 @@ export function ContactDetailView({
     } else if (currentIsPsid && contact?.phone) {
       // Retain PSID if phone input was left blank for a Messenger user
       finalPhone = contact.phone;
+    } else {
+      finalPhone = '';
+    }
+
+    let finalMessengerId = contact?.messenger_id || null;
+    let finalProfileUrl = trimmedProfileUrl || null;
+    if (trimmedProfileUrl) {
+      const parsed = extractMessengerDetails(trimmedProfileUrl);
+      finalProfileUrl = parsed.profileUrl || trimmedProfileUrl;
+      if (parsed.messengerId && !finalMessengerId) {
+        finalMessengerId = parsed.messengerId;
+      }
     }
 
     setSavingDetails(true);
     const updatePayload: Record<string, any> = {
       name: editName.trim() || null,
       phone: finalPhone,
+      profile_url: finalProfileUrl,
+      messenger_id: finalMessengerId,
       email: editEmail.trim() || null,
       company: editCompany.trim() || null,
       address: editAddress.trim() || null,
@@ -270,10 +288,11 @@ export function ContactDetailView({
       .eq('id', contactId);
 
     if (error) {
-      // Graceful fallback if address column is not cached yet in PostgREST schema
-      if (error.message?.includes('address')) {
+      // Graceful fallback if schema columns are not cached yet in PostgREST
+      if (error.message?.includes('address') || error.message?.includes('profile_url')) {
         const fallback = { ...updatePayload };
-        delete fallback.address;
+        if (error.message.includes('address')) delete fallback.address;
+        if (error.message.includes('profile_url')) delete fallback.profile_url;
         await supabase.from('contacts').update(fallback).eq('id', contactId);
         toast.success(t('toastUpdated'));
         fetchContact();
@@ -524,6 +543,18 @@ export function ContactDetailView({
                         {cleanMail}
                       </span>
                     )}
+                    {contact.profile_url && (
+                      <a
+                        href={contact.profile_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-blue-500 hover:underline max-w-[200px] truncate"
+                        title={contact.profile_url}
+                      >
+                        <ExternalLink className="size-3 shrink-0" />
+                        <span className="truncate">Facebook Profile</span>
+                      </a>
+                    )}
                     {contact.address && (
                       <span className="flex items-center gap-1 max-w-[220px] truncate text-foreground/80" title={contact.address}>
                         <MapPin className="size-3 shrink-0 text-primary" />
@@ -549,7 +580,18 @@ export function ContactDetailView({
                   <MessageCircle className="size-3.5 mr-1" />
                   Chat in Inbox
                 </Button>
-                {isPsid && (
+                {contact.profile_url && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(contact.profile_url || '', '_blank')}
+                    className="border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 text-xs h-8"
+                  >
+                    <ExternalLink className="size-3.5 mr-1" />
+                    Facebook Profile
+                  </Button>
+                )}
+                {isPsid && !contact.profile_url && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -637,7 +679,7 @@ export function ContactDetailView({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs flex items-center justify-between">
-                      <span>{isPsid ? 'Phone Number' : t('phone')} {!isPsid && <span className="text-red-400">*</span>}</span>
+                      <span>{isPsid ? 'Phone Number' : t('phone')}</span>
                       {isPsid && <span className="text-[10px] text-muted-foreground">PSID preserved</span>}
                     </Label>
                     <Input
@@ -645,6 +687,31 @@ export function ContactDetailView({
                       onChange={(e) => setEditPhone(e.target.value)}
                       placeholder={isPsid ? 'e.g. +880 1712-345678' : undefined}
                       className="bg-muted border-border text-foreground h-8 text-sm font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <MessageSquare className="size-3 text-blue-500" />
+                        Facebook Profile / Messenger URL
+                      </span>
+                      {editProfileUrl && (
+                        <a
+                          href={editProfileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-blue-500 hover:underline flex items-center gap-0.5"
+                        >
+                          <ExternalLink className="size-2.5" />
+                          Visit
+                        </a>
+                      )}
+                    </Label>
+                    <Input
+                      value={editProfileUrl}
+                      onChange={(e) => setEditProfileUrl(e.target.value)}
+                      placeholder="https://facebook.com/username or m.me/..."
+                      className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">

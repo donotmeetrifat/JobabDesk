@@ -78,41 +78,77 @@ export function isUniqueViolation(error: unknown): boolean {
   return (error as { code?: string }).code === "23505";
 }
 
+import { normalizeProfileKey } from "./profile-utils";
+
 /**
- * De-duplicate parsed CSV rows by normalized phone, keeping the first
- * occurrence of each. Rows whose phone is not a usable international
- * number are dropped too, but counted separately as `invalid` rather
- * than folded into `duplicates` — they never duplicated anything, and
- * the import result should say so instead of telling the user a
- * contact with a real, unique number was skipped as a dupe.
+ * De-duplicate parsed CSV rows by normalized phone and/or profile URL/Messenger ID,
+ * keeping the first occurrence of each.
  *
- * "Usable" means `parseInternationalPhone` accepts it: a leading `+`
- * and country code are required. A CSV of national-format numbers
- * ("4155551212") is the bulk version of issue #586 — every row would
- * be stored and later delivered to the wrong country — so those rows
- * are reported as invalid here, before anything is written.
+ * For WhatsApp contacts, "usable" means parseInternationalPhone accepts it (+ and country code).
+ * For Messenger contacts, a valid Facebook profile URL or Messenger ID is accepted.
  */
-export function dedupeByPhone<T extends { phone: string }>(
+export function dedupeImportContacts<
+  T extends {
+    phone: string;
+    profile_url?: string;
+    messenger_id?: string;
+  }
+>(
   rows: T[],
-): { unique: T[]; duplicates: number; invalid: number } {
-  const seen = new Set<string>();
+): {
+  unique: T[];
+  duplicates: number;
+  invalid: number;
+} {
+  const seenPhones = new Set<string>();
+  const seenProfiles = new Set<string>();
   const unique: T[] = [];
   let duplicates = 0;
   let invalid = 0;
 
   for (const row of rows) {
-    const key = parseInternationalPhone(row.phone);
-    if (!key) {
+    const rawPhone = row.phone?.trim();
+    const phoneKey = rawPhone ? parseInternationalPhone(rawPhone) : null;
+    const profileKey = normalizeProfileKey(row.profile_url || row.messenger_id);
+
+    // If phone was provided but is invalid (e.g. "4155551212" without +) and no profile_url, count as invalid
+    if (rawPhone && !phoneKey && !profileKey) {
       invalid++;
       continue;
     }
-    if (seen.has(key)) {
+
+    // A row is invalid if neither a valid phone nor a valid profile key exists
+    if (!phoneKey && !profileKey) {
+      invalid++;
+      continue;
+    }
+
+    let isDupe = false;
+    if (phoneKey && seenPhones.has(phoneKey)) {
+      isDupe = true;
+    }
+    if (profileKey && seenProfiles.has(profileKey)) {
+      isDupe = true;
+    }
+
+    if (isDupe) {
       duplicates++;
       continue;
     }
-    seen.add(key);
+
+    if (phoneKey) seenPhones.add(phoneKey);
+    if (profileKey) seenProfiles.add(profileKey);
     unique.push(row);
   }
 
   return { unique, duplicates, invalid };
 }
+
+export function dedupeByPhone<
+  T extends { phone: string; profile_url?: string; messenger_id?: string }
+>(
+  rows: T[],
+): { unique: T[]; duplicates: number; invalid: number } {
+  return dedupeImportContacts(rows);
+}
+
