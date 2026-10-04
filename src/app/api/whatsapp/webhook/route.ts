@@ -630,6 +630,10 @@ async function handleReaction(
     if (delError) {
       console.error('[webhook] reaction delete failed:', delError.message)
     }
+    await supabaseAdmin()
+      .from('conversations')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', conversationId)
     return
   }
 
@@ -648,6 +652,11 @@ async function handleReaction(
   if (upsertError) {
     console.error('[webhook] reaction upsert failed:', upsertError.message)
   }
+
+  await supabaseAdmin()
+    .from('conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', conversationId)
 }
 
 async function processMessage(

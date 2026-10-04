@@ -1273,8 +1273,9 @@ export function MessageThread({
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
-                    const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — `msgReactions`
+                    const msgReactions =
+                      reactionsByMessageId.get(msg.id) ||
+                      (msg.message_id ? reactionsByMessageId.get(msg.message_id) : undefined);
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
                       const own = msgReactions?.find(

@@ -171,29 +171,67 @@ export async function POST(req: Request) {
     const entry = entries[0]
     let messaging = entry?.messaging?.[0] || entry?.standby?.[0]
 
-    // If payload contains multiple items, look for reaction event first
-    for (const e of entries) {
-      const items = [...(e.messaging || []), ...(e.standby || [])]
-      const foundReaction = items.find((item: any) => item.reaction || item.message_reaction || item.message_reactions)
-      if (foundReaction) {
-        messaging = foundReaction
-        break
-      }
-    }
+    // Scan all entries, messaging, standby, and changes for reaction events or standard messages
+    let reactionEvent: {
+      reaction: any
+      reactionMid: string
+      senderPsid: string
+      pageId: string
+    } | null = null
 
-    if (!messaging) {
-      return NextResponse.json({ status: 'ignored', reason: 'No messaging payload' }, { status: 200 })
+    for (const e of entries) {
+      const pId = e.id || ''
+      const items = [...(e.messaging || []), ...(e.standby || [])]
+      for (const item of items) {
+        const r =
+          item.reaction ||
+          item.message_reaction ||
+          item.message_reactions ||
+          item.message?.reaction ||
+          item.message?.message_reaction ||
+          item.message?.reactions
+        if (r) {
+          const mid = r.mid || r.message_id || item.message?.mid || item.message?.id || ''
+          reactionEvent = {
+            reaction: r,
+            reactionMid: mid,
+            senderPsid: item.sender?.id || item.from?.id || '',
+            pageId: pId || item.recipient?.id || '',
+          }
+          break
+        }
+      }
+      if (reactionEvent) break
+
+      if (Array.isArray(e.changes)) {
+        for (const c of e.changes) {
+          const val = c.value
+          if (!val) continue
+          const r = val.reaction || val.message_reaction || val.messages?.[0]?.reaction
+          if (r) {
+            const mid = r.mid || r.message_id || val.messages?.[0]?.id || ''
+            reactionEvent = {
+              reaction: r,
+              reactionMid: mid,
+              senderPsid: val.sender?.id || val.from?.id || val.messages?.[0]?.from || '',
+              pageId: pId || val.recipient?.id || '',
+            }
+            break
+          }
+        }
+      }
+      if (reactionEvent) break
     }
 
     // Handle inbound Facebook Messenger reaction (emoji reaction or unreact)
-    const reaction = messaging?.reaction || messaging?.message_reaction || messaging?.message_reactions
-    if (reaction && (reaction.mid || reaction.message_id)) {
-      const reactionMid = reaction.mid || reaction.message_id || ''
+    if (reactionEvent && (reactionEvent.reactionMid || reactionEvent.senderPsid)) {
+      const reaction = reactionEvent.reaction
+      const reactionMid = reactionEvent.reactionMid
       const rawAction = (reaction.action || '').toLowerCase()
       const resolvedEmoji = resolveMetaEmoji(reaction)
       const action = rawAction || (resolvedEmoji ? 'react' : 'unreact')
-      const senderPsid = messaging?.sender?.id
-      const pageId = entry?.id || messaging?.recipient?.id || ''
+      const senderPsid = reactionEvent.senderPsid
+      const pageId = reactionEvent.pageId
 
       // 1. Locate target message by Meta message_id (safe against prefix differences)
       let targetMessage: { id: string; conversation_id: string } | null = null

@@ -54,6 +54,77 @@ export async function POST(req: Request) {
 
     if (value?.messages && Array.isArray(value.messages) && value.messages.length > 0) {
       const msg = value.messages[0]
+
+      // Handle inbound WhatsApp reaction
+      if (msg.reaction || msg.type === 'reaction') {
+        const reaction = msg.reaction
+        const reactionMid = reaction?.message_id
+        const emoji = reaction?.emoji || ''
+        const rawFrom = (msg.from || '').replace(/@.*$/, '').replace(/[^\d]/g, '').trim()
+
+        if (reactionMid) {
+          const { data: targetMessage } = await db
+            .from('messages')
+            .select('id, conversation_id')
+            .eq('message_id', reactionMid)
+            .maybeSingle()
+
+          if (targetMessage) {
+            let contactId: string | null = null
+            if (rawFrom) {
+              const { data: ct } = await db
+                .from('contacts')
+                .select('id')
+                .eq('phone', rawFrom)
+                .maybeSingle()
+              if (ct?.id) contactId = ct.id
+            }
+
+            if (!emoji) {
+              let delQuery = db
+                .from('message_reactions')
+                .delete()
+                .eq('message_id', targetMessage.id)
+                .eq('actor_type', 'customer')
+              if (contactId) delQuery = delQuery.eq('actor_id', contactId)
+              await delQuery
+            } else {
+              let exQuery = db
+                .from('message_reactions')
+                .select('id')
+                .eq('message_id', targetMessage.id)
+                .eq('actor_type', 'customer')
+              if (contactId) exQuery = exQuery.eq('actor_id', contactId)
+              const { data: exReaction } = await exQuery.maybeSingle()
+
+              if (exReaction?.id) {
+                await db
+                  .from('message_reactions')
+                  .update({ emoji })
+                  .eq('id', exReaction.id)
+              } else {
+                await db
+                  .from('message_reactions')
+                  .insert({
+                    message_id: targetMessage.id,
+                    conversation_id: targetMessage.conversation_id,
+                    actor_type: 'customer',
+                    actor_id: contactId || null,
+                    emoji,
+                  })
+              }
+            }
+
+            await db
+              .from('conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', targetMessage.conversation_id)
+
+            return NextResponse.json({ status: 'reaction_handled', emoji })
+          }
+        }
+      }
+
       customerPhone = msg.from || ''
       messageText = msg.text?.body || msg.button?.text || msg.interactive?.list_reply?.title || ''
     } else if (Array.isArray(body.messages) && body.messages.length > 0) {

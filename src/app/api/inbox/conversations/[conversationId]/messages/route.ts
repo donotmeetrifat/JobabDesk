@@ -36,28 +36,16 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 1. Try querying messages via SSR client (respects RLS)
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return NextResponse.json({ success: true, messages: data })
-      }
-    } catch (e) {
-      console.warn('[api/inbox/messages] SSR query failed, falling back to admin:', e)
-    }
-
-    // 2. Fallback using Admin client
     const admin = getAdminClient()
     const { data: adminMsgs, error: adminErr } = await admin
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
+
+    if (adminErr) {
+      console.error('[api/inbox/messages] Admin query error:', adminErr)
+    }
 
     const { data: convReactions } = await admin
       .from('message_reactions')
