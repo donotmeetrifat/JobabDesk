@@ -31,9 +31,10 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   const cleanText = text.trim()
 
   // 1. PHONE EXTRACTION
-  // Match Bangladesh numbers: 013-019 (11 digits), +8801..., 8801...
-  // Handles spaces, hyphens, and delimiters: 01712-345678 or 01711 223344
-  const bdPhoneRegex = /(?:(?:\+|00)?880|0)?(1[3-9][0-9]{2}[-\s]?[0-9]{3}[-\s]?[0-9]{3})\b/
+  // Match Bangladesh numbers: 013-019 (11 digits), +880 1..., +8801..., 8801...
+  // Handles prefixes ("num: ", "phone: "), spaces, hyphens, and delimiters: 01712-345678, +880 1613-441083
+  const bdPhoneRegex =
+    /(?:(?:num(?:ber)?|phone|mobile|cell|contact|call|ফোন|নাম্বার|মোবাইল)\s*[:=-]?\s*)?(?:(?:\+|00)?880[-\s]?|0)?(1[3-9][0-9]{2}[-\s]?[0-9]{3}[-\s]?[0-9]{3})\b/i
   const bdMatch = cleanText.match(bdPhoneRegex)
   if (bdMatch) {
     const rawDigits = bdMatch[0].replace(/\D/g, '')
@@ -41,6 +42,8 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
       result.phone = `+880${rawDigits.slice(1)}`
     } else if (rawDigits.length === 13 && rawDigits.startsWith('8801')) {
       result.phone = `+${rawDigits}`
+    } else if (rawDigits.endsWith(bdMatch[1].replace(/\D/g, ''))) {
+      result.phone = `+880${bdMatch[1].replace(/\D/g, '')}`
     } else if (rawDigits.length >= 10 && rawDigits.length <= 15) {
       result.phone = `+${rawDigits}`
     }
@@ -66,9 +69,9 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   }
 
   // 3. ADDRESS EXTRACTION
-  // Look for explicit prefix: Address: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
+  // Look for explicit prefix: Address: ..., Adreess: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
   const explicitAddressRegex =
-    /(?:(?:delivery\s*address|shipping\s*address|home\s*address|address|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
+    /(?:(?:delivery\s*add?re+ss?|shipping\s*add?re+ss?|home\s*add?re+ss?|add?re+ss?|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
   const explicitMatch = cleanText.match(explicitAddressRegex)
   if (explicitMatch && explicitMatch[1]) {
     const addr = explicitMatch[1].trim()
@@ -252,11 +255,12 @@ export async function autoUpdateContactFromChatMessage(params: {
     // If an address was extracted, also record a note on the contact so it's always visible in Notes tab
     if (extracted.address) {
       try {
-        await supabase.from('contact_notes').insert({
+        const notePayload: Record<string, any> = {
           contact_id: contactId,
-          account_id: accountId,
           note_text: `📍 Delivery Address: ${extracted.address}`,
-        })
+        }
+        if (contact.user_id) notePayload.user_id = contact.user_id
+        await supabase.from('contact_notes').insert(notePayload)
       } catch (_noteErr) {
         // Safe ignore
       }
