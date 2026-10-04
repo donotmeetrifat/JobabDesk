@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Banknote } from 'lucide-react'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 import { OrderTable } from './order-table'
 import { OrderDialog } from './order-dialog'
 import { OrderDetailDialog } from './order-detail-dialog'
@@ -53,9 +54,71 @@ export function OrdersShell() {
     fetchOrders()
   }, [fetchOrders])
 
+  // Realtime listener for incoming orders from chat or status changes
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('orders_page_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+        },
+        () => {
+          fetchOrders()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchOrders])
+
   useEffect(() => {
     setSelectedIds(new Set())
   }, [orders])
+
+  const handleApprove = async (order: Order) => {
+    try {
+      const res = await fetch(`/api/orders/${order.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'confirmed' }),
+      })
+      if (res.ok) {
+        toast.success(`Order ${order.order_number || ''} approved and confirmed!`)
+        fetchOrders()
+      } else {
+        const json = await res.json()
+        toast.error(json.error || 'Failed to approve order')
+      }
+    } catch {
+      toast.error('Failed to approve order')
+    }
+  }
+
+  const handleCancelOrder = async (order: Order) => {
+    if (!confirm(`Cancel order ${order.order_number || ''}?`)) return
+    try {
+      const res = await fetch(`/api/orders/${order.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      })
+      if (res.ok) {
+        toast.success(`Order ${order.order_number || ''} cancelled`)
+        fetchOrders()
+      } else {
+        const json = await res.json()
+        toast.error(json.error || 'Failed to cancel order')
+      }
+    } catch {
+      toast.error('Failed to cancel order')
+    }
+  }
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this order?')) return
@@ -162,12 +225,20 @@ export function OrdersShell() {
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
+        <div
+          onClick={() => setStatusFilter((prev) => (prev === 'new' ? 'all' : 'new'))}
+          className={`rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs cursor-pointer transition-all hover:border-amber-500/50 ${
+            statusFilter === 'new' ? 'ring-2 ring-amber-500/40 border-amber-500 bg-amber-500/5' : ''
+          }`}
+          title="Click to filter by New Orders"
+        >
           <div>
-            <p className="text-xs font-medium text-muted-foreground">New Orders</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats.new}</p>
+            <p className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+              New Orders (Pending)
+            </p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{stats.new}</p>
           </div>
-          <div className="rounded-xl bg-blue-50 dark:bg-blue-950/50 p-2.5 text-blue-600">
+          <div className="rounded-xl bg-amber-500/10 p-2.5 text-amber-600 dark:text-amber-400">
             <ShoppingBag className="size-5" />
           </div>
         </div>
@@ -289,6 +360,8 @@ export function OrdersShell() {
         onView={handleView}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        onApprove={handleApprove}
+        onCancel={handleCancelOrder}
       />
 
       {/* Dialogs */}

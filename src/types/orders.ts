@@ -18,6 +18,7 @@ export interface Order {
   account_id: string
   order_number: string
   contact_id?: string | null
+  conversation_id?: string | null
   customer_name: string
   customer_phone?: string | null
   customer_address?: string | null

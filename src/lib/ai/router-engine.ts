@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
+import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -776,12 +777,35 @@ ${conversationHistoryText ? conversationHistoryText : '(Start of new conversatio
 Current Customer Message:
 "${messageText}"
 
+=== ORDER CAPTURE INSTRUCTION ===
+If the customer has agreed to order, confirmed an order, or provided their delivery address and phone number for products discussed:
+Warmly thank them, note their delivery details and order summary with prices, and state payment options (e.g. bKash or Cash on Delivery).
+AND you MUST also extract the structured order information into an "order" object in the JSON output!
+
 Return ONLY a valid JSON object:
 {
   "intent": "product_inquiry" | "order_status" | "general_faq" | "human_escalation",
   "reply": "string (your natural, persuasive human salesman reply)",
-  "confidence": 0.95
-}`
+  "confidence": 0.95,
+  "order": {
+    "is_order": true,
+    "customer_name": "string or null",
+    "customer_phone": "string or null",
+    "customer_address": "string or null",
+    "items": [
+      {
+        "product_name": "string",
+        "unit_price": 1000,
+        "quantity": 1
+      }
+    ],
+    "subtotal": 1000,
+    "delivery_charge": 0,
+    "total": 1000,
+    "notes": "string or null"
+  }
+}
+Note: If no order is being placed or confirmed in this turn, set "order": null.`
 
   // 3-TIER UNSTOPPABLE FALLBACK CHAIN
 
@@ -992,6 +1016,7 @@ Return ONLY a valid JSON object:
   let intent: DetectedIntent = 'general_faq'
   let aiReply = ''
 
+  let llmOrderData: any = null
   if (!rawResponse) {
     providerUsed = 'offline_dictionary'
     modelUsed = 'offline-rule-matcher'
@@ -1013,9 +1038,14 @@ Return ONLY a valid JSON object:
         .replace(/^[\s\S]*?\{/, '{')
         .replace(/\}[^}]*$/, '}')
         .trim()
-      const parsed = JSON.parse(cleaned) as { intent?: DetectedIntent; reply?: string }
+      const parsed = JSON.parse(cleaned) as {
+        intent?: DetectedIntent
+        reply?: string
+        order?: any
+      }
       intent = parsed.intent || 'general_faq'
       aiReply = parsed.reply || rawResponse
+      llmOrderData = parsed.order || null
     } catch {
       intent = 'general_faq'
       aiReply = rawResponse
@@ -1053,6 +1083,28 @@ Return ONLY a valid JSON object:
     if (cleanedReply.length > 0) {
       aiReply = cleanedReply
     }
+  }
+
+  // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
+  try {
+    detectAndCreateOrderFromChat({
+      accountId: account?.id || accountId,
+      contactId: contactId || null,
+      conversationId: convId || null,
+      channel,
+      customerName: null,
+      customerPhone: customerPhone || null,
+      customerAddress: null,
+      messageText,
+      conversationHistoryText,
+      llmOrderData,
+      storeProducts: products,
+      supabase: client,
+    }).catch((err) => {
+      console.warn('[AI Router Engine] Failed to auto-create order from chat:', err)
+    })
+  } catch (err) {
+    console.warn('[AI Router Engine] Order capture error:', err)
   }
 
   // 5. Log to ai_auto_replies database table (safe try/catch if table not created yet)

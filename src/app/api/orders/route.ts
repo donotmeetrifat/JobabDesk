@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,61 @@ export async function GET(req: Request) {
     const page = parseInt(url.searchParams.get('page') ?? '1', 10)
     const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '20', 10), 100)
     const offset = (page - 1) * limit
+
+    // Auto-detect and sync any confirmed customer orders from recent chat threads
+    try {
+      const { data: candidateConvs } = await supabase
+        .from('conversations')
+        .select('id, contact_id, last_message_text, contact:contacts(id, name, phone, address)')
+        .eq('account_id', accountId)
+        .order('last_message_at', { ascending: false })
+        .limit(10)
+
+      if (candidateConvs && candidateConvs.length > 0) {
+        for (const c of candidateConvs) {
+          const contact = c.contact as any
+          if (contact && contact.address && (contact.phone || contact.name)) {
+            const { data: existing } = await supabase
+              .from('orders')
+              .select('id')
+              .eq('account_id', accountId)
+              .or(`conversation_id.eq.${c.id},contact_id.eq.${contact.id}`)
+              .limit(1)
+
+            if (!existing || existing.length === 0) {
+              const { data: msgs } = await supabase
+                .from('messages')
+                .select('sender_type, content_text')
+                .eq('conversation_id', c.id)
+                .order('created_at', { ascending: false })
+                .limit(12)
+
+              if (msgs && msgs.length > 0) {
+                const historyText = msgs
+                  .map((m: any) => `${m.sender_type === 'customer' ? 'Customer' : 'Salesman'}: ${m.content_text}`)
+                  .reverse()
+                  .join('\n')
+
+                await detectAndCreateOrderFromChat({
+                  accountId,
+                  contactId: contact.id,
+                  conversationId: c.id,
+                  channel: 'messenger',
+                  customerName: contact.name,
+                  customerPhone: contact.phone,
+                  customerAddress: contact.address,
+                  messageText: c.last_message_text || '',
+                  conversationHistoryText: historyText,
+                  supabase,
+                })
+              }
+            }
+          }
+        }
+      }
+    } catch (_syncErr) {
+      // safe fallback
+    }
 
     let query = supabase
       .from('orders')

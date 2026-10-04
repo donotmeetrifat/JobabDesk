@@ -3,6 +3,7 @@ import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
 import { sendMetaWhatsAppMessage } from '@/lib/whatsapp/meta-cloud'
 import { sendWhapiMessage } from '@/lib/whatsapp/whapi-gateway'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
+import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
@@ -218,6 +219,15 @@ export async function POST(req: Request) {
           messageText,
           supabase: db,
         }).catch((e) => console.warn('[WhatsApp] Auto-update contact error:', e))
+
+        detectAndCreateOrderFromChat({
+          accountId,
+          contactId,
+          customerPhone,
+          channel: 'whatsapp',
+          messageText,
+          supabase: db,
+        }).catch((e) => console.warn('[WhatsApp] Auto-create order error:', e))
       }
     } catch {
       // quiet catch if table schema slightly differs
