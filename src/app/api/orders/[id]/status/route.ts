@@ -38,14 +38,16 @@ export async function POST(
 
     // Automatically notify customer via chat when order is confirmed or cancelled
     if (status === 'confirmed' || status === 'cancelled') {
-      sendOrderStatusNotification({
-        order: updatedOrder,
-        newStatus: status,
-        supabase,
-        accountId,
-      }).catch((notifyErr) => {
+      try {
+        await sendOrderStatusNotification({
+          order: updatedOrder,
+          newStatus: status,
+          supabase,
+          accountId,
+        })
+      } catch (notifyErr) {
         console.warn('[api/orders/[id]/status] Notification warning:', notifyErr)
-      })
+      }
     }
 
     return NextResponse.json({ order: updatedOrder })

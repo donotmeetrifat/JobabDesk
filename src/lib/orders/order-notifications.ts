@@ -1,10 +1,23 @@
 import { isFacebookPsid } from '@/lib/contacts/extract-info'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 interface OrderNotificationParams {
   order: any
   newStatus: 'confirmed' | 'cancelled'
   supabase: any
   accountId: string
+}
+
+function getAdminClient(fallbackClient?: any) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  if (url && serviceKey) {
+    return createSupabaseClient(url, serviceKey)
+  }
+  return fallbackClient
 }
 
 export async function sendOrderStatusNotification({
@@ -16,12 +29,14 @@ export async function sendOrderStatusNotification({
   try {
     if (!order || !accountId) return { success: false, reason: 'Missing order or account' }
 
+    const db = getAdminClient(supabase)
+
     // 1. Resolve conversation
     let conversationId = order.conversation_id
     let contactId = order.contact_id
 
     if (!conversationId && contactId) {
-      const { data: conv } = await supabase
+      const { data: conv } = await db
         .from('conversations')
         .select('id')
         .eq('contact_id', contactId)
@@ -32,7 +47,7 @@ export async function sendOrderStatusNotification({
     }
 
     if (!conversationId && order.customer_phone) {
-      const { data: ct } = await supabase
+      const { data: ct } = await db
         .from('contacts')
         .select('id')
         .eq('account_id', accountId)
@@ -40,7 +55,7 @@ export async function sendOrderStatusNotification({
         .maybeSingle()
       if (ct?.id) {
         contactId = ct.id
-        const { data: conv } = await supabase
+        const { data: conv } = await db
           .from('conversations')
           .select('id')
           .eq('contact_id', ct.id)
@@ -54,7 +69,7 @@ export async function sendOrderStatusNotification({
     // 2. Fetch contact info
     let contact: any = null
     if (contactId) {
-      const { data: ct } = await supabase
+      const { data: ct } = await db
         .from('contacts')
         .select('*')
         .eq('id', contactId)
@@ -85,10 +100,10 @@ export async function sendOrderStatusNotification({
       bank_transfer: 'Bank Transfer (ব্যাংক ট্রান্সফার)',
     }
     const paymentStatusMap: Record<string, string> = {
-      unpaid: 'পরিশোধিত নয় / আনপেইড',
+      unpaid: 'পরিশোধিত নয় / আনপেইড',
       paid: 'পরিশোধিত / পেইড',
       processing: 'যাচাই করা হচ্ছে',
-      refunded: 'রিফান্ড করা হয়েছে',
+      refunded: 'রিফান্ড করা হয়েছে',
     }
 
     const paymentMethodLabel = paymentMethodMap[order.payment_method] || order.payment_method || 'Cash on Delivery'
@@ -119,39 +134,112 @@ ${itemListText}
       return { success: false, reason: 'Unsupported status notification' }
     }
 
-    // 3. Send message to Facebook Messenger or WhatsApp if destination available
-    const customerPsid =
+    // 3. Resolve Customer PSID for Meta Messenger
+    let customerPsid =
       contact?.messenger_id ||
       (contact?.phone && isFacebookPsid(contact.phone) ? contact.phone : null) ||
       (order.customer_phone && isFacebookPsid(order.customer_phone) ? order.customer_phone : null)
 
-    if (customerPsid) {
-      // Find Meta Page Access Token
-      let pageAccessToken = ''
-      try {
-        const { data: pageRow } = await supabase
-          .from('facebook_pages')
-          .select('access_token')
+    if (!customerPsid && conversationId) {
+      const { data: convData } = await db
+        .from('conversations')
+        .select('contact_id, contact:contacts(phone, messenger_id)')
+        .eq('id', conversationId)
+        .maybeSingle()
+      const convContact: any = Array.isArray(convData?.contact) ? convData.contact[0] : convData?.contact
+      if (convContact?.messenger_id) {
+        customerPsid = convContact.messenger_id
+      } else if (convContact?.phone && isFacebookPsid(convContact.phone)) {
+        customerPsid = convContact.phone
+      }
+    }
+
+    // 4. Resolve Meta Page Access Token from accounts and channel_connections
+    let pageAccessToken = ''
+    try {
+      const { data: acc } = await db
+        .from('accounts')
+        .select('facebook_page_access_token, facebook_page_id')
+        .eq('id', accountId)
+        .maybeSingle()
+
+      if (acc?.facebook_page_access_token) {
+        pageAccessToken = acc.facebook_page_access_token
+      }
+
+      if (!pageAccessToken) {
+        const { data: chan } = await db
+          .from('channel_connections')
+          .select('metadata')
           .eq('account_id', accountId)
+          .eq('channel_type', 'messenger')
+          .maybeSingle()
+        pageAccessToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || ''
+      }
+
+      if (!pageAccessToken) {
+        const { data: anyChan } = await db
+          .from('channel_connections')
+          .select('metadata')
+          .eq('channel_type', 'messenger')
           .limit(1)
           .maybeSingle()
-        if (pageRow?.access_token) pageAccessToken = pageRow.access_token
+        pageAccessToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
+      }
+    } catch (tokenErr) {
+      console.warn('[OrderNotification] Error fetching page token:', tokenErr)
+    }
 
-        if (!pageAccessToken) {
-          const { data: chanRow } = await supabase
-            .from('channels')
-            .select('metadata')
-            .eq('account_id', accountId)
-            .eq('channel_type', 'messenger')
-            .limit(1)
-            .maybeSingle()
-          pageAccessToken = chanRow?.metadata?.access_token || chanRow?.metadata?.accessToken || ''
+    if (pageAccessToken) {
+      try {
+        const meRes = await fetch(
+          `https://graph.facebook.com/v20.0/me?fields=id,category&access_token=${encodeURIComponent(pageAccessToken)}`
+        )
+        if (meRes.ok) {
+          const meData = await meRes.json()
+          if (!meData?.category) {
+            const accsRes = await fetch(
+              `https://graph.facebook.com/v20.0/me/accounts?fields=id,access_token&access_token=${encodeURIComponent(pageAccessToken)}`
+            )
+            if (accsRes.ok) {
+              const accsData = await accsRes.json()
+              const pages = accsData?.data || []
+              if (pages.length > 0 && pages[0].access_token) {
+                pageAccessToken = pages[0].access_token
+              }
+            }
+          }
         }
-      } catch {}
+      } catch (meErr) {
+        console.warn('[OrderNotification] Error resolving Page token from User token:', meErr)
+      }
+    }
 
-      if (pageAccessToken) {
-        try {
-          await fetch(
+    // 5. Send message to Meta Messenger Graph API
+    let metaSent = false
+    let metaMessageId: string | null = null
+
+    if (customerPsid && pageAccessToken) {
+      try {
+        // Attempt 1: Standard RESPONSE (within 24h messaging window)
+        let fbRes = await fetch(
+          `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipient: { id: customerPsid },
+              messaging_type: 'RESPONSE',
+              message: { text: notificationText },
+            }),
+          }
+        )
+        let fbJson = await fbRes.json()
+
+        // Attempt 2: If standard response failed (e.g. window error), use MESSAGE_TAG CONFIRMED_EVENT_UPDATE
+        if (!fbRes.ok || fbJson.error) {
+          console.warn('[OrderNotification] RESPONSE send failed, retrying with CONFIRMED_EVENT_UPDATE tag:', fbJson?.error?.message)
+          fbRes = await fetch(
             `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
             {
               method: 'POST',
@@ -164,25 +252,59 @@ ${itemListText}
               }),
             }
           )
-        } catch (fbErr) {
-          console.warn('[OrderNotification] Failed to send Messenger message:', fbErr)
+          fbJson = await fbRes.json()
         }
+
+        // Attempt 3: Fallback with ACCOUNT_UPDATE tag
+        if (!fbRes.ok || fbJson.error) {
+          console.warn('[OrderNotification] CONFIRMED_EVENT_UPDATE failed, retrying with ACCOUNT_UPDATE tag:', fbJson?.error?.message)
+          fbRes = await fetch(
+            `https://graph.facebook.com/v20.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipient: { id: customerPsid },
+                messaging_type: 'MESSAGE_TAG',
+                tag: 'ACCOUNT_UPDATE',
+                message: { text: notificationText },
+              }),
+            }
+          )
+          fbJson = await fbRes.json()
+        }
+
+        if (fbRes.ok && fbJson.message_id) {
+          metaSent = true
+          metaMessageId = fbJson.message_id
+          console.log('[OrderNotification] Successfully dispatched confirmation via Meta Messenger:', fbJson.message_id)
+        } else {
+          console.error('[OrderNotification] Meta Messenger API error response:', fbJson?.error || fbJson)
+        }
+      } catch (fbErr) {
+        console.error('[OrderNotification] Network exception sending to Meta Messenger:', fbErr)
       }
+    } else {
+      console.warn('[OrderNotification] Skipping Meta send: customerPsid or pageAccessToken missing', {
+        hasPsid: Boolean(customerPsid),
+        hasToken: Boolean(pageAccessToken),
+      })
     }
 
-    // 4. Save notification message in inbox messages table
+    // 6. Save notification message in inbox messages table
     if (conversationId) {
       const nowIso = new Date().toISOString()
-      await supabase.from('messages').insert({
+      await db.from('messages').insert({
         conversation_id: conversationId,
-        sender_type: 'bot',
+        sender_type: 'agent',
         content_type: 'text',
         content_text: notificationText,
-        status: 'delivered',
+        message_id: metaMessageId || null,
+        status: metaSent ? 'delivered' : 'sent',
         created_at: nowIso,
       })
 
-      await supabase
+      await db
         .from('conversations')
         .update({
           last_message_text: notificationText,
