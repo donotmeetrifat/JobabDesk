@@ -36,26 +36,133 @@ export interface RouterOutput {
   modelUsed: string
 }
 
-// Simple heuristic language detector
-export function detectLanguage(text: string, preferredSetting = 'auto_detect'): DetectedLanguage {
+export const ARABIC_URDU_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
+
+export const BANGLISH_KEYWORDS = new Set([
+  // Pronouns & Address
+  'ami', 'tumi', 'apni', 'tui', 'amra', 'apnara', 'tora',
+  'amar', 'amader', 'apnar', 'apnader', 'tomar', 'tomader', 'tore',
+  'amake', 'apnake', 'tomake', 'amaderke', 'apnaderke',
+  'bhai', 'bhaiya', 'bhaia', 'apu', 'vai', 'vaia', 'bro',
+  // Question words
+  'koto', 'kobe', 'kivabe', 'kibhabe', 'keno', 'karon',
+  'kothay', 'kothai', 'kon', 'konta', 'ki', 'koi', 'kemon', 'kemne',
+  // Verbs & Copulas
+  'ache', 'ase', 'nai', 'nei', 'hobe',
+  'hoyeche', 'hoise', 'korbo', 'koren', 'korben', 'dibo', 'debo',
+  'diben', 'deben', 'den', 'nibo', 'nebo', 'niben', 'neben',
+  'chai', 'pabo', 'lagbe', 'dekhun', 'bolen', 'bolbo', 'janan',
+  'parben', 'pathan', 'pathaben', 'naki', 'pari', 'jante', 'bolte',
+  // Vocabulary
+  'dam', 'daam', 'shob', 'sob', 'khub', 'valo', 'bhalo',
+  'taka', 'tk', 'ekhon', 'ajke', 'aj', 'dorkar', 'thik', 'thikana',
+  'dhaka', 'shathe', 'sathe', 'eta', 'eita', 'oita', 'ei', 'oi',
+  'er', 'te', 're', 'ke', 'theke', 'moto', 'motamoti', 'ekta', 'duto',
+  'order', 'korlam', 'dilen', 'dilam', 'pelam', 'paici', 'paichi',
+  'ekhane', 'shekhane', 'ojotha', 'dekhi', 'dekhlam', 'ashbe', 'ashbo'
+])
+
+export const ENGLISH_KEYWORDS = new Set([
+  'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for',
+  'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his',
+  'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or', 'an', 'will', 'my',
+  'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out', 'if',
+  'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can', 'like',
+  'time', 'no', 'just', 'him', 'know', 'take', 'people', 'into', 'year', 'your',
+  'good', 'some', 'could', 'them', 'see', 'other', 'than', 'then', 'now', 'look',
+  'only', 'come', 'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two',
+  'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because',
+  'any', 'these', 'give', 'day', 'most', 'us', 'best', 'skin', 'dry', 'price',
+  'product', 'available', 'order', 'please', 'thanks', 'thank', 'help', 'details',
+  'deliver', 'delivery', 'address', 'shipping', 'cash', 'payment', 'send'
+])
+
+export const BENGALI_LETTER_REGEX = /[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/
+
+// Robust language detector matching English, Bengali (বাংলা script), and Banglish
+export function detectLanguage(
+  text: string,
+  historyOrSetting?: string,
+  settingOrHistory?: string
+): DetectedLanguage {
+  let recentHistory: string | undefined
+  let preferredSetting = 'auto_detect'
+
+  for (const arg of [historyOrSetting, settingOrHistory]) {
+    if (!arg) continue
+    if (arg === 'auto_detect' || arg === 'bn' || arg === 'banglish' || arg === 'en') {
+      preferredSetting = arg
+    } else {
+      recentHistory = arg
+    }
+  }
+  if (!text || typeof text !== 'string') {
+    return preferredSetting === 'bn' || preferredSetting === 'banglish' ? preferredSetting : 'en'
+  }
+
+  const clean = text.trim()
+
+  // 1. Check for actual Bengali script letters (excluding currency ৳ \u09F3 and digits \u09E6-\u09EF)
+  // Bengali Unicode letters: \u0985-\u09B9, \u09CE, \u09DC-\u09DF and vowel signs \u09BE-\u09CC
+  const bengaliLettersMatch = clean.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/g)
+  const bengaliLetterCount = bengaliLettersMatch ? bengaliLettersMatch.length : 0
+
+  // Latin letters match
+  const latinLettersMatch = clean.match(/[a-zA-Z]/g)
+  const latinLetterCount = latinLettersMatch ? latinLettersMatch.length : 0
+
+  // If there are actual Bengali letters and they outnumber Latin letters, it's definitely Bengali
+  if (bengaliLetterCount >= 2 && bengaliLetterCount >= latinLetterCount) {
+    return 'bn'
+  }
+
+  // 2. If it's mostly Latin letters, distinguish between Banglish and English
+  if (latinLetterCount > 0) {
+    const words = clean.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+
+    let banglishScore = 0
+    let englishScore = 0
+
+    for (const w of words) {
+      if (BANGLISH_KEYWORDS.has(w)) banglishScore++
+      if (ENGLISH_KEYWORDS.has(w)) englishScore++
+    }
+
+    if (banglishScore > englishScore && banglishScore > 0) {
+      return 'banglish'
+    }
+
+    if (englishScore > 0 && englishScore >= banglishScore) {
+      return 'en'
+    }
+
+    // If ambiguous (e.g. only product name or numbers), check conversation history
+    if (recentHistory) {
+      const historyBnMatch = recentHistory.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
+      if (historyBnMatch && historyBnMatch.length > 5) return 'bn'
+
+      const histWords = recentHistory.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+      let histBanglish = 0
+      let histEnglish = 0
+      for (const w of histWords) {
+        if (BANGLISH_KEYWORDS.has(w)) histBanglish++
+        if (ENGLISH_KEYWORDS.has(w)) histEnglish++
+      }
+      if (histBanglish > histEnglish && histBanglish > 0) return 'banglish'
+      if (histEnglish > histBanglish && histEnglish > 0) return 'en'
+    }
+
+    // Default to English if written in Latin alphabet
+    return 'en'
+  }
+
+  // 3. If no Latin and no Bengali letters (e.g. "+88017...", "৳1,000", "500"), check history
+  if (recentHistory) {
+    return detectLanguage(recentHistory, preferredSetting)
+  }
+
   if (preferredSetting === 'bn') return 'bn'
-  if (preferredSetting === 'en') return 'en'
   if (preferredSetting === 'banglish') return 'banglish'
-
-  // Check for Bengali script characters
-  const hasBengaliScript = /[\u0980-\u09FF]/.test(text)
-  if (hasBengaliScript) return 'bn'
-
-  // Check for Banglish common words
-  const banglishKeywords = [
-    'bhai', 'apna', 'dam', 'dam?', 'koto', 'koto?', 'ache', 'ache?', 'naki', 'kobe', 'pabo', 'dorkar',
-    'shob', 'khub', 'valo', 'bhalo', 'akush', 'taka', 'tk', 'delivery', 'charge', 'koto', 'address', 'bhaiya', 'apni'
-  ]
-  const lower = text.toLowerCase()
-  const words = lower.split(/\s+/)
-  const isBanglish = words.some((w) => banglishKeywords.includes(w.replace(/[^a-z]/g, '')))
-
-  if (isBanglish) return 'banglish'
   return 'en'
 }
 
@@ -82,6 +189,169 @@ async function fetchImageAsBase64(url: string, pageToken?: string): Promise<{ da
     console.warn('[AI Router Engine] Error fetching image as base64:', err?.message || err)
     return null
   }
+}
+
+export function buildOfflineReply({
+  detectedLang,
+  messageText,
+  products = [],
+  recentOrders = [],
+  account = {},
+  conversationHistoryText = '',
+  activeMediaUrl = null,
+}: {
+  detectedLang: DetectedLanguage
+  messageText: string
+  products?: any[]
+  recentOrders?: any[]
+  account?: any
+  conversationHistoryText?: string
+  activeMediaUrl?: string | null
+}): { intent: DetectedIntent; reply: string } {
+  let intent: DetectedIntent = 'general_faq'
+  let reply = ''
+
+  const textLower = messageText.toLowerCase().trim()
+  const matchedProduct = products.find((p) => p?.name && textLower.includes(p.name.toLowerCase()))
+
+  // 0. If an image was sent but offline fallback is active
+  if (activeMediaUrl) {
+    intent = 'product_inquiry'
+    if (detectedLang === 'banglish') {
+      reply = 'Apnar pathano chobi ti ami peyechi! Amader team ekhoni chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
+    } else if (detectedLang === 'bn') {
+      reply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের প্রতিনিধি এখনই ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, অনুগ্রহ করে একটু অপেক্ষা করুন।'
+    } else {
+      reply = 'I have received your product photo! Our team is reviewing the image right now to check availability and price for you.'
+    }
+  }
+  // 1. Matched Product Inquiry
+  else if (matchedProduct) {
+    intent = 'product_inquiry'
+    if (detectedLang === 'banglish') {
+      reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
+    } else if (detectedLang === 'bn') {
+      reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
+    } else {
+      reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
+    }
+  }
+  // 2. Payment Methods Inquiry
+  else if (
+    textLower.includes('payment') ||
+    textLower.includes('pay') ||
+    textLower.includes('bkash') ||
+    textLower.includes('nagad') ||
+    textLower.includes('rocket') ||
+    textLower.includes('cash') ||
+    textLower.includes('cod') ||
+    textLower.includes('bikas') ||
+    textLower.includes('taka pathabo') ||
+    textLower.includes('টাকা') ||
+    textLower.includes('পেমেন্ট')
+  ) {
+    intent = 'general_faq'
+    const paymentInfo = account?.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
+    if (detectedLang === 'banglish') {
+      reply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan, Bhaiya?`
+    } else if (detectedLang === 'bn') {
+      reply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান?`
+    } else {
+      reply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
+    }
+  }
+  // 3. Delivery Rates & Shipping Policy
+  else if (
+    textLower.includes('delivery') ||
+    textLower.includes('shipping') ||
+    textLower.includes('charge') ||
+    textLower.includes('rate') ||
+    textLower.includes('courier') ||
+    textLower.includes('pathao') ||
+    textLower.includes('ডেলিভারি')
+  ) {
+    intent = 'general_faq'
+    const deliveryInfo = account?.delivery_policy || account?.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150 (Free delivery on select orders)'
+    if (detectedLang === 'banglish') {
+      reply = `Amader delivery charge o policy: ${deliveryInfo}. Sara Bangladesh e amra home delivery dei!`
+    } else if (detectedLang === 'bn') {
+      reply = `আমাদের ডেলিভারি পলিসি ও চার্জ: ${deliveryInfo}। সারাদেশে হোম ডেলিভারি সুবিধা রয়েছে!`
+    } else {
+      reply = `Our delivery policy: ${deliveryInfo}. We deliver safely all over Bangladesh!`
+    }
+  }
+  // 4. Return & Exchange Policy
+  else if (
+    textLower.includes('return') ||
+    textLower.includes('refund') ||
+    textLower.includes('exchange') ||
+    textLower.includes('warranty') ||
+    textLower.includes('guarantee') ||
+    textLower.includes('policy') ||
+    textLower.includes('রিটার্ন')
+  ) {
+    intent = 'general_faq'
+    const returnInfo = account?.return_policy || account?.ai_return_policy || 'Standard exchange and return policy available'
+    if (detectedLang === 'banglish') {
+      reply = `Amader return policy: ${returnInfo}. Kono somossa hole amra druto somadhan kori.`
+    } else if (detectedLang === 'bn') {
+      reply = `আমাদের রিটার্ন পলিসি: ${returnInfo}। যেকোনো সমস্যায় আমরা দ্রুত সহায়তা প্রদান করি।`
+    } else {
+      reply = `Our return & exchange policy: ${returnInfo}. We ensure authentic products and full customer satisfaction.`
+    }
+  }
+  // 5. Order Status & Tracking
+  else if (
+    textLower.includes('order status') ||
+    textLower.includes('track') ||
+    textLower.includes('kobe pabo') ||
+    textLower.includes('amar order') ||
+    textLower.includes('order number')
+  ) {
+    intent = 'order_status'
+    if (recentOrders && recentOrders.length > 0) {
+      const lastOrder = recentOrders[0]
+      if (detectedLang === 'banglish') {
+        reply = `Apnar order (${lastOrder.order_number}) er status: ${lastOrder.status}. Total bill: ৳${lastOrder.total}.`
+      } else if (detectedLang === 'bn') {
+        reply = `আপনার সর্বশেষ অর্ডারের (${lastOrder.order_number}) স্ট্যাটাস: ${lastOrder.status}। মোট বিল: ৳${lastOrder.total}।`
+      } else {
+        reply = `Your recent order (${lastOrder.order_number}) status is ${lastOrder.status}. Total: ৳${lastOrder.total}.`
+      }
+    } else {
+      if (detectedLang === 'banglish') {
+        reply = 'Apnar phone number ba order number ta dile ami ekhoni status check kore dicchi!'
+      } else if (detectedLang === 'bn') {
+        reply = 'অনুগ্রহ করে আপনার ফোন নম্বর বা অর্ডার নম্বরটি দিলে আমি এখনই স্ট্যাটাস চেক করে দিচ্ছি!'
+      } else {
+        reply = 'Please provide your order number or phone number so I can check your order status immediately!'
+      }
+    }
+  }
+  // 6. Generic Fallback
+  else {
+    intent = 'general_faq'
+    const isGreeting = /^(hi|hello|hey|salam|slm|assalamu alaikum|hlw|হাই|হ্যালো|সালাম)[\s!.]*$/i.test(textLower)
+    if (isGreeting && !conversationHistoryText) {
+      if (detectedLang === 'banglish') {
+        reply = `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+      } else if (detectedLang === 'bn') {
+        reply = `আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+      } else {
+        reply = `Hello! How can we assist you today? Are you looking for any particular product or service?`
+      }
+    } else {
+      if (detectedLang === 'banglish') {
+        reply = `Ji Bhaiya, ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
+      } else if (detectedLang === 'bn') {
+        reply = `জি, আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনি কোন পণ্য বা সেবা সম্পর্কে জানতে চান বলুন, আমি বিস্তারিত জানাচ্ছি!`
+      } else {
+        reply = `Understood! Please tell me which product or details you would like to know about, and I will assist you right away.`
+      }
+    }
+  }
+
+  return { intent, reply }
 }
 
 export async function handleIncomingCustomerMessage({
@@ -242,80 +512,7 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
-  // Detect language
-  const detectedLang = detectLanguage(messageText, account.ai_primary_language || 'auto_detect')
-
-  // 2. Fetch Ground Truth Context (Products & Customer Orders - Safe queries)
-  let products: any[] = []
-  let recentOrders: any[] = []
-
-  try {
-    const targetAccountId = account?.id || accountId
-    let pQuery = client
-      .from('products')
-      .select('name, price, brand, category, stock_qty, is_in_stock, description')
-      .eq('is_active', true)
-      .limit(100)
-
-    if (targetAccountId) {
-      pQuery = pQuery.eq('account_id', targetAccountId)
-    }
-
-    const { data: pData } = await pQuery
-    products = pData ?? []
-
-    // If 0 products found by account_id, query all active products in tenant as fallback
-    if (products.length === 0) {
-      const { data: fallbackPData } = await client
-        .from('products')
-        .select('name, price, brand, category, stock_qty, is_in_stock, description')
-        .eq('is_active', true)
-        .limit(100)
-      if (fallbackPData && fallbackPData.length > 0) {
-        products = fallbackPData
-      }
-    }
-  } catch (_pErr) {
-    // products query fallback
-  }
-
-  if (contactId || customerPhone) {
-    try {
-      const { data: oData } = await client
-        .from('orders')
-        .select('order_number, status, payment_status, total, created_at')
-        .eq('account_id', accountId)
-        .limit(5)
-      recentOrders = oData ?? []
-    } catch (_oErr) {
-      // orders query fallback
-    }
-  }
-
-  // Build Language Instruction
-  let langGuidance = ''
-  if (detectedLang === 'bn') {
-    langGuidance = 'Respond in natural, polite Bangladeshi Bengali (বাংলা Script).'
-  } else if (detectedLang === 'banglish') {
-    langGuidance = 'Respond in natural Banglish (Bengali spoken language written in Latin/English alphabet). For example: "Bhai, Nivea face wash er dam ৳850. Stock e ache!".'
-  } else {
-    langGuidance = 'Respond in clear, professional English.'
-  }
-
-  // Build Tone Guidance
-  const effectivePersona = account.ai_persona || account.ai_auto_reply_tone || 'friendly_bangla'
-  let toneGuidance = 'Friendly and helpful.'
-  if (effectivePersona === 'professional_en') toneGuidance = 'Professional, formal, and precise.'
-  else if (effectivePersona === 'conversational_banglish') toneGuidance = 'Conversational, warm, and concise.'
-
-  // Build Communication & Greeting Guidance
-  const communicationGuidance = account.customer_relation_style === 'bhaiya_apu'
-    ? 'Address the customer respectfully as "Bhaiya" or "Apu" (ভাইয়া/আপু) when appropriate in Bengali/Banglish.'
-    : account.customer_relation_style === 'sir_madam'
-    ? 'Address the customer formally as "Sir" or "Madam".'
-    : 'Maintain a warm, casual, and polite conversation.'
-
-  // Fetch Recent Conversation History for Context & Memory
+  // 2. Fetch Recent Conversation History for Context & Memory
   let conversationHistoryText = ''
   let historyMsgs: any[] = []
   let convId = conversationId || ''
@@ -414,6 +611,83 @@ export async function handleIncomingCustomerMessage({
     )
   }
 
+  // 3. Detect language with full conversation history context
+  const detectedLang = detectLanguage(
+    messageText,
+    conversationHistoryText,
+    account.ai_primary_language || 'auto_detect'
+  )
+
+  // 4. Fetch Ground Truth Context (Products & Customer Orders - Safe queries)
+  let products: any[] = []
+  let recentOrders: any[] = []
+
+  try {
+    const targetAccountId = account?.id || accountId
+    let pQuery = client
+      .from('products')
+      .select('name, price, brand, category, stock_qty, is_in_stock, description')
+      .eq('is_active', true)
+      .limit(100)
+
+    if (targetAccountId) {
+      pQuery = pQuery.eq('account_id', targetAccountId)
+    }
+
+    const { data: pData } = await pQuery
+    products = pData ?? []
+
+    // If 0 products found by account_id, query all active products in tenant as fallback
+    if (products.length === 0) {
+      const { data: fallbackPData } = await client
+        .from('products')
+        .select('name, price, brand, category, stock_qty, is_in_stock, description')
+        .eq('is_active', true)
+        .limit(100)
+      if (fallbackPData && fallbackPData.length > 0) {
+        products = fallbackPData
+      }
+    }
+  } catch (_pErr) {
+    // products query fallback
+  }
+
+  if (contactId || customerPhone) {
+    try {
+      const { data: oData } = await client
+        .from('orders')
+        .select('order_number, status, payment_status, total, created_at')
+        .eq('account_id', accountId)
+        .limit(5)
+      recentOrders = oData ?? []
+    } catch (_oErr) {
+      // orders query fallback
+    }
+  }
+
+  // 5. Build Strict Language Instruction & Negative Constraints
+  let langGuidance = ''
+  if (detectedLang === 'bn') {
+    langGuidance = 'STRICT REQUIREMENT: The customer is communicating in Bengali. You MUST reply in natural, polite Bangladeshi Bengali written ONLY in Bengali script (বাংলা বর্ণমালা). NEVER output Arabic, Urdu, or Hindi characters. Every sentence must be in proper Bengali.'
+  } else if (detectedLang === 'banglish') {
+    langGuidance = 'STRICT REQUIREMENT: The customer is communicating in Banglish. You MUST reply in natural Banglish (spoken Bengali written in Latin/English alphabet). For example: "Bhaiya, Nivea face wash er dam ৳850. Stock e ache!". NEVER output Bengali script, Arabic, Urdu, or Hindi characters.'
+  } else {
+    langGuidance = 'STRICT REQUIREMENT: The customer is communicating in English. You MUST reply completely and purely in clear, natural, and helpful English using the Latin alphabet. NEVER switch to Bengali script, Banglish, Arabic, Urdu, or any other language.'
+  }
+
+  // Build Tone Guidance
+  const effectivePersona = account.ai_persona || account.ai_auto_reply_tone || 'friendly_bangla'
+  let toneGuidance = 'Friendly and helpful.'
+  if (effectivePersona === 'professional_en') toneGuidance = 'Professional, formal, and precise.'
+  else if (effectivePersona === 'conversational_banglish') toneGuidance = 'Conversational, warm, and concise.'
+
+  // Build Communication & Greeting Guidance
+  const communicationGuidance = account.customer_relation_style === 'bhaiya_apu'
+    ? 'Address the customer respectfully as "Bhaiya" or "Apu" (ভাইয়া/আপু) when appropriate in Bengali/Banglish.'
+    : account.customer_relation_style === 'sir_madam'
+    ? 'Address the customer formally as "Sir" or "Madam".'
+    : 'Maintain a warm, casual, and polite conversation.'
+
   const resolvedStoreName =
     (account.name && account.name.trim().toLowerCase() !== 'rifat' && account.name.trim() !== 'User' ? account.name.trim() : null) ||
     account.facebook_page_name ||
@@ -473,10 +747,16 @@ ${businessContext}
    - Always conclude with a natural, gentle question to help them buy, e.g.:
      "Do you want me to process your order now, Bhaiya?" or "Which email should we activate it on?" or "Would you like to order today?"
 
-5. LANGUAGE & TONE:
-   - Language: ${langGuidance}
+5. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
+   - ${langGuidance}
    - Persona: ${toneGuidance}
    - Addressing: ${communicationGuidance}
+   - ABSOLUTE PROHIBITION: You must NEVER, under any circumstance, generate Arabic script (عربى / اردو), Urdu, or Devanagari script. Our business operates in Bangladesh and communicates strictly in English, Bengali (বাংলা script), or Banglish according to what the customer speaks.
+   - Match the customer's language strictly:
+     * English customer input -> 100% English reply using Latin alphabet.
+     * Bengali customer input (বাংলা) -> Bengali reply using Bengali script (বাংলা বর্ণমালা).
+     * Banglish customer input -> Banglish reply using English/Latin alphabet.
+   - Currency symbol: Always use the Bangladeshi Taka symbol '৳' or 'Tk' with product prices (e.g. ৳1,000). The symbol '৳' does NOT mean the customer is writing in Bengali.
 
 === CATALOG & INVENTORY ===
 ${
@@ -549,6 +829,14 @@ Return ONLY a valid JSON object:
         })
         const txt = resp.text?.trim()
         if (txt) {
+          if (ARABIC_URDU_REGEX.test(txt)) {
+            console.warn(`[AI Router Engine] Discarding Gemini model ${gModel} output (forbidden Arabic/Urdu script)`)
+            continue
+          }
+          if (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(txt)) {
+            console.warn(`[AI Router Engine] Discarding Gemini model ${gModel} output (customer spoke English but output had Bengali script)`)
+            continue
+          }
           rawResponse = txt
           providerUsed = 'gemini'
           modelUsed = gModel
@@ -597,6 +885,14 @@ Return ONLY a valid JSON object:
         const groqJson = await groqResp.json()
         const content = groqJson?.choices?.[0]?.message?.content?.trim()
         if (content) {
+          if (ARABIC_URDU_REGEX.test(content)) {
+            console.warn(`[AI Router Engine] Discarding Groq model ${groqModel} output (forbidden Arabic/Urdu script)`)
+            continue
+          }
+          if (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(content)) {
+            console.warn(`[AI Router Engine] Discarding Groq model ${groqModel} output (customer spoke English but output had Bengali script)`)
+            continue
+          }
           rawResponse = content
           providerUsed = 'groq'
           modelUsed = groqModel
@@ -671,6 +967,14 @@ Return ONLY a valid JSON object:
         const orJson = await openRouterResp.json()
         const content = orJson?.choices?.[0]?.message?.content?.trim()
         if (content) {
+          if (ARABIC_URDU_REGEX.test(content)) {
+            console.warn(`[AI Router Engine] Discarding OpenRouter model ${orModel} output (forbidden Arabic/Urdu script)`)
+            continue
+          }
+          if (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(content)) {
+            console.warn(`[AI Router Engine] Discarding OpenRouter model ${orModel} output (customer spoke English but output had Bengali script)`)
+            continue
+          }
           rawResponse = content
           providerUsed = 'openrouter'
           modelUsed = orModel
@@ -684,155 +988,24 @@ Return ONLY a valid JSON object:
     }
   }
 
-  // TIER 4: Offline Rule Matcher Engine (Directly answers inquiries without repetitive welcome greetings)
+  // TIER 4: Offline Rule Matcher Engine
   let intent: DetectedIntent = 'general_faq'
   let aiReply = ''
 
   if (!rawResponse) {
     providerUsed = 'offline_dictionary'
     modelUsed = 'offline-rule-matcher'
-
-    const textLower = messageText.toLowerCase().trim()
-    const matchedProduct = products.find((p) => textLower.includes(p.name.toLowerCase()))
-
-    // 0. If an image was sent but offline fallback is active
-    if (activeMediaUrl && !rawResponse) {
-      intent = 'product_inquiry'
-      if (detectedLang === 'banglish') {
-        aiReply = 'Apnar pathano chobi ti ami peyechi! Amader team ekhoni chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
-      } else if (detectedLang === 'bn') {
-        aiReply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের প্রতিনিধি এখনই ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, অনুগ্রহ করে একটু অপেক্ষা করুন।'
-      } else {
-        aiReply = 'I have received your product photo! Our team is reviewing the image right now to check availability and price for you.'
-      }
-    }
-    // 1. Matched Product Inquiry
-    else if (matchedProduct) {
-      intent = 'product_inquiry'
-      if (detectedLang === 'banglish') {
-        aiReply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Apni ki order korte chan?`
-      } else if (detectedLang === 'bn') {
-        aiReply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} আপনি কি অর্ডার করতে চান?`
-      } else {
-        aiReply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to place an order?`
-      }
-    }
-    // 2. Payment Methods Inquiry
-    else if (
-      textLower.includes('payment') ||
-      textLower.includes('pay') ||
-      textLower.includes('bkash') ||
-      textLower.includes('nagad') ||
-      textLower.includes('rocket') ||
-      textLower.includes('cash') ||
-      textLower.includes('cod') ||
-      textLower.includes('bikas') ||
-      textLower.includes('taka pathabo') ||
-      textLower.includes('টাকা') ||
-      textLower.includes('পেমেন্ট')
-    ) {
-      intent = 'general_faq'
-      const paymentInfo = account.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
-      if (detectedLang === 'banglish') {
-        aiReply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan, Bhaiya?`
-      } else if (detectedLang === 'bn') {
-        aiReply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান?`
-      } else {
-        aiReply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
-      }
-    }
-    // 3. Delivery Rates & Shipping Policy
-    else if (
-      textLower.includes('delivery') ||
-      textLower.includes('shipping') ||
-      textLower.includes('charge') ||
-      textLower.includes('rate') ||
-      textLower.includes('courier') ||
-      textLower.includes('pathao') ||
-      textLower.includes('ডেলিভারি')
-    ) {
-      intent = 'general_faq'
-      const deliveryInfo = account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150 (Free delivery on select orders)'
-      if (detectedLang === 'banglish') {
-        aiReply = `Amader delivery charge o policy: ${deliveryInfo}. Sara Bangladesh e amra home delivery dei!`
-      } else if (detectedLang === 'bn') {
-        aiReply = `আমাদের ডেলিভারি পলিসি ও চার্জ: ${deliveryInfo}। সারাদেশে হোম ডেলিভারি সুবিধা রয়েছে!`
-      } else {
-        aiReply = `Our delivery policy: ${deliveryInfo}. We deliver safely all over Bangladesh!`
-      }
-    }
-    // 4. Return & Exchange Policy
-    else if (
-      textLower.includes('return') ||
-      textLower.includes('refund') ||
-      textLower.includes('exchange') ||
-      textLower.includes('warranty') ||
-      textLower.includes('guarantee') ||
-      textLower.includes('policy') ||
-      textLower.includes('রিটার্ন')
-    ) {
-      intent = 'general_faq'
-      const returnInfo = account.return_policy || account.ai_return_policy || 'Standard exchange and return policy available'
-      if (detectedLang === 'banglish') {
-        aiReply = `Amader return policy: ${returnInfo}. Kono somossa hole amra druto somadhan kori.`
-      } else if (detectedLang === 'bn') {
-        aiReply = `আমাদের রিটার্ন পলিসি: ${returnInfo}। যেকোনো সমস্যায় আমরা দ্রুত সহায়তা প্রদান করি।`
-      } else {
-        aiReply = `Our return & exchange policy: ${returnInfo}. We ensure authentic products and full customer satisfaction.`
-      }
-    }
-    // 5. Order Status & Tracking
-    else if (
-      textLower.includes('order status') ||
-      textLower.includes('track') ||
-      textLower.includes('kobe pabo') ||
-      textLower.includes('amar order') ||
-      textLower.includes('order number')
-    ) {
-      intent = 'order_status'
-      if (recentOrders.length > 0) {
-        const lastOrder = recentOrders[0]
-        if (detectedLang === 'banglish') {
-          aiReply = `Apnar order (${lastOrder.order_number}) er status: ${lastOrder.status}. Total bill: ৳${lastOrder.total}.`
-        } else if (detectedLang === 'bn') {
-          aiReply = `আপনার সর্বশেষ অর্ডারের (${lastOrder.order_number}) স্ট্যাটাস: ${lastOrder.status}। মোট বিল: ৳${lastOrder.total}।`
-        } else {
-          aiReply = `Your recent order (${lastOrder.order_number}) status is ${lastOrder.status}. Total: ৳${lastOrder.total}.`
-        }
-      } else {
-        if (detectedLang === 'banglish') {
-          aiReply = 'Apnar phone number ba order number ta dile ami ekhoni status check kore dicchi!'
-        } else if (detectedLang === 'bn') {
-          aiReply = 'অনুগ্রহ করে আপনার ফোন নম্বর বা অর্ডার নম্বরটি দিলে আমি এখনই স্ট্যাটাস চেক করে দিচ্ছি!'
-        } else {
-          aiReply = 'Please provide your order number or phone number so I can check your order status immediately!'
-        }
-      }
-    }
-    // 6. Generic Fallback — NEVER output canned "Thank you for reaching out..."
-    else {
-      intent = 'general_faq'
-      const isGreeting = /^(hi|hello|hey|salam|slm|assalamu alaikum|hlw|হাই|হ্যালো|সালাম)[\s!.]*$/i.test(textLower)
-      if (isGreeting && !conversationHistoryText) {
-        // Fresh start with a pure greeting
-        if (detectedLang === 'banglish') {
-          aiReply = `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
-        } else if (detectedLang === 'bn') {
-          aiReply = `আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
-        } else {
-          aiReply = `Hello! How can we assist you today? Are you looking for any particular product or service?`
-        }
-      } else {
-        // Ongoing conversation or direct question fallback
-        if (detectedLang === 'banglish') {
-          aiReply = `Ji Bhaiya, ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
-        } else if (detectedLang === 'bn') {
-          aiReply = `জি, আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনি কোন পণ্য বা সেবা সম্পর্কে জানতে চান বলুন, আমি বিস্তারিত জানাচ্ছি!`
-        } else {
-          aiReply = `Understood! Please tell me which product or details you would like to know about, and I will assist you right away.`
-        }
-      }
-    }
+    const offline = buildOfflineReply({
+      detectedLang,
+      messageText,
+      products,
+      recentOrders,
+      account,
+      conversationHistoryText,
+      activeMediaUrl,
+    })
+    intent = offline.intent
+    aiReply = offline.reply
   } else {
     // Parse LLM rawResponse JSON
     try {
@@ -847,6 +1020,27 @@ Return ONLY a valid JSON object:
       intent = 'general_faq'
       aiReply = rawResponse
     }
+  }
+
+  // Safety & Script Guardrail: If parsed aiReply contains Arabic/Urdu or violates English requirement, fall back to buildOfflineReply
+  if (
+    ARABIC_URDU_REGEX.test(aiReply) ||
+    (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(aiReply))
+  ) {
+    console.warn('[AI Router Engine] AI output violated language/script guardrail. Falling back to offline reply. Raw:', aiReply)
+    providerUsed = 'offline_dictionary'
+    modelUsed = 'offline-rule-matcher'
+    const fallbackOffline = buildOfflineReply({
+      detectedLang,
+      messageText,
+      products,
+      recentOrders,
+      account,
+      conversationHistoryText,
+      activeMediaUrl,
+    })
+    intent = fallbackOffline.intent
+    aiReply = fallbackOffline.reply
   }
 
   // Sanitization: Strip repetitive canned welcome prefixes if generated in ongoing chats

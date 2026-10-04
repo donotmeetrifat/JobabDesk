@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
+import { handleIncomingCustomerMessage, ARABIC_URDU_REGEX } from '@/lib/ai/router-engine'
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
           usage,
         })
       } catch {}
-      if (text) {
+      if (text && !ARABIC_URDU_REGEX.test(text)) {
         return NextResponse.json({ draft: text })
       }
     }
