@@ -56,9 +56,9 @@ export async function GET() {
     const checkAndSubscribe = async (pageId: string, pageToken: string, accountName: string) => {
       if (!pageId || !pageToken) return
       try {
-        // Check current subscribed apps
+        // Check current subscribed apps with explicit fields=subscribed_fields
         const checkRes = await fetch(
-          `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?fields=subscribed_fields&access_token=${encodeURIComponent(pageToken)}`
         )
         const checkJson = await checkRes.json()
 
@@ -78,6 +78,7 @@ export async function GET() {
         pageSubscriptions.push({
           pageId,
           accountName,
+          rawCheckJson: checkJson,
           currentFields,
           hasReactionSub,
           reSubscribed: !hasReactionSub,

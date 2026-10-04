@@ -402,6 +402,9 @@ export function MessageThread({
 
       if (cancelled) return;
 
+      // Only update state if at least one query method succeeded
+      if (!success) return;
+
       setReactions((prev) => {
         // Keep any active optimistic reactions that haven't been confirmed yet
         const pendingTemp = prev.filter((r) => r.id.startsWith("temp-"));
@@ -831,9 +834,28 @@ export function MessageThread({
   const reactionsByMessageId = useMemo(() => {
     const map = new Map<string, MessageReaction[]>();
     for (const r of reactions) {
-      const bucket = map.get(r.message_id);
-      if (bucket) bucket.push(r);
-      else map.set(r.message_id, [r]);
+      if (!r.message_id) continue;
+      const keys = new Set<string>();
+      keys.add(r.message_id);
+      if (r.message_id.startsWith("mid.")) keys.add(r.message_id.slice(4));
+      if (r.message_id.startsWith("m_")) keys.add(r.message_id.slice(2));
+      const stripped = r.message_id.replace(/^(m_|mid\.)+/g, "");
+      if (stripped) {
+        keys.add(stripped);
+        keys.add(`m_${stripped}`);
+        keys.add(`mid.${stripped}`);
+      }
+
+      for (const k of keys) {
+        const bucket = map.get(k);
+        if (bucket) {
+          if (!bucket.some((existing) => existing.id === r.id)) {
+            bucket.push(r);
+          }
+        } else {
+          map.set(k, [r]);
+        }
+      }
     }
     return map;
   }, [reactions]);
@@ -1273,9 +1295,30 @@ export function MessageThread({
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
-                    const msgReactions =
-                      reactionsByMessageId.get(msg.id) ||
-                      (msg.message_id ? reactionsByMessageId.get(msg.message_id) : undefined);
+                    const msgReactions = (() => {
+                      const list: MessageReaction[] = [];
+                      const seen = new Set<string>();
+                      const addAll = (items?: MessageReaction[]) => {
+                        if (!items) return;
+                        for (const it of items) {
+                          if (!seen.has(it.id)) {
+                            seen.add(it.id);
+                            list.push(it);
+                          }
+                        }
+                      };
+                      addAll(reactionsByMessageId.get(msg.id));
+                      if (msg.message_id) {
+                        addAll(reactionsByMessageId.get(msg.message_id));
+                        const stripped = msg.message_id.replace(/^(m_|mid\.)+/g, "");
+                        if (stripped) {
+                          addAll(reactionsByMessageId.get(stripped));
+                          addAll(reactionsByMessageId.get(`m_${stripped}`));
+                          addAll(reactionsByMessageId.get(`mid.${stripped}`));
+                        }
+                      }
+                      return list.length > 0 ? list : undefined;
+                    })();
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
                       const own = msgReactions?.find(
