@@ -85,6 +85,7 @@
     },
     "quickActions": {
       "newContact": "새 연락처",
+      "orders": "주문",
       "newDeal": "새 딜",
       "newBroadcast": "새 브로드캐스트",
       "newAutomation": "새 자동화"

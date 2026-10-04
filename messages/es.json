@@ -85,6 +85,7 @@
     },
     "quickActions": {
       "newContact": "Nuevo contacto",
+      "orders": "Pedidos",
       "newDeal": "Nuevo negocio",
       "newBroadcast": "Nueva difusión",
       "newAutomation": "Nueva automatización"

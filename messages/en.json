@@ -87,6 +87,7 @@
     },
     "quickActions": {
       "newContact": "New Contact",
+      "orders": "Orders",
       "newDeal": "New Deal",
       "newBroadcast": "New Broadcast",
       "newAutomation": "New Automation"

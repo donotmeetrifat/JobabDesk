@@ -348,7 +348,7 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
         ? `Deal "${d.title}" in ${stage.name}`
         : `Deal "${d.title}" updated`,
       at: d.updated_at,
-      href: '/pipelines',
+      href: '/orders',
     })
   }
 
