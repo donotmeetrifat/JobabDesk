@@ -48,7 +48,7 @@ export function BusinessSetup() {
         setSettings({
           name: data.settings.name || 'JobabDesk Store',
           business_tagline: data.settings.business_tagline || '',
-          ai_business_description: data.settings.ai_business_description || data.settings.ai_store_instructions || '',
+          ai_business_description: data.settings.ai_business_description || '',
           product_categories_sold: data.settings.product_categories_sold || '',
           target_audience: data.settings.target_audience || '',
           customer_relation_style: data.settings.customer_relation_style || 'bhaiya_apu',
@@ -86,7 +86,7 @@ export function BusinessSetup() {
           return_policy: settings.return_policy,
           ai_return_policy: settings.return_policy,
           special_instructions: settings.special_instructions,
-          ai_store_instructions: settings.ai_store_instructions || settings.special_instructions,
+          ai_store_instructions: settings.ai_store_instructions || '',
         }),
       })
       if (!res.ok) throw new Error('Failed to save business profile')

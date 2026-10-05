@@ -283,8 +283,8 @@ export function buildOfflineReply({
       const isFreeProduct =
         Number(matchedProduct.price) === 0 ||
         (/\bcanva\b/i.test(matchedProduct.name || textLower) &&
-          (/\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
-           Number(matchedProduct.price) === 0))
+          (/\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
+            Number(matchedProduct.price) === 0))
 
       if (isSingleDigital) {
         if (isFreeProduct) {
@@ -319,9 +319,8 @@ export function buildOfflineReply({
   else if (/\bcanva(?:\s*pro)?\b/i.test(textLower)) {
     intent = 'product_inquiry'
     const isFree =
-      /\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
-      /\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_business_description || '') ||
-      !products.some((p) => /\bcanva\b/i.test(p?.name || '') && Number(p?.price) > 0)
+      /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
+      /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_business_description || '')
 
     if (isFree) {
       if (detectedLang === 'banglish') {
@@ -333,11 +332,11 @@ export function buildOfflineReply({
       }
     } else {
       if (detectedLang === 'banglish') {
-        reply = `Canva Pro access available ache. Order korte apnar Email address ebong contact number ti share korun please.`
+        reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
       } else if (detectedLang === 'bn') {
-        reply = `Canva Pro স্টকে রয়েছে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস ও ফোন নম্বরটি জানান।`
+        reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
       } else {
-        reply = `Canva Pro is available. Please share your Email address and contact number to proceed!`
+        reply = `Canva Pro is available. Please let us know what specific details or access duration you need so our team can assist you!`
       }
     }
   }
@@ -893,10 +892,13 @@ export async function handleIncomingCustomerMessage({
     if (targetAccountId) {
       const { data: bData } = await client
         .from('broadcasts')
-        .select('name, message_text, ai_context, template_variables, created_at')
+        .select('name, message_text, ai_context, template_variables, status, created_at, updated_at')
         .eq('account_id', targetAccountId)
+        .neq('status', 'cancelled')
+        .neq('status', 'draft')
+        .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
-        .limit(3)
+        .limit(5)
 
       if (bData && bData.length > 0) {
         const campaignLines: string[] = []
@@ -1022,11 +1024,13 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * When a customer asks: "What discount?", "Koto % discount?", "Offer-ta ki?", "Ki offer?":
        - If official campaign/knowledge details are provided: Answer accurately using strictly those provided details!
        - If NO specific discount detail is provided: You MUST NOT invent a discount! Reply politely: "Thank you for asking! We are currently featuring our newest collections and popular items. Please let us know which product you are looking for so our team can provide the specific details and best available price for you!" (translated naturally into the customer's language).
-   - SPECIAL FREE OFFERS & PROMOTIONS (e.g. CANVA PRO FREE OFFER):
-     * If an official offer or knowledge doc grants a product for FREE (such as our Canva Pro free offer, promotional gift, or price ৳0):
+   - SPECIAL FREE OFFERS & PROMOTIONS:
+     * A product or service is ONLY free if an active broadcast campaign, knowledge document, or store instruction explicitly grants it for free (e.g. price ৳0, promotional giveaway, or free trial).
+     * If an offer has ended, expired, or been removed from broadcast campaigns or store guidelines, IT IS NOT FREE! Quote regular catalog prices or state clearly that no active free offer exists.
+     * When a product is explicitly documented as FREE:
        - State clearly that the product is 100% FREE (৳0) with ZERO payment required!
-       - NEVER invent a price or discount (e.g. NEVER say "10% discount er por ৳45" and NEVER ask for ৳45 or any money for a free item)!
-       - For Free Digital Products (like Canva Pro): NEVER ask for physical delivery address or Cash on Delivery (COD). Only ask for the customer's Email address to deliver their free access!
+       - NEVER invent a price or discount (e.g. NEVER say "10% discount er por ৳45" and NEVER ask for ৳45 or any payment for a free item)!
+       - For Free Digital Products: NEVER ask for physical delivery address or Cash on Delivery (COD). Only ask for the customer's Email address to deliver their free access!
      * If a product is listed in the catalog with a regular price and no active free offer exists, quote the exact catalog price and require standard payment.
    - Product Prices: Always quote the exact product price listed in CATALOG & INVENTORY unless an active broadcast campaign explicitly modifies it.
 
@@ -1113,9 +1117,10 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * Banglish customer -> Banglish reply using Latin alphabet.
    - Currency symbol: Always use the Bangladeshi Taka symbol '৳' or 'Tk' with product prices (e.g. ৳1,000). The symbol '৳' does NOT mean the customer is writing in Bengali.
 
-${activeBroadcastContext ? `=== RECENT BROADCAST CAMPAIGNS & UPDATE DETAILS (OFFICIAL GROUND TRUTH) ===
-${activeBroadcastContext}
-` : ''}=== CATALOG & INVENTORY ===
+=== RECENT BROADCAST CAMPAIGNS & PROMOTIONAL OFFERS (OFFICIAL GROUND TRUTH) ===
+${activeBroadcastContext ? activeBroadcastContext : 'No active broadcast campaigns or special promotional offers currently. Only standard catalog pricing and policies apply.'}
+
+=== CATALOG & INVENTORY ===
 ${
   products.length === 0
     ? 'No products available.'
@@ -1489,11 +1494,11 @@ Set "order": null if the customer is merely asking a question without ordering o
   const knowledgeSourcesText = `${knowledgeBaseContext}\n${account?.ai_store_instructions || ''}\n${account?.ai_business_description || ''}\n${activeBroadcastContext}`
 
   const isCanvaDiscussed = /\bcanva(?:\s*pro)?\b/i.test(combinedHistory)
-  const hasCanvaPaidInCatalog = products.some((p) => /\bcanva\b/i.test(p.name) && Number(p.price) > 0)
+  const hasCanvaFreeInCatalog = products.some((p) => /\bcanva\b/i.test(p.name) && Number(p.price) === 0)
   const isCanvaFreeInStore =
     isCanvaDiscussed &&
-    (/\b(?:canva\b[^.]*\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)|(?:free|ফ্রি|বিনামূল্যে|gift|giveaway)[^.]*\bcanva)\b/i.test(knowledgeSourcesText) ||
-      !hasCanvaPaidInCatalog)
+    (/\b(?:canva\b[^.]*\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)|(?:free|ফ্রি|বিনামূল্যে|gift|giveaway)[^.]*\bcanva)\b/i.test(knowledgeSourcesText) ||
+      hasCanvaFreeInCatalog)
 
   const isOrderDigital =
     Boolean(llmOrderData?.is_digital) ||
@@ -1535,8 +1540,8 @@ Set "order": null if the customer is merely asking a question without ordering o
     isFreeFromOrderData ||
     isCatalogFree ||
     isCanvaFreeInStore ||
-    (isFreeFromBroadcast && (isFreeFromChat || isCanvaDiscussed)) ||
-    (isFreeFromKnowledge && (isFreeFromChat || isCanvaDiscussed))
+    (isFreeFromBroadcast && isFreeFromChat) ||
+    (isFreeFromKnowledge && isFreeFromChat)
 
   // Deterministic Sanitizer for Hallucinated Discounts & Free Canva Pro / Free Digital Offers
   if (isCanvaFreeInStore || (isFreeOrder && isOrderDigital)) {
@@ -1678,13 +1683,36 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
 
-  // If information is incomplete, invalidate order capture and sanitize response
-  if (missingInfo) {
-    if (llmOrderData) {
+  // Detect if customer is actively attempting to place an order or provided checkout data
+  const orderIntentKeywords = /\b(?:order\s*(?:korte|korbo|kori|confirm|place|din|den|korun|dite|kora|chai|lagbe)|অর্ডার\s*(?:করতে|করব|করবো|দিন|কনফার্ম|করুন|চাই|নিব|নেব)|nite\s*chai|kinbo|kinte\s*chai|buy|purchase|place\s*order|want\s*to\s*buy|i\s*want\s*to\s*order|send\s*me|need\s*this|confirm\s*order)\b/i
+  const isQuestionOrInquiry = /\b(?:\?|ki|koto|dam\s*koto|kivabe|details|sure|is\s*it|are\s*you\s*sure|free\s*naki\s*paid|paid\s*naki\s*free|free\s*or\s*paid|paid\s*or\s*free|কত|কী|কি|নাকি|পেইড|ফ্রি\s*নাকি)\b/i.test(messageText)
+
+  const customerProvidedCheckoutDetails = Boolean(
+    (effectiveEmail && effectivePhone) ||
+    (effectiveAddress && effectivePhone) ||
+    hasTrx ||
+    hasPaymentSent
+  )
+
+  const isCustomerAttemptingOrder =
+    (orderIntentKeywords.test(messageText) && !isQuestionOrInquiry) ||
+    customerProvidedCheckoutDetails ||
+    Boolean(llmOrderData?.is_order && orderIntentKeywords.test(combinedHistory) && !isQuestionOrInquiry)
+
+  // Invalidate order if incomplete or if customer is only asking an informational question
+  if (missingInfo || !isCustomerAttemptingOrder) {
+    if (llmOrderData && !customerProvidedCheckoutDetails) {
       llmOrderData.is_order = false
     }
+  }
 
-    if (aiClaimsOrderPlaced || isFreeOrder || isCanvaDiscussed || isCanvaFreeInStore || (effectiveEmail || effectiveAddress)) {
+  // Only hijack/sanitize aiReply if:
+  // 1. The AI falsely claimed an order was placed/confirmed without having full details, OR
+  // 2. The customer is actively attempting to place an order and missing required checkout fields
+  const shouldSanitizeMissingOrderInfo =
+    missingInfo && (aiClaimsOrderPlaced || (isCustomerAttemptingOrder && (effectiveEmail || effectiveAddress || explicitPaymentMethod || isFreeOrder || isCanvaFreeInStore)))
+
+  if (shouldSanitizeMissingOrderInfo) {
       const bKashNumber = account?.special_instructions || account?.ai_store_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
 
       if (isOrderDigital) {
@@ -1747,7 +1775,6 @@ Set "order": null if the customer is merely asking a question without ordering o
         }
       }
     }
-  }
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
   try {

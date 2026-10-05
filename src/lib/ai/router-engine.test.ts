@@ -89,4 +89,36 @@ describe('router-engine buildOfflineReply for free offers', () => {
     expect(reply.reply).not.toContain('10%')
     expect(reply.reply).not.toContain('৳45')
   })
+
+  it('does NOT treat Canva Pro as free when offer has been removed from instructions and broadcasts', () => {
+    const account = {
+      ai_store_instructions: 'Customer satisfaction is our priority. We sell digital subscriptions.',
+      ai_business_description: 'Digiplus Digital Store',
+    }
+    const products: any[] = []
+
+    const replyBn = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'canva pro free?',
+      products,
+      recentOrders: [],
+      account,
+    })
+
+    // Should NOT claim Canva Pro is free (৳0)
+    expect(replyBn.reply).not.toContain('সম্পূর্ণ ফ্রি')
+    expect(replyBn.reply).not.toContain('৳০')
+    expect(replyBn.reply).not.toContain('৳0')
+
+    const replyEn = buildOfflineReply({
+      detectedLang: 'en',
+      messageText: 'is it free or paid?',
+      products,
+      recentOrders: [],
+      account,
+    })
+
+    expect(replyEn.reply).not.toContain('completely free')
+    expect(replyEn.reply).not.toContain('৳0')
+  })
 })
