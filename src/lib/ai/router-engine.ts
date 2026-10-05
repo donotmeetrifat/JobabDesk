@@ -105,6 +105,23 @@ export function detectLanguage(
 
   const clean = text.trim()
 
+  // 0. Check for explicit customer instructions requesting Bengali or English
+  const banglaRequestRegex = /\b(?:banglay\s*kotha\s*bolen|bangla\s*te\s*bolen|banglay\s*bolen|বাংলায়\s*বলুন|বাংলায়\s*কথা\s*বলুন|pure\s*bangla|speak\s*in\s*bangla|speak\s*bangla|bangla\s*bolen|banglay\s*likhun|bangla\s*likhun|bangla\s*language|shudhu\s*bangla|বাংলা\s*বলুন)\b/i
+  if (banglaRequestRegex.test(clean)) {
+    return 'bn'
+  }
+  const englishRequestRegex = /\b(?:speak\s*in\s*english|english\s*please|in\s*english|reply\s*in\s*english|shudhu\s*english)\b/i
+  if (englishRequestRegex.test(clean)) {
+    return 'en'
+  }
+
+  // If previous customer messages explicitly requested Bengali, honor that on short responses (e.g. "Payment done", "Bkash", "ok")
+  if (recentHistory && banglaRequestRegex.test(recentHistory) && !englishRequestRegex.test(clean)) {
+    if (clean.length < 40) {
+      return 'bn'
+    }
+  }
+
   // 1. Check for actual Bengali script letters (excluding currency ৳ \u09F3 and digits \u09E6-\u09EF)
   // Bengali Unicode letters: \u0985-\u09B9, \u09CE, \u09DC-\u09DF and vowel signs \u09BE-\u09CC
   const bengaliLettersMatch = clean.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/g)
@@ -215,7 +232,14 @@ export function buildOfflineReply({
   let reply = ''
 
   const textLower = messageText.toLowerCase().trim()
-  const matchedProducts = products.filter((p) => p?.name && textLower.includes(p.name.toLowerCase()))
+  const matchedProducts = products.filter((p) => {
+    if (!p?.name) return false
+    const pName = p.name.toLowerCase().trim()
+    if (textLower.includes(pName) || pName.includes(textLower)) return true
+    // Also match individual significant words (e.g. "canva" in message matches "Canva Pro")
+    const pWords = pName.split(/\s+/).filter((w: string) => w.length > 3)
+    return pWords.some((w: string) => textLower.includes(w))
+  })
   const matchedProduct = matchedProducts[0] || null
 
   // 0. If an image was sent but offline fallback is active
@@ -256,13 +280,29 @@ export function buildOfflineReply({
       }
     } else {
       const isSingleDigital = isDigitalProduct(matchedProduct) || isDigitalText(textLower)
+      const isFreeProduct =
+        Number(matchedProduct.price) === 0 ||
+        (/\bcanva\b/i.test(matchedProduct.name || textLower) &&
+          (/\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
+           Number(matchedProduct.price) === 0))
+
       if (isSingleDigital) {
-        if (detectedLang === 'banglish') {
-          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Digital access apnar email e pathano hoy. Order confirm korte apnar Email address, phone number ebong bKash/Nagad payment confirm korben please?`
-        } else if (detectedLang === 'bn') {
-          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। এটি একটি ডিজিটাল পণ্য, এর অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
+        if (isFreeProduct) {
+          if (detectedLang === 'banglish') {
+            reply = `${matchedProduct.name} amader special offer e shompurno Free (৳0)! Digital access pete kindly apnar Email address ti share korun.`
+          } else if (detectedLang === 'bn') {
+            reply = `${matchedProduct.name} আমাদের বিশেষ অফারে সম্পূর্ণ ফ্রি (৳০)! আপনার ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+          } else {
+            reply = `${matchedProduct.name} is completely free (৳0) under our special offer! Please share your Email address so we can grant your digital access.`
+          }
         } else {
-          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. As a digital product, access will be delivered to your email. To place your order, please provide your Email address, phone number, and bKash/Nagad payment confirmation!`
+          if (detectedLang === 'banglish') {
+            reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Digital access apnar email e pathano hoy. Order confirm korte apnar Email address, phone number ebong bKash/Nagad payment confirm korben please?`
+          } else if (detectedLang === 'bn') {
+            reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। এটি একটি ডিজিটাল পণ্য, এর অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
+          } else {
+            reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. As a digital product, access will be delivered to your email. To place your order, please provide your Email address, phone number, and bKash/Nagad payment confirmation!`
+          }
         }
       } else {
         if (detectedLang === 'banglish') {
@@ -272,6 +312,32 @@ export function buildOfflineReply({
         } else {
           reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to order? Please share your delivery address, phone number, and preferred payment method (COD or bKash)!`
         }
+      }
+    }
+  }
+  // 1b. Canva Pro Inquiry (even if not listed in product catalog table)
+  else if (/\bcanva(?:\s*pro)?\b/i.test(textLower)) {
+    intent = 'product_inquiry'
+    const isFree =
+      /\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
+      /\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_business_description || '') ||
+      !products.some((p) => /\bcanva\b/i.test(p?.name || '') && Number(p?.price) > 0)
+
+    if (isFree) {
+      if (detectedLang === 'banglish') {
+        reply = `Canva Pro amader special offer e shompurno Free (৳0) deya hocche! Apnar digital access pete kindly apnar Email address ti share korun.`
+      } else if (detectedLang === 'bn') {
+        reply = `আমাদের বিশেষ অফারে Canva Pro সম্পূর্ণ ফ্রি (৳০) দেওয়া হচ্ছে! আপনার ফ্রি ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+      } else {
+        reply = `Under our special offer, Canva Pro is completely free (৳0)! Please share your Email address so we can grant your digital access.`
+      }
+    } else {
+      if (detectedLang === 'banglish') {
+        reply = `Canva Pro access available ache. Order korte apnar Email address ebong contact number ti share korun please.`
+      } else if (detectedLang === 'bn') {
+        reply = `Canva Pro স্টকে রয়েছে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস ও ফোন নম্বরটি জানান।`
+      } else {
+        reply = `Canva Pro is available. Please share your Email address and contact number to proceed!`
       }
     }
   }
@@ -852,6 +918,46 @@ export async function handleIncomingCustomerMessage({
     // broadcast query fallback
   }
 
+  // 4c. Fetch Knowledge Base & Website Data (ai_knowledge_documents & ai_knowledge_chunks)
+  let knowledgeBaseContext = ''
+  try {
+    const targetAccountId = account?.id || accountId
+    if (targetAccountId) {
+      const { data: kDocs } = await client
+        .from('ai_knowledge_documents')
+        .select('title, content')
+        .eq('account_id', targetAccountId)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+
+      if (kDocs && kDocs.length > 0) {
+        const docEntries = kDocs
+          .map((doc: { title?: string; content?: string }) => {
+            const title = doc.title?.trim() || 'Knowledge Document'
+            const content = doc.content?.trim() || ''
+            return `--- Document: "${title}" ---\n${content}`
+          })
+          .filter(Boolean)
+        if (docEntries.length > 0) {
+          knowledgeBaseContext = docEntries.join('\n\n')
+        }
+      }
+
+      if (!knowledgeBaseContext) {
+        const { data: chunks } = await client
+          .from('ai_knowledge_chunks')
+          .select('content')
+          .eq('account_id', targetAccountId)
+          .limit(10)
+        if (chunks && chunks.length > 0) {
+          knowledgeBaseContext = chunks.map((c: { content?: string }) => c.content?.trim()).filter(Boolean).join('\n\n')
+        }
+      }
+    }
+  } catch (_kErr) {
+    // knowledge query fallback
+  }
+
   // 5. Build Strict Language Instruction & Negative Constraints
   let langGuidance = ''
   if (detectedLang === 'bn') {
@@ -884,7 +990,8 @@ export async function handleIncomingCustomerMessage({
   const businessContext = `
 Store Name: ${resolvedStoreName}
 Tagline: ${account.business_tagline || 'N/A'}
-Store Overview: ${account.ai_business_description || account.ai_store_instructions || 'N/A'}
+Store Overview: ${account.ai_business_description || 'N/A'}
+Store Guidelines, Special Offers & FAQs: ${account.ai_store_instructions || 'N/A'}
 Categories Sold: ${account.product_categories_sold || 'N/A'}
 Target Customer Profile: ${account.target_audience || 'Customers in Bangladesh'}
 Customer Communication Style: ${communicationGuidance}
@@ -899,31 +1006,36 @@ You are chatting live with a customer on Facebook Messenger / WhatsApp.
 === STORE IDENTITY & SETTINGS ===
 ${businessContext}
 
+=== OFFICIAL BUSINESS KNOWLEDGE BASE & WEBSITE DATA (PRIMARY GROUND TRUTH) ===
+${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
+
 === STRICT REAL-MARKET CHAT RULES (MANDATORY) ===
 1. SHORT, CRISP, HUMAN SALESMAN (STRICTLY 2 TO 3 SHORT SENTENCES / 35-50 WORDS MAX):
    - In real-world Facebook Messenger & WhatsApp e-commerce in Bangladesh, customers read on mobile and hate long walls of text. Long paragraphs kill sales.
    - Your reply MUST be short, warm, natural, and direct: STRICTLY 2 to 3 sentences maximum!
    - NEVER write long marketing paragraphs or flowery speeches.
 
-2. ZERO DISCOUNT & PROMOTION HALLUCINATION RULE (CRITICAL MANDATE):
-   - ABSOLUTE PROHIBITION ON INVENTING DISCOUNTS:
-     * NEVER invent, guess, or promise any discount, percentage (e.g. "10% discount", "20% off"), promotional coupon, or special sale on ANY product unless it is explicitly written in "RECENT BROADCAST CAMPAIGNS" or active store settings.
-     * When a broadcast message was sent (such as "we have an exclusive special update for you" or "special discount"), and the customer asks: "What's that update?", "What discount?", "Koto % discount?", "Offer-ta ki?", "Ki offer?":
-       - IF official campaign details/discounts are provided in "RECENT BROADCAST CAMPAIGNS" below: Answer accurately using strictly those provided details!
-       - IF NO specific discount or update detail was provided by the store owner: You MUST NOT invent a discount or promise a percentage! Instead, reply politely:
-         "Thank you for asking! We are currently featuring our newest collections and popular items. Please let us know which product you are looking for so our team can provide the specific details and best available price for you!" (translated naturally into the customer's language).
-   - DYNAMIC CAMPAIGN & OFFER SYNCHRONIZATION:
-     * You MUST dynamically check "RECENT BROADCAST CAMPAIGNS & UPDATE DETAILS" below on EVERY interaction.
-     * If an active campaign explicitly gives a product for FREE or discounted (e.g. "Canva Pro is free as part of our update"), apply that offer accurately.
-     * If the store owner has REMOVED the offer (or if no campaign mentions a free offer for the product), that product is PAID at its regular catalog price (e.g. ৳50). In that case, quote the catalog price and require standard payment. Never provide free access if the offer is not active!
+2. ZERO DISCOUNT HALLUCINATION RULE & GROUND TRUTH (CRITICAL MANDATE):
+   - ABSOLUTE PROHIBITION ON INVENTING OR CLAIMING DISCOUNTS:
+     * You are STRICTLY FORBIDDEN from inventing, guessing, or mentioning ANY discount or percentage (NEVER say "10% discount", "20% discount", etc.), promotional coupon, or calculating any price reductions unless an exact discount is explicitly documented in the OFFICIAL BUSINESS KNOWLEDGE BASE, STORE GUIDELINES, SPECIAL OFFERS & FAQS, or RECENT BROADCAST CAMPAIGNS.
+     * If NO active discount is documented: You MUST NEVER utter the word "discount"! Quote the exact product price listed in CATALOG & INVENTORY.
+     * When a customer asks: "What discount?", "Koto % discount?", "Offer-ta ki?", "Ki offer?":
+       - If official campaign/knowledge details are provided: Answer accurately using strictly those provided details!
+       - If NO specific discount detail is provided: You MUST NOT invent a discount! Reply politely: "Thank you for asking! We are currently featuring our newest collections and popular items. Please let us know which product you are looking for so our team can provide the specific details and best available price for you!" (translated naturally into the customer's language).
+   - SPECIAL FREE OFFERS & PROMOTIONS (e.g. CANVA PRO FREE OFFER):
+     * If an official offer or knowledge doc grants a product for FREE (such as our Canva Pro free offer, promotional gift, or price ৳0):
+       - State clearly that the product is 100% FREE (৳0) with ZERO payment required!
+       - NEVER invent a price or discount (e.g. NEVER say "10% discount er por ৳45" and NEVER ask for ৳45 or any money for a free item)!
+       - For Free Digital Products (like Canva Pro): NEVER ask for physical delivery address or Cash on Delivery (COD). Only ask for the customer's Email address to deliver their free access!
+     * If a product is listed in the catalog with a regular price and no active free offer exists, quote the exact catalog price and require standard payment.
    - Product Prices: Always quote the exact product price listed in CATALOG & INVENTORY unless an active broadcast campaign explicitly modifies it.
 
 3. NO UNSOLICITED PRODUCT LECTURES / ESSAYS:
    - When a customer says they want to order or asks about products (e.g. "i want to order [product]", "order korte chai", "দাম কত?"):
      * Confirm availability & price in ONE concise sentence: "Great choice! [Product Name] (৳[price]) is available."
      * If DIGITAL (e.g. Canva Pro, subscriptions, software, digital accounts, licenses):
-       - If FREE (campaign offer / ৳0): Ask for Email address & Contact phone number. NEVER ask for payment or TrxID!
-       - If PAID: Ask for Email address, phone number, and bKash/Nagad payment.
+       - If FREE (free offer / price ৳0): State it is free (৳0), ask ONLY for Email address (and optional contact phone number). NEVER ask for payment, bKash, Nagad, or TrxID! NEVER ask for courier delivery address or COD!
+       - If PAID: Ask for Email address, phone number, and bKash/Nagad prepaid payment.
      * If PHYSICAL (tangible goods, skincare, cosmetics, clothes):
        - If FREE (sample / gift): Ask for delivery address & contact phone number.
        - If PAID: Ask for full delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad).
@@ -939,29 +1051,29 @@ ${businessContext}
 5. REAL MARKET ORDER CAPTURE & VERIFICATION (FREE PROMOTIONS VS PAID PRODUCTS - MANDATORY):
    - You MUST determine whether the order or item is FREE or PAID:
      * A. FREE PROMOTIONS / GIVEAWAYS / ৳0 ORDERS:
-       (When an active campaign or update grants a product for free, e.g. "Canva Pro is free as part of our update", giveaway, promotional gift, or price ৳0):
+       (When an active offer, knowledge doc, or campaign grants a product for free, e.g. Canva Pro free offer, giveaway, promotional gift, or price ৳0):
        - TOTAL PRICE IS ৳0! ZERO PAYMENT REQUIRED!
        - NEVER ask the customer for payment method, bKash, Nagad, bank transfer, cash, or Transaction ID (TrxID)!
-       - It is a FREE order, so asking for payment or TrxID is completely wrong and forbidden!
+       - Asking for payment or TrxID on a free order is completely wrong and strictly forbidden!
        - ALL REQUIRED INFO FOR FREE ORDERS:
          (1) For Free Digital Products (Canva Pro, subscriptions, software, digital accounts, licenses):
              - Customer Email Address (where digital access / credentials will be sent)
-             - Contact Phone Number
-             - ZERO PAYMENT OR TRXID REQUIRED!
+             - Contact Phone Number (optional or confirmation)
+             - ZERO PAYMENT, ZERO TRXID, ZERO PHYSICAL ADDRESS REQUIRED!
          (2) For Free Physical Gifts / Samples:
              - Customer Delivery Address
              - Contact Phone Number
              - ZERO PAYMENT REQUIRED!
-       - AS SOON AS the customer provides their Email and Phone (or Address and Phone):
+       - AS SOON AS the customer provides their Email (for digital) or Address (for physical):
          * The free order is COMPLETE!
          * Set "order.total": 0, "order.subtotal": 0, "order.delivery_charge": 0, "order.payment_method": "free", "order.payment_confirmed": true, "order.is_order": true.
-         * Warmly confirm: "Thank you, Sir! Your free [Product Name] order has been successfully registered with your email and phone number. Our team is activating your access right away!"
+         * Warmly confirm: "Thank you! Your free [Product Name] order has been successfully registered with your email. Our team is activating your access right away!"
 
-     * B. PAID PRODUCTS (Regular catalog prices > ৳0, or whenever any free offer is removed/inactive):
-       - When no active campaign grants a free offer, the item must be sold at its catalog price.
-       - For Digital (e.g. Canva Pro at ৳50):
+     * B. PAID PRODUCTS (Regular catalog prices > ৳0):
+       - When no free offer applies, the item must be sold at its catalog price.
+       - For Paid Digital:
          Requires Email address, Phone number, and bKash/Nagad prepaid payment confirmation (or TrxID).
-       - For Physical:
+       - For Paid Physical:
          Requires Delivery address, Phone number, and Payment method choice (Cash on Delivery or bKash/Nagad).
        - If payment method / confirmation is not yet confirmed, ask for it politely before confirming the order.
 
@@ -1373,18 +1485,24 @@ Set "order": null if the customer is merely asking a question without ordering o
   }
 
   // 3b. Deterministic Guardrail for Order Completeness & Payment Method
-  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
+  const combinedHistory = `${conversationHistoryText}\n${messageText}`
+  const knowledgeSourcesText = `${knowledgeBaseContext}\n${account?.ai_store_instructions || ''}\n${account?.ai_business_description || ''}\n${activeBroadcastContext}`
 
-  const aiClaimsOrderPlaced = orderConfirmationPhrases.test(aiReply)
+  const isCanvaDiscussed = /\bcanva(?:\s*pro)?\b/i.test(combinedHistory)
+  const hasCanvaPaidInCatalog = products.some((p) => /\bcanva\b/i.test(p.name) && Number(p.price) > 0)
+  const isCanvaFreeInStore =
+    isCanvaDiscussed &&
+    (/\b(?:canva\b[^.]*\b(?:free|giveaway|offer|ফ্রি|বিনামূল্যে|gift)|(?:free|ফ্রি|বিনামূল্যে|gift|giveaway)[^.]*\bcanva)\b/i.test(knowledgeSourcesText) ||
+      !hasCanvaPaidInCatalog)
 
   const isOrderDigital =
     Boolean(llmOrderData?.is_digital) ||
     checkIsDigitalOrder(llmOrderData?.items) ||
     isDigitalText(messageText) ||
     isDigitalText(conversationHistoryText) ||
+    isCanvaDiscussed ||
     products.some((p) => isDigitalProduct(p) && (messageText.toLowerCase().includes(p.name.toLowerCase()) || conversationHistoryText.toLowerCase().includes(p.name.toLowerCase())))
 
-  const combinedHistory = `${conversationHistoryText}\n${messageText}`
   const extractedInfo = extractCustomerInfoFromMessage(messageText)
   const histExtractedInfo = extractCustomerInfoFromMessage(conversationHistoryText)
 
@@ -1402,6 +1520,10 @@ Set "order": null if the customer is merely asking a question without ordering o
     activeBroadcastContext &&
     /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te)\b/i.test(activeBroadcastContext)
   )
+  const isFreeFromKnowledge = Boolean(
+    knowledgeSourcesText &&
+    /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te|for\s*free)\b/i.test(knowledgeSourcesText)
+  )
   const isFreeFromChat = /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te|for\s*free|free\s*deya\s*hocche|free\s*pabo|free\s*nite)\b/i.test(combinedHistory)
   const isFreeFromOrderData = Number(llmOrderData?.total) === 0 && Boolean(llmOrderData?.items?.length)
   const isCatalogFree = products.some(
@@ -1412,11 +1534,47 @@ Set "order": null if the customer is merely asking a question without ordering o
     (llmOrderData?.payment_method === 'free') ||
     isFreeFromOrderData ||
     isCatalogFree ||
-    (isFreeFromBroadcast && isFreeFromChat)
+    isCanvaFreeInStore ||
+    (isFreeFromBroadcast && (isFreeFromChat || isCanvaDiscussed)) ||
+    (isFreeFromKnowledge && (isFreeFromChat || isCanvaDiscussed))
+
+  // Deterministic Sanitizer for Hallucinated Discounts & Free Canva Pro / Free Digital Offers
+  if (isCanvaFreeInStore || (isFreeOrder && isOrderDigital)) {
+    const hasDiscountOrPriceOrCOD = /\b(?:10%|20%|45|৳45|dam\s*porbe|payment\s*method|bkash\/nagad\/cod|bKash\s*merchant|01326596251|send\s*৳?45|delivery\s*details|ক্যাশ\s*অন\s*ডেলিভারি|পেমেন্ট\s*মেথড)\b/i.test(aiReply)
+    const asksForPayment = /\b(?:payment|bKash|Nagad|COD|TrxID|টাকা\s*পাঠান|পেমেন্ট)\b/i.test(aiReply) && !/\b(?:free|৳0|ফ্রি|বিনামূল্যে)\b/i.test(aiReply)
+
+    if (hasDiscountOrPriceOrCOD || asksForPayment) {
+      if (detectedLang === 'bn') {
+        aiReply = `আমাদের বিশেষ অফারে Canva Pro সম্পূর্ণ ফ্রি (৳০) দেওয়া হচ্ছে! আপনার ফ্রি অ্যাক্সেসটি পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+      } else if (detectedLang === 'banglish') {
+        aiReply = `Amader special offer e Canva Pro shompurno Free (৳0) deya hocche! Apnar free access pete kindly apnar Email address ti share korun.`
+      } else {
+        aiReply = `Under our special offer, Canva Pro is completely free (৳0)! Please share your Email address so we can grant your free access.`
+      }
+    }
+  } else {
+    // If the business has NO active discount documented, strip any hallucinated "10% discount" or generic unverified percentage discounts
+    const hasActiveDiscountInDocs = /\b(?:\d+%\s*discount|\d+%\s*off|ডিসকাউন্ট)\b/i.test(knowledgeSourcesText)
+    if (!hasActiveDiscountInDocs && /\b(?:\b10%\s*discount\b|\b20%\s*discount\b|10%\s*discount\s*er\s*por)\b/i.test(aiReply)) {
+      aiReply = aiReply
+        .replace(/\b10%\s*discount\s*er\s*por\s*/gi, '')
+        .replace(/\b(?:10%|20%)\s*discount\b/gi, 'special offer')
+        .trim()
+    }
+  }
+
+  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
+  const aiClaimsOrderPlaced = orderConfirmationPhrases.test(aiReply)
 
   let explicitPaymentMethod: string | null = null
-  if (isFreeOrder) {
+  if (isFreeOrder || isCanvaFreeInStore) {
     explicitPaymentMethod = 'free'
+    if (llmOrderData) {
+      llmOrderData.payment_method = 'free'
+      llmOrderData.total = 0
+      llmOrderData.subtotal = 0
+      llmOrderData.delivery_charge = 0
+    }
   } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে)\b/i.test(msgLower)) {
     if (!isOrderDigital) explicitPaymentMethod = 'cod'
   } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(msgLower)) {
@@ -1472,7 +1630,7 @@ Set "order": null if the customer is merely asking a question without ordering o
         aiReply = `Your order has been successfully cancelled as requested. Please let us know whenever you need anything in the future. Thank you!`
       }
     }
-  } else if (isFreeOrder) {
+  } else if (isFreeOrder || isCanvaFreeInStore) {
     if (isOrderDigital) {
       if (!effectiveEmail) missingInfo = 'email'
       else if (!effectivePhone) missingInfo = 'phone'
@@ -1498,7 +1656,7 @@ Set "order": null if the customer is merely asking a question without ordering o
   }
 
   // Handle Free Order Completion:
-  if (isFreeOrder && effectivePhone && (isOrderDigital ? effectiveEmail : effectiveAddress)) {
+  if ((isFreeOrder || isCanvaFreeInStore) && effectivePhone && (isOrderDigital ? effectiveEmail : effectiveAddress)) {
     if (llmOrderData) {
       llmOrderData.is_order = true
       llmOrderData.total = 0
@@ -1526,22 +1684,22 @@ Set "order": null if the customer is merely asking a question without ordering o
       llmOrderData.is_order = false
     }
 
-    if (aiClaimsOrderPlaced || (isFreeOrder && (effectiveEmail || effectiveAddress))) {
+    if (aiClaimsOrderPlaced || isFreeOrder || isCanvaDiscussed || isCanvaFreeInStore || (effectiveEmail || effectiveAddress)) {
       const bKashNumber = account?.special_instructions || account?.ai_store_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
 
       if (isOrderDigital) {
         if (missingInfo === 'email') {
           if (detectedLang === 'bn') {
-            aiReply = isFreeOrder
-              ? `ধন্যবাদ! ফ্রি ডিজিটাল পণ্যের অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন!`
+            aiReply = (isFreeOrder || isCanvaFreeInStore)
+              ? `আমাদের বিশেষ অফারে Canva Pro সম্পূর্ণ ফ্রি (৳০), কোনো পেমেন্ট বা টাকা পাঠাতে হবে না! আপনার ফ্রি ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
               : `ধন্যবাদ! ডিজিটাল পণ্যের অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি দিন এবং বিকাশ/নগদে (${bKashNumber}) পেমেন্ট কনফার্ম করুন।`
           } else if (detectedLang === 'banglish') {
-            aiReply = isFreeOrder
-              ? `Dhonnobad! Free digital product er access shorashori apnar email e pathano hobe. Kindly apnar Email address ti share korun!`
+            aiReply = (isFreeOrder || isCanvaFreeInStore)
+              ? `Amader special offer e Canva Pro shompurno Free (৳0), kono payment ba taka pathate hobe na! Apnar free digital access pete kindly apnar Email address ti share korun.`
               : `Dhonnobad! Digital product er access shorashori apnar email e deya hobe. Doya kore apnar Email address ti din ebong bKash/Nagad e (${bKashNumber}) payment confirm korun.`
           } else {
-            aiReply = isFreeOrder
-              ? `Thank you! Since this is a free digital product, access will be delivered directly to your email. Please share your Email address so we can complete your order!`
+            aiReply = (isFreeOrder || isCanvaFreeInStore)
+              ? `Canva Pro is completely free (৳0) under our special offer, no payment is required! Please share your Email address so we can grant your digital access.`
               : `Thank you! Since this is a digital product, access is delivered directly to your email. Please share your Email address and confirm your payment to ${bKashNumber} to finalize your order!`
           }
         } else if (missingInfo === 'phone') {
