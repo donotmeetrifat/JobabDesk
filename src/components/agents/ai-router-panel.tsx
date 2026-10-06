@@ -1,40 +1,89 @@
 'use client'
 
 import { useState } from 'react'
-import { Store, Sliders, Plug, Sparkles } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Store, Sliders, Sparkles, Plug } from 'lucide-react'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { BusinessSetup } from './business-setup'
 import { ChannelControls } from './channel-controls'
 import { ChannelConnections } from './channel-connections'
 import { SandboxAndLogs } from './sandbox-and-logs'
+import { cn } from '@/lib/utils'
+
+type AgentTab = 'business' | 'controls' | 'playground' | 'connections'
 
 export function AiRouterPanel() {
-  const [activeTab, setActiveTab] = useState<'business' | 'controls' | 'playground' | 'connections'>('business')
+  const [activeTab, setActiveTab] = useState<AgentTab>('business')
 
   return (
     <div className="space-y-6">
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 w-full max-w-4xl mb-6 bg-muted/60 p-1.5 rounded-2xl">
-          <TabsTrigger value="business" className="flex items-center gap-2 text-xs font-semibold rounded-xl py-2.5">
-            <Store className="h-4 w-4 text-primary" />
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AgentTab)} className="w-full">
+        {/* Segment Navigation Pills (Clean Minimalist Tab Bar) */}
+        <div className="flex items-center gap-1.5 p-1 bg-card rounded-xl border border-border shadow-xs mb-6 overflow-x-auto scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveTab('business')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all shrink-0",
+              activeTab === 'business'
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Store className={cn("h-4 w-4", activeTab === 'business' ? "text-primary-foreground" : "text-muted-foreground")} />
             <span>1. Business Setup</span>
-          </TabsTrigger>
-          <TabsTrigger value="controls" className="flex items-center gap-2 text-xs font-semibold rounded-xl py-2.5">
-            <Sliders className="h-4 w-4 text-primary" />
+            <span className={cn(
+              "px-1.5 py-0.5 rounded-full text-[10px] font-medium",
+              activeTab === 'business' ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+            )}>
+              75%
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('controls')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all shrink-0",
+              activeTab === 'controls'
+                ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Sliders className={cn("h-4 w-4", activeTab === 'controls' ? "text-primary-foreground" : "text-muted-foreground")} />
             <span>2. Automation Controls</span>
-          </TabsTrigger>
-          <TabsTrigger value="playground" className="flex items-center gap-2 text-xs font-semibold rounded-xl py-2.5">
-            <Sparkles className="h-4 w-4 text-primary" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('playground')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all shrink-0",
+              activeTab === 'playground'
+                ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Sparkles className={cn("h-4 w-4", activeTab === 'playground' ? "text-primary-foreground" : "text-muted-foreground")} />
             <span>3. Interactive Playground</span>
-          </TabsTrigger>
-          <TabsTrigger value="connections" className="flex items-center gap-2 text-xs font-semibold rounded-xl py-2.5">
-            <Plug className="h-4 w-4 text-primary" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('connections')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all shrink-0",
+              activeTab === 'connections'
+                ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Plug className={cn("h-4 w-4", activeTab === 'connections' ? "text-primary-foreground" : "text-muted-foreground")} />
             <span>4. Channel Connections</span>
-          </TabsTrigger>
-        </TabsList>
+          </button>
+        </div>
 
         <TabsContent value="business">
-          <BusinessSetup />
+          <BusinessSetup onNavigateToPlayground={() => setActiveTab('playground')} />
         </TabsContent>
 
         <TabsContent value="controls">
