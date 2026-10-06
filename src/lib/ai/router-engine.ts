@@ -307,28 +307,28 @@ export function buildOfflineReply({
       if (isSingleDigital) {
         if (isFreeProduct) {
           if (detectedLang === 'banglish') {
-            reply = `${matchedProduct.name} amader special offer e shompurno Free (৳0)! Digital access pete kindly apnar Email address ti share korun.`
+            reply = `${matchedProduct.name} amader special offer e shompurno Free (৳0)! Subscription pete kindly apnar Phone Number ebong je email e subscription ti nite chan shei Email address ti share korun.`
           } else if (detectedLang === 'bn') {
-            reply = `${matchedProduct.name} আমাদের বিশেষ অফারে সম্পূর্ণ ফ্রি (৳০)! আপনার ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+            reply = `${matchedProduct.name} আমাদের বিশেষ অফারে সম্পূর্ণ ফ্রি (৳০)! আপনার সাবস্ক্রিপশন পেতে অনুগ্রহ করে আপনার ফোন নম্বর এবং যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
           } else {
-            reply = `${matchedProduct.name} is completely free (৳0) under our special offer! Please share your Email address so we can grant your digital access.`
+            reply = `${matchedProduct.name} is completely free (৳0) under our special offer! Please share your phone number and the email address where you would like to receive the subscription.`
           }
         } else {
           if (detectedLang === 'banglish') {
-            reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Digital access apnar email e pathano hoy. Order confirm korte apnar Email address, phone number ebong bKash/Nagad payment confirm korben please?`
+            reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Subscription order korte kindly apnar Phone number, je email e subscription ti nite chan shei Email address ebong bKash/Nagad payment confirm korben please.`
           } else if (detectedLang === 'bn') {
-            reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। এটি একটি ডিজিটাল পণ্য, এর অ্যাক্সেস সরাসরি আপনার ইমেইলে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
+            reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। সাবস্ক্রিপশন অর্ডার করতে অনুগ্রহ করে আপনার ফোন নম্বর, যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেস এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
           } else {
-            reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. As a digital product, access will be delivered to your email. To place your order, please provide your Email address, phone number, and bKash/Nagad payment confirmation!`
+            reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. To place your subscription order, please provide your phone number, the email address where you want to receive the subscription, and your bKash/Nagad payment confirmation!`
           }
         }
       } else {
         if (detectedLang === 'banglish') {
-          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Order confirm korte apnar delivery address, phone number o payment method (COD naki bKash) janaben please?`
+          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Order confirm korte kindly apnar Delivery Name, delivery address, phone number ebong payment method (COD naki bKash/Nagad) janaben please.`
         } else if (detectedLang === 'bn') {
-          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} অর্ডার করতে অনুগ্রহ করে আপনার ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} অর্ডার নিশ্চিত করতে অনুগ্রহ করে আপনার নাম (Delivery Name), পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
         } else {
-          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} Would you like to order? Please share your delivery address, phone number, and preferred payment method (COD or bKash)!`
+          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} To confirm your order, please provide your Name, delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad)!`
         }
       }
     }
@@ -342,11 +342,11 @@ export function buildOfflineReply({
 
     if (isFree) {
       if (detectedLang === 'banglish') {
-        reply = `Canva Pro amader special offer e shompurno Free (৳0) deya hocche! Apnar digital access pete kindly apnar Email address ti share korun.`
+        reply = `Canva Pro amader special offer e shompurno Free (৳0) deya hocche! Apnar free digital access pete kindly apnar Phone Number ebong je email e subscription ti nite chan shei Email address ti share korun.`
       } else if (detectedLang === 'bn') {
-        reply = `আমাদের বিশেষ অফারে Canva Pro সম্পূর্ণ ফ্রি (৳০) দেওয়া হচ্ছে! আপনার ফ্রি ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+        reply = `আমাদের বিশেষ অফারে Canva Pro সম্পূর্ণ ফ্রি (৳০) দেওয়া হচ্ছে! আপনার ফ্রি ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ফোন নম্বর এবং যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
       } else {
-        reply = `Under our special offer, Canva Pro is completely free (৳0)! Please share your Email address so we can grant your digital access.`
+        reply = `Under our special offer, Canva Pro is completely free (৳0)! Please share your phone number and the email address where you would like to receive the subscription.`
       }
     } else {
       const isAskingFree = /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift|zero|0)\b/i.test(textLower)
@@ -1121,11 +1121,26 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
    You MUST determine whether the CURRENT product being ordered is PHYSICAL or DIGITAL:
 
    - A. FOR ANY PHYSICAL PRODUCT (skincare, creams, lotions, cosmetics, clothing, shoes, tangible items):
-     To take and confirm any physical order, you MUST know ALL FOUR (4) of these items:
-     (1) Customer Full Name
-     (2) Delivery Address (house/road, area, city/district)
+     To take and confirm ANY physical order for ANY customer (including repeated customers who placed orders in the past):
+     You MUST ask the customer for and know ALL FOUR (4) of these items:
+     (1) Delivery Name (Customer full name for delivery parcel)
+     (2) Delivery Address (house/road, area, thana, district)
      (3) Delivery Phone Number (valid contact number)
      (4) Payment Method: Cash on Delivery (COD) OR Online Payment (bKash/Nagad)
+
+     * REPEATED CUSTOMER MANDATE:
+       - Every time ANY customer (even a repeated customer) wants to place a new order, you MUST ask for these four questions!
+       - NEVER assume or reuse past delivery addresses, phone numbers, or names without the customer providing them for this new order!
+
+     * ASKING FOR MISSING INFORMATION:
+       - If customer initiates an order without providing details (e.g. "I want to order Simple Cream", "order korte chai", "Simple cream nibo"):
+         Politely ask all 4 questions in a clear, numbered list:
+         1. Delivery Name (আপনার পুরো নাম)
+         2. Full Delivery Address (পূর্ণাঙ্গ ডেলিভারি ঠিকানা - বাসা/রোড, থানা, জেলা)
+         3. Phone Number (ফোন নম্বর)
+         4. Preferred Payment Method (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ)
+       - If customer provides partial details (e.g. gives address and phone only):
+         Acknowledge the details received and ask specifically for the remaining missing items (e.g. Delivery Name and Payment Method)!
 
      * PAYMENT METHOD RULES FOR PHYSICAL:
        - When the customer wants Cash on Delivery (COD): That is completely acceptable and confirmed immediately!
@@ -1134,7 +1149,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
 
      * UNTIL ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN:
        - DO NOT confirm that the order is placed!
-       - Politely ask for whatever is missing among: Name, Delivery Address, Phone Number, and Payment Method.
+       - Politely ask for whatever is missing among: Delivery Name, Delivery Address, Phone Number, and Payment Method.
      * AFTER ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN:
        - Warmly confirm the product order to the customer:
          * English: "Thank you, [Name]! Your order for [Product] ([qty] pcs) has been successfully confirmed ([Cash on Delivery / bKash payment]). Our delivery team is preparing your package!"
@@ -1142,14 +1157,23 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
          * Banglish: "Dhonnobad, [Name]! Apnar [Product] ([qty] pcs) er order ti successfully confirm kora hoyeche ([Cash on Delivery / Online Payment])। Amader delivery team parcel ready korche!"
 
    - B. FOR ANY DIGITAL PRODUCT (subscriptions, software, Canva Pro, licenses, digital accounts):
-     To take and confirm any digital order, you MUST know ALL THREE (3) of these items:
+     To take and confirm any digital order for ANY customer (including repeated customers):
+     You MUST ask the customer for and know ALL THREE (3) of these items:
      (1) Phone Number
-     (2) Email Address (where digital access / license will be delivered)
-     (3) Payment Method (Online Payment: bKash/Nagad with TrxID, OR Free promo ৳0)
+     (2) Payment Method (Online Payment: bKash/Nagad with TrxID, OR Free promo ৳0)
+     (3) Email Address in which email they want the subscription delivered!
 
-     * Note: Cash on Delivery (COD) is NOT available for digital products.
-     * For paid digital items: When customer wants to order or selects online payment, give the online payment information (bKash/Nagad: 01326596251) and ask for the payment confirmation / TrxID along with Email and Phone.
-     * For free promotional items (price ৳0 / active giveaway): ৳0, no payment required. Ask ONLY for Email and Phone number.
+     * REPEATED CUSTOMER MANDATE:
+       - Every time ANY customer (even a repeated customer) orders any digital product, you MUST ask for their Phone number, Payment method, and the specific Email address in which they want the subscription!
+       - NEVER assume or reuse past email addresses without the customer specifying it for this subscription.
+
+     * ASKING FOR MISSING INFORMATION:
+       - If customer initiates a digital purchase without details:
+         Ask all 3 questions clearly:
+         1. Phone Number (ফোন নম্বর)
+         2. Email Address in which they want the subscription (যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান)
+         3. Payment confirmation (bKash/Nagad: 01326596251 with TrxID) or Free confirmation if price ৳0!
+
      * UNTIL ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
        - DO NOT confirm the order. Ask politely for whatever is missing among the 3 items.
      * AFTER ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
@@ -1617,7 +1641,28 @@ Set "order": null if the customer is merely asking a question without ordering o
     (/\b(?:canva\b[^.]*\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)|(?:free|ফ্রি|বিনামূল্যে|gift|giveaway)[^.]*\bcanva)\b/i.test(knowledgeSourcesText) ||
       hasCanvaFreeInCatalog)
 
+  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
+
+  // Separate conversation history into previous orders vs active order session:
+  // If an order was previously confirmed in chat history, any details prior to that belong to the past order!
+  const historyLines = (conversationHistoryText || '').split('\n').filter(Boolean)
+  let lastConfirmLineIndex = -1
+  for (let i = historyLines.length - 1; i >= 0; i--) {
+    if (orderConfirmationPhrases.test(historyLines[i])) {
+      lastConfirmLineIndex = i
+      break
+    }
+  }
+
+  const activeSessionLines = lastConfirmLineIndex >= 0
+    ? historyLines.slice(lastConfirmLineIndex + 1)
+    : historyLines
+
+  const activeSessionHistoryText = activeSessionLines.join('\n')
+  const currentSessionText = `${activeSessionHistoryText}\n${messageText}`.trim()
+
   const extractedInfo = extractCustomerInfoFromMessage(messageText)
+  const sessionExtractedInfo = extractCustomerInfoFromMessage(currentSessionText)
   const histExtractedInfo = extractCustomerInfoFromMessage(conversationHistoryText)
 
   let contactDbName: string | null = null
@@ -1652,37 +1697,40 @@ Set "order": null if the customer is merely asking a question without ordering o
     return true
   }
 
-  const effectiveName =
+  // CURRENT ORDER SPECIFIC DETAILS:
+  // Must be provided in this order session / message! We do NOT take old contactDb rows to satisfy
+  // new order requirements so repeated customers are asked their delivery name, address, phone, and payment method!
+  const currentOrderName =
     (isValidHumanName(extractedInfo.name) ? extractedInfo.name : null) ||
-    (isValidHumanName(histExtractedInfo.name) ? histExtractedInfo.name : null) ||
-    (isValidHumanName(contactDbName) ? contactDbName : null) ||
+    (isValidHumanName(sessionExtractedInfo.name) ? sessionExtractedInfo.name : null) ||
     (isValidHumanName(llmOrderData?.customer_name) ? llmOrderData.customer_name : null) ||
     null
 
-  const effectivePhone =
-    (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) ||
+  const currentOrderPhone =
     extractedInfo.phone ||
-    histExtractedInfo.phone ||
-    (contactDbPhone && !isFacebookPsid(contactDbPhone) ? contactDbPhone : null) ||
-    llmOrderData?.customer_phone ||
+    sessionExtractedInfo.phone ||
+    (llmOrderData?.customer_phone && !isFacebookPsid(llmOrderData.customer_phone) ? llmOrderData.customer_phone : null) ||
     null
 
-  const effectiveAddress =
+  const currentOrderAddress =
     extractedInfo.address ||
-    histExtractedInfo.address ||
-    contactDbAddress ||
-    llmOrderData?.customer_address ||
+    sessionExtractedInfo.address ||
+    (llmOrderData?.customer_address && llmOrderData.customer_address.length >= 5 ? llmOrderData.customer_address : null) ||
     null
 
-  const effectiveEmail =
+  const currentOrderEmail =
     extractedInfo.email ||
-    histExtractedInfo.email ||
-    contactDbEmail ||
+    sessionExtractedInfo.email ||
     llmOrderData?.customer_email ||
-    (combinedHistory.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null)
+    (currentSessionText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null)
 
-  const hasTrx = /\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i.test(combinedHistory)
-  const hasPaymentSent = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান)\b/i.test(combinedHistory)
+  const effectiveName = currentOrderName || (isValidHumanName(contactDbName) ? contactDbName : null)
+  const effectivePhone = currentOrderPhone || (contactDbPhone && !isFacebookPsid(contactDbPhone) ? contactDbPhone : null)
+  const effectiveAddress = currentOrderAddress || contactDbAddress
+  const effectiveEmail = currentOrderEmail || contactDbEmail
+
+  const hasTrx = /\b(?:trx(?:id)?|txid|transaction(?:\s*id)?|ref(?:\s*no)?)\s*[:=-]?\s*([a-zA-Z0-9]{6,25})\b/i.test(currentSessionText)
+  const hasPaymentSent = /\b(?:paid|done|sent|taka\s*pathiyechi|taka\s*dilam|pathalam|pathaisi|pathano\s*hoyeche|টাকা\s*পাঠিয়েছি|পাঠালাম|দিলাম|পেড|পেইড|পেমেন্ট\s*করেছি|পেমেন্ট\s*ডান)\b/i.test(currentSessionText)
 
   // Detect if current item / offer is FREE (৳0, promotional giveaway, free trial, 100% discount):
   const isFreeFromBroadcast = Boolean(
@@ -1749,11 +1797,12 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
 
-  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
   const aiClaimsOrderPlaced = orderConfirmationPhrases.test(aiReply)
 
   let explicitPaymentMethod: string | null = null
   let isPaymentConfirmed = false
+
+  const currentSessionLower = currentSessionText.toLowerCase()
 
   if (isFreeOrder || isCanvaFreeInStore) {
     explicitPaymentMethod = 'free'
@@ -1765,7 +1814,7 @@ Set "order": null if the customer is merely asking a question without ordering o
       llmOrderData.delivery_charge = 0
     }
   } else {
-    // Check for explicit COD (ONLY for Physical products)
+    // Check for explicit COD (ONLY for Physical products in the current session)
     if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে|delivery\s*te\s*taka|হাতে\s*পেয়ে|হাতে\s*টাকা)\b/i.test(msgLower)) {
       if (!isOrderDigital) {
         explicitPaymentMethod = 'cod'
@@ -1779,11 +1828,11 @@ Set "order": null if the customer is merely asking a question without ordering o
       explicitPaymentMethod = 'rocket'
     } else if (/\b(?:online\s*payment|online\s*e|অনলাইন\s*পেমেন্ট|অনলাইনে)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'online'
-    } else if (!isOrderDigital && /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(histLower)) {
+    } else if (!isOrderDigital && /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(currentSessionLower)) {
       explicitPaymentMethod = 'cod'
       isPaymentConfirmed = true
-    } else if (/\b(?:bkash|nagad|rocket)\b/i.test(histLower)) {
-      explicitPaymentMethod = histLower.match(/\b(bkash|nagad|rocket)\b/i)?.[0].toLowerCase() || 'bkash'
+    } else if (/\b(?:bkash|nagad|rocket)\b/i.test(currentSessionLower)) {
+      explicitPaymentMethod = currentSessionLower.match(/\b(bkash|nagad|rocket)\b/i)?.[0].toLowerCase() || 'bkash'
     } else if (llmOrderData?.payment_method) {
       const pm = String(llmOrderData.payment_method).toLowerCase()
       if (['bkash', 'nagad', 'rocket', 'online'].includes(pm)) explicitPaymentMethod = pm
@@ -1809,21 +1858,21 @@ Set "order": null if the customer is merely asking a question without ordering o
     changeKeywords.test(messageText)
 
   // Strict Order Requirements Evaluation:
-  // PHYSICAL PRODUCT: Must know ALL 4 items: Name, Delivery Address, Delivery Phone Number, Payment Method.
-  // DIGITAL PRODUCT: Must know ALL 3 items: Phone Number, Email Address, Payment Method (online payment confirmed or free promo).
+  // PHYSICAL PRODUCT: Must know ALL 4 items: Delivery Name, Delivery Address, Delivery Phone Number, Payment Method.
+  // DIGITAL PRODUCT: Must know ALL 3 items: Phone Number, Email Address (in which email subscription is wanted), Payment Method.
   const missingRequirements: Array<'name' | 'address' | 'phone' | 'email' | 'payment_method' | 'online_payment_pending'> = []
 
   if (!isOrderDigital) {
-    if (!effectiveName) missingRequirements.push('name')
-    if (!effectiveAddress || effectiveAddress.length < 5) missingRequirements.push('address')
-    if (!effectivePhone) missingRequirements.push('phone')
+    if (!currentOrderName) missingRequirements.push('name')
+    if (!currentOrderAddress || currentOrderAddress.length < 5) missingRequirements.push('address')
+    if (!currentOrderPhone) missingRequirements.push('phone')
     if (!isFreeOrder) {
       if (!explicitPaymentMethod) missingRequirements.push('payment_method')
       else if (explicitPaymentMethod !== 'cod' && !isPaymentConfirmed) missingRequirements.push('online_payment_pending')
     }
   } else {
-    if (!effectivePhone) missingRequirements.push('phone')
-    if (!effectiveEmail) missingRequirements.push('email')
+    if (!currentOrderPhone) missingRequirements.push('phone')
+    if (!currentOrderEmail) missingRequirements.push('email')
     if (!isFreeOrder) {
       if (!explicitPaymentMethod || !isPaymentConfirmed) missingRequirements.push('online_payment_pending')
     }
@@ -1854,8 +1903,8 @@ Set "order": null if the customer is merely asking a question without ordering o
   const isQuestionOrInquiry = /\b(?:\?|ki|koto|dam\s*koto|kivabe|details|sure|is\s*it|are\s*you\s*sure|free\s*naki\s*paid|paid\s*naki\s*free|free\s*or\s*paid|paid\s*or\s*free|কত|কী|কি|নাকি|পেইড|ফ্রি\s*নাকি)\b/i.test(messageText)
 
   const customerProvidedCheckoutDetails = Boolean(
-    (effectiveEmail && effectivePhone) ||
-    (effectiveAddress && effectivePhone) ||
+    (!isOrderDigital && currentOrderAddress && currentOrderPhone) ||
+    (isOrderDigital && currentOrderEmail && currentOrderPhone) ||
     hasTrx ||
     hasPaymentSent
   )
@@ -1863,7 +1912,7 @@ Set "order": null if the customer is merely asking a question without ordering o
   const isCustomerAttemptingOrder =
     (orderIntentKeywords.test(messageText) && !isQuestionOrInquiry) ||
     customerProvidedCheckoutDetails ||
-    Boolean(llmOrderData?.is_order && orderIntentKeywords.test(combinedHistory) && !isQuestionOrInquiry)
+    Boolean(llmOrderData?.is_order && orderIntentKeywords.test(currentSessionText) && !isQuestionOrInquiry)
 
   // Invalidate order if incomplete or if customer is only asking an informational question
   if (!isOrderFullyComplete || !isCustomerAttemptingOrder) {
@@ -1877,7 +1926,7 @@ Set "order": null if the customer is merely asking a question without ordering o
   // 2. The customer is actively attempting to place an order and missing required checkout fields
   const shouldSanitizeMissingOrderInfo =
     !isOrderFullyComplete &&
-    (aiClaimsOrderPlaced || (isCustomerAttemptingOrder && (effectiveEmail || effectiveAddress || effectivePhone || explicitPaymentMethod || isFreeOrder || isCanvaFreeInStore)))
+    (aiClaimsOrderPlaced || isCustomerAttemptingOrder)
 
   if (shouldSanitizeMissingOrderInfo) {
     const bKashNumber = account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
@@ -1885,47 +1934,58 @@ Set "order": null if the customer is merely asking a question without ordering o
 
     if (isOrderDigital) {
       // DIGITAL ORDER PROMPTS (Phone, Email, Payment)
-      if (missingRequirements.includes('online_payment_pending')) {
-        if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName}-এর অর্ডারটি কনফার্ম করতে অনুগ্রহ করে বিকাশ/নগদে (${bKashNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশনটি শেয়ার করুন।`
-        } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} er order complete korte bKash/Nagad e (${bKashNumber}) payment kore TrxID ba confirmation share korun please.`
+      if (missingRequirements.length >= 2) {
+        if (isFreeOrder || isCanvaFreeInStore) {
+          if (detectedLang === 'bn') {
+            aiReply = `আমাদের বিশেষ অফারে ${targetProductName} সম্পূর্ণ ফ্রি (৳০)! ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ফোন নম্বর এবং যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Amader special offer e ${targetProductName} shompurno Free (৳0)! Digital access pete kindly apnar Phone Number ebong je email e subscription ti nite chan shei Email address ti share korun.`
+          } else {
+            aiReply = `Under our special offer, ${targetProductName} is completely free (৳0)! Please share your phone number and the email address where you would like to receive the subscription.`
+          }
         } else {
-          aiReply = `Thank you! To complete your digital order for ${targetProductName}, please send payment via bKash/Nagad to ${bKashNumber} and share the TrxID or confirmation.`
+          if (detectedLang === 'bn') {
+            aiReply = `ধন্যবাদ! ${targetProductName}-এর ডিজিটাল সাবস্ক্রিপশন নিতে অনুগ্রহ করে নিচের ৩টি তথ্য শেয়ার করুন:\n১. আপনার ফোন নম্বর\n২. যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান (Email Address)\n৩. বিকাশ/নগদে (${bKashNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশন।`
+          } else if (detectedLang === 'banglish') {
+            aiReply = `Dhonnobad! ${targetProductName} er digital subscription nite kindly:\n1. Phone Number\n2. Je email e subscription ti nite chan shei Email address\n3. bKash/Nagad e (${bKashNumber}) payment kore TrxID ba confirmation share korun please.`
+          } else {
+            aiReply = `Thank you! To receive your ${targetProductName} digital subscription, please provide:\n1. Phone Number\n2. Email address where you want to receive the subscription\n3. Payment confirmation (bKash/Nagad: ${bKashNumber} with TrxID).`
+          }
+        }
+      } else if (missingRequirements.includes('online_payment_pending')) {
+        if (detectedLang === 'bn') {
+          aiReply = `ধন্যবাদ! ${targetProductName}-এর সাবস্ক্রিপশন কনফার্ম করতে অনুগ্রহ করে বিকাশ/নগদে (${bKashNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশনটি শেয়ার করুন।`
+        } else if (detectedLang === 'banglish') {
+          aiReply = `Dhonnobad! ${targetProductName} er subscription confirm korte bKash/Nagad e (${bKashNumber}) payment kore TrxID ba confirmation share korun please.`
+        } else {
+          aiReply = `Thank you! To complete your digital subscription for ${targetProductName}, please send payment via bKash/Nagad to ${bKashNumber} and share the TrxID or confirmation.`
         }
       } else if (missingRequirements.includes('email')) {
         if (detectedLang === 'bn') {
-          aiReply = (isFreeOrder || isCanvaFreeInStore)
-            ? `আমাদের বিশেষ অফারে ${targetProductName} সম্পূর্ণ ফ্রি (৳০)! আপনার ফ্রি ডিজিটাল অ্যাক্সেস পেতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
-            : `ধন্যবাদ! ডিজিটাল পণ্যটির অ্যাক্সেস ইমেইলে দেওয়া হবে। অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
+          aiReply = `ধন্যবাদ! আপনি যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান, অনুগ্রহ করে সেই ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = (isFreeOrder || isCanvaFreeInStore)
-            ? `Amader special offer e ${targetProductName} shompurno Free (৳0)! Kindly apnar Email address ti share korun.`
-            : `Dhonnobad! Digital access email e pathano hobe. Kindly apnar Email address ti share korun please.`
+          aiReply = `Dhonnobad! Apni je email e digital subscription ti nite chan, kindly shei Email address ti share korun please.`
         } else {
-          aiReply = (isFreeOrder || isCanvaFreeInStore)
-            ? `Under our special offer, ${targetProductName} is completely free (৳0)! Please share your Email address so we can grant your digital access.`
-            : `Thank you! Since this is a digital product, access will be delivered to your email. Please share your Email address.`
+          aiReply = `Thank you! Please share the email address where you would like to receive your subscription.`
         }
       } else if (missingRequirements.includes('phone')) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! অর্ডারটি সম্পন্ন করতে অনুগ্রহ করে আপনার একটি কন্টাক্ট ফোন নম্বর দিন।`
+          aiReply = `ধন্যবাদ! সাবস্ক্রিপশন অর্ডারটি সম্পন্ন করতে অনুগ্রহ করে আপনার যোগাযোগের ফোন নম্বরটি দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Order ti complete korte apnar contact phone number ti din please.`
+          aiReply = `Dhonnobad! Subscription order ti complete korte apnar contact phone number ti din please.`
         } else {
-          aiReply = `Thank you! Could you please share a contact phone number to complete your order?`
+          aiReply = `Thank you! Could you please share a contact phone number to complete your subscription order?`
         }
       }
     } else {
       // PHYSICAL ORDER PROMPTS (Name, Delivery Address, Delivery Number, Payment Method)
-      if (missingRequirements.length >= 3) {
-        // Customer just stated order intent, prompt for all 4 required items clearly
+      if (missingRequirements.length >= 2 || (missingRequirements.includes('name') && missingRequirements.includes('address'))) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName} এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের তথ্যগুলো শেয়ার করুন:\n১. আপনার নাম\n২. পূর্ণাঙ্গ ডেলিভারি ঠিকানা\n৩. ফোন নম্বর\n৪. পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ)।`
+          aiReply = `ধন্যবাদ! ${targetProductName} এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ৪টি তথ্য জানিয়ে দিন:\n১. আপনার নাম (Delivery Name)\n২. পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা)\n৩. ফোন নম্বর\n৪. পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ)।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} available ache. Order confirm korte kindly apnar:\n1. Name\n2. Delivery Address\n3. Phone Number\n4. Payment Method (Cash on Delivery naki bKash/Nagad) janaben please.`
+          aiReply = `Dhonnobad! ${targetProductName} available ache. Order confirm korte kindly apnar:\n1. Delivery Name\n2. Delivery Address (basha/road, thana, district)\n3. Phone Number\n4. Payment Method (Cash on Delivery naki bKash/Nagad) janaben please.`
         } else {
-          aiReply = `Great choice! ${targetProductName} is available. To confirm your delivery, please provide: 1. Your Name 2. Delivery Address 3. Phone Number 4. Preferred Payment Method (Cash on Delivery or bKash/Nagad).`
+          aiReply = `Great choice! ${targetProductName} is available. To confirm your delivery, please provide:\n1. Your Name (Delivery Name)\n2. Full Delivery Address (house/road, area, city/district)\n3. Phone Number\n4. Preferred Payment Method (Cash on Delivery or bKash/Nagad).`
         }
       } else if (missingRequirements.includes('online_payment_pending')) {
         if (detectedLang === 'bn') {
@@ -1945,27 +2005,27 @@ Set "order": null if the customer is merely asking a question without ordering o
         }
       } else if (missingRequirements.includes('address')) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা) জানিয়ে দিন।`
+          aiReply = `ধন্যবাদ! পার্সেল পাঠানোর জন্য অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা) জানিয়ে দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Order confirm korte apnar full delivery address (basha/road, thana, district) janaben please.`
+          aiReply = `Dhonnobad! Parcel pathanor jonno kindly apnar full delivery address (basha/road, thana, district) janaben please.`
         } else {
           aiReply = `Thank you! Please share your full delivery address (house/road, area, city) to complete your order!`
         }
       } else if (missingRequirements.includes('phone')) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ডেলিভারির জন্য অনুগ্রহ করে একটি যোগাযোগ ফোন নম্বর দিন।`
+          aiReply = `ধন্যবাদ! ডেলিভারি রাইডারের যোগাযোগের জন্য অনুগ্রহ করে একটি ফোন নম্বর জানিয়ে দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Delivery er jonno kindly ekta contact phone number din please.`
+          aiReply = `Dhonnobad! Delivery rider er contact er jonno kindly ekta contact phone number din please.`
         } else {
           aiReply = `Thank you! Please share a delivery contact phone number to complete your order!`
         }
       } else if (missingRequirements.includes('name')) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পুরো নামটি জানিয়ে দিন।`
+          aiReply = `ধন্যবাদ! পার্সেল বুকিংয়ের জন্য অনুগ্রহ করে আপনার পুরো নামটি (Delivery Name) জানিয়ে দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Order confirm korte kindly apnar full name ti janaben please.`
+          aiReply = `Dhonnobad! Parcel booking er jonno kindly apnar full name ti janaben please.`
         } else {
-          aiReply = `Thank you! Could you please share your full name to complete your order?`
+          aiReply = `Thank you! Could you please share your full name for the delivery package?`
         }
       }
     }
@@ -1974,19 +2034,19 @@ Set "order": null if the customer is merely asking a question without ordering o
     if (!isOrderDigital) {
       const pmLabel = explicitPaymentMethod === 'cod' ? (detectedLang === 'bn' ? 'ক্যাশ অন ডেলিভারি' : 'Cash on Delivery') : (detectedLang === 'bn' ? 'অনলাইন পেমেন্ট' : 'Online Payment')
       if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ, ${effectiveName || 'স্যার'}! আপনার ${targetProductName}-এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে (${pmLabel})। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!`
+        aiReply = `ধন্যবাদ, ${currentOrderName || 'স্যার'}! আপনার ${targetProductName}-এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে (${pmLabel})। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad, ${effectiveName || 'Sir'}! Apnar ${targetProductName} er order ti successfully confirm kora hoyeche (${pmLabel})। Amader team delivery ready korche!`
+        aiReply = `Dhonnobad, ${currentOrderName || 'Sir'}! Apnar ${targetProductName} er order ti successfully confirm kora hoyeche (${pmLabel})। Amader team delivery ready korche!`
       } else {
-        aiReply = `Thank you, ${effectiveName || 'Sir'}! Your order for ${targetProductName} has been successfully confirmed (${pmLabel}). Our delivery team is preparing your package!`
+        aiReply = `Thank you, ${currentOrderName || 'Sir'}! Your order for ${targetProductName} has been successfully confirmed (${pmLabel}). Our delivery team is preparing your package!`
       }
     } else {
       if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ! আপনার ${targetProductName}-এর ডিজিটাল অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে। দ্রুত আপনার ইমেইলে (${effectiveEmail}) অ্যাক্সেস বিস্তারিত পাঠিয়ে দেওয়া হবে!`
+        aiReply = `ধন্যবাদ! আপনার ${targetProductName}-এর ডিজিটাল অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে। দ্রুত আপনার ইমেইলে (${currentOrderEmail}) সাবস্ক্রিপশন অ্যাক্সেস বিস্তারিত পাঠিয়ে দেওয়া হবে!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad! Apnar ${targetProductName} er digital order ti successfully confirm kora hoyeche. Quick apnar email e (${effectiveEmail}) access details pathiye deya hobe!`
+        aiReply = `Dhonnobad! Apnar ${targetProductName} er digital order ti successfully confirm kora hoyeche. Quick apnar email e (${currentOrderEmail}) access details pathiye deya hobe!`
       } else {
-        aiReply = `Thank you! Your digital order for ${targetProductName} has been successfully received. Your access details will be sent directly to ${effectiveEmail} shortly!`
+        aiReply = `Thank you! Your digital order for ${targetProductName} has been successfully received. Your access details will be sent directly to ${currentOrderEmail} shortly!`
       }
     }
   }
@@ -1998,10 +2058,10 @@ Set "order": null if the customer is merely asking a question without ordering o
       contactId: contactId || null,
       conversationId: convId || null,
       channel,
-      customerName: effectiveName || null,
-      customerPhone: effectivePhone || customerPhone || null,
-      customerAddress: effectiveAddress || null,
-      customerEmail: effectiveEmail || null,
+      customerName: currentOrderName || null,
+      customerPhone: currentOrderPhone || null,
+      customerAddress: currentOrderAddress || null,
+      customerEmail: currentOrderEmail || null,
       messageText,
       conversationHistoryText,
       llmOrderData,

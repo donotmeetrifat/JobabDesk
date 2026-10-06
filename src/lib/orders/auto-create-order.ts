@@ -90,45 +90,19 @@ export async function detectAndCreateOrderFromChat({
 
   const db = supabase || getAdminClient()
 
-  // 1. Extract contact details from current message if not passed
+  // 1. Extract contact details from current message & order conversation session
   const extracted = extractCustomerInfoFromMessage(messageText)
-  let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || null
-  let address = customerAddress || extracted.address || null
-  let email = customerEmail || extracted.email || null
+  const historyExtracted = extractCustomerInfoFromMessage(conversationHistoryText)
 
-  // If still missing, check contact record in DB
-  let resolvedName = customerName || null
-  if (contactId) {
-    try {
-      const { data: contactRow } = await db
-        .from('contacts')
-        .select('name, phone, address, email')
-        .eq('id', contactId)
-        .maybeSingle()
+  let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || historyExtracted.phone || (llmOrderData?.customer_phone && !isFacebookPsid(llmOrderData.customer_phone) ? llmOrderData.customer_phone : null) || null
+  let address = customerAddress || extracted.address || historyExtracted.address || llmOrderData?.customer_address || null
+  let email = customerEmail || extracted.email || historyExtracted.email || llmOrderData?.customer_email || null
 
-      if (contactRow) {
-        if (!resolvedName || resolvedName === 'Messenger User' || resolvedName === 'Unknown') {
-          if (contactRow.name && contactRow.name !== 'Messenger User' && contactRow.name !== 'Unknown') {
-            resolvedName = contactRow.name
-          }
-        }
-        if (!phone && contactRow.phone && !isFacebookPsid(contactRow.phone)) phone = contactRow.phone
-        if (!address && contactRow.address) address = contactRow.address
-        if (!email && contactRow.email) email = contactRow.email
-      }
-    } catch (_cErr) {
-      // safe fallback
-    }
-  }
-
-  if (llmOrderData?.customer_phone && !phone && !isFacebookPsid(llmOrderData.customer_phone)) {
-    phone = llmOrderData.customer_phone
-  }
-  if (llmOrderData?.customer_address && !address) address = llmOrderData.customer_address
-  if (llmOrderData?.customer_email && !email) email = llmOrderData.customer_email
-  if (llmOrderData?.customer_name && (!resolvedName || resolvedName === 'Messenger User')) {
-    resolvedName = llmOrderData.customer_name
-  }
+  let resolvedName = (customerName && customerName !== 'Messenger User' && customerName !== 'Unknown' ? customerName : null) ||
+    extracted.name ||
+    historyExtracted.name ||
+    llmOrderData?.customer_name ||
+    null
 
   // 1b. Detect Order Cancellation Intent
   const isLlmCancel = Boolean(llmOrderData?.action === 'cancel' || llmOrderData?.is_cancelled)
