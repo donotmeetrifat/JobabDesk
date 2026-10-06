@@ -26,6 +26,8 @@ import {
   ExternalLink,
   Trash2,
   RotateCcw,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -191,6 +193,31 @@ export default function BroadcastsPage() {
       }
     } catch {
       toast.error('Error resuming broadcast');
+    }
+  }
+
+  async function handleToggleOffer(e: React.MouseEvent, broadcast: Broadcast) {
+    e.stopPropagation();
+    const isEnded = broadcast.status === 'cancelled' || broadcast.status === 'ended';
+    const nextStatus = isEnded ? 'sent' : 'cancelled';
+    try {
+      const res = await fetch(`/api/broadcasts/${broadcast.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        toast.success(
+          isEnded
+            ? 'Campaign offer turned ON. AI knowledge updated!'
+            : 'Campaign offer turned OFF. AI knowledge updated!'
+        );
+        fetchBroadcasts(true);
+      } else {
+        toast.error('Failed to update campaign offer status');
+      }
+    } catch {
+      toast.error('Error updating campaign offer status');
     }
   }
 
@@ -361,6 +388,7 @@ export default function BroadcastsPage() {
             <option value="sent">Completed</option>
             <option value="draft">Draft</option>
             <option value="failed">Failed</option>
+            <option value="cancelled">Ended / Off</option>
           </select>
         </div>
       </div>
@@ -527,6 +555,28 @@ export default function BroadcastsPage() {
                             <RotateCcw className="h-4 w-4" />
                           </Button>
                         )}
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`h-8 w-8 ${
+                            broadcast.status === 'cancelled' || broadcast.status === 'ended'
+                              ? 'text-muted-foreground hover:text-emerald-400 hover:bg-emerald-500/10'
+                              : 'text-emerald-400 hover:text-amber-400 hover:bg-amber-500/10'
+                          }`}
+                          title={
+                            broadcast.status === 'cancelled' || broadcast.status === 'ended'
+                              ? 'Turn ON Campaign Offer for AI'
+                              : 'Turn OFF Campaign Offer for AI'
+                          }
+                          onClick={(e) => handleToggleOffer(e, broadcast)}
+                        >
+                          {broadcast.status === 'cancelled' || broadcast.status === 'ended' ? (
+                            <PowerOff className="h-4 w-4" />
+                          ) : (
+                            <Power className="h-4 w-4" />
+                          )}
+                        </Button>
 
                         <Button
                           variant="ghost"

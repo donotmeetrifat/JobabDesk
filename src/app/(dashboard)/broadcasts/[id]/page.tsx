@@ -34,6 +34,8 @@ import {
   Trash2,
   PlayCircle,
   RotateCcw,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -306,6 +308,31 @@ export default function BroadcastDetailPage() {
     router.push('/broadcasts');
   }
 
+  async function handleToggleOffer() {
+    if (!broadcast) return;
+    const isEnded = broadcast.status === 'cancelled' || broadcast.status === 'ended';
+    const nextStatus = isEnded ? 'sent' : 'cancelled';
+    try {
+      const res = await fetch(`/api/broadcasts/${broadcastId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        toast.success(
+          isEnded
+            ? 'Campaign offer turned ON. AI knowledge updated!'
+            : 'Campaign offer turned OFF. AI knowledge updated!'
+        );
+        fetchData();
+      } else {
+        toast.error('Failed to update campaign offer status');
+      }
+    } catch {
+      toast.error('Error updating campaign offer status');
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -377,44 +404,69 @@ export default function BroadcastDetailPage() {
             "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
             because orphaning in-flight Meta messages would leave the
             funnel inconsistent. */}
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">{t('deletePrompt')}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-              className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {deleting ? t('deleting') : t('confirm')}
-            </Button>
-          </div>
-        ) : (
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={broadcast.status === 'sending'}
-            onClick={() => setConfirmDelete(true)}
-            title={
-              broadcast.status === 'sending'
-                ? t('cannotDeleteSending')
-                : t('deleteHover')
+            onClick={handleToggleOffer}
+            className={
+              broadcast.status === 'cancelled' || broadcast.status === 'ended'
+                ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                : 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
             }
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('delete')}
+            {broadcast.status === 'cancelled' || broadcast.status === 'ended' ? (
+              <>
+                <Power className="h-3.5 w-3.5 mr-1.5" />
+                Turn On Offer for AI
+              </>
+            ) : (
+              <>
+                <PowerOff className="h-3.5 w-3.5 mr-1.5" />
+                Turn Off Offer for AI
+              </>
+            )}
           </Button>
-        )}
+
+          {confirmDelete ? (
+            <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
+              <span className="text-red-300">{t('deletePrompt')}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? t('deleting') : t('confirm')}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={broadcast.status === 'sending'}
+              onClick={() => setConfirmDelete(true)}
+              title={
+                broadcast.status === 'sending'
+                  ? t('cannotDeleteSending')
+                  : t('deleteHover')
+              }
+              className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('delete')}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Resume / retry (issue #472). Only rendered when there is

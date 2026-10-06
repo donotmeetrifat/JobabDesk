@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectLanguage, buildOfflineReply } from './router-engine'
+import { detectLanguage, buildOfflineReply, formatRelativeMessageTime } from './router-engine'
 
 describe('router-engine language detection', () => {
   it('detects explicit request for Bengali even if written in Latin characters', () => {
@@ -109,10 +109,11 @@ describe('router-engine buildOfflineReply for free offers', () => {
     expect(replyBn.reply).not.toContain('সম্পূর্ণ ফ্রি')
     expect(replyBn.reply).not.toContain('৳০')
     expect(replyBn.reply).not.toContain('৳0')
+    expect(replyBn.reply).toContain('মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে')
 
     const replyEn = buildOfflineReply({
       detectedLang: 'en',
-      messageText: 'is it free or paid?',
+      messageText: 'is canva free or paid?',
       products,
       recentOrders: [],
       account,
@@ -120,5 +121,31 @@ describe('router-engine buildOfflineReply for free offers', () => {
 
     expect(replyEn.reply).not.toContain('completely free')
     expect(replyEn.reply).not.toContain('৳0')
+    expect(replyEn.reply).toContain('offer has now ended')
+  })
+})
+
+describe('router-engine formatRelativeMessageTime', () => {
+  it('formats recent messages accurately', () => {
+    const now = new Date().toISOString()
+    expect(formatRelativeMessageTime(now)).toBe('[Just now]')
+
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    expect(formatRelativeMessageTime(tenMinsAgo)).toBe('[10m ago]')
+
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    expect(formatRelativeMessageTime(twoHoursAgo)).toBe('[2h ago]')
+
+    const yesterday = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString()
+    expect(formatRelativeMessageTime(yesterday)).toBe('[Yesterday]')
+
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+    expect(formatRelativeMessageTime(twoDaysAgo)).toBe('[2d ago]')
+  })
+
+  it('returns empty string on null or invalid timestamp', () => {
+    expect(formatRelativeMessageTime(null)).toBe('')
+    expect(formatRelativeMessageTime(undefined)).toBe('')
+    expect(formatRelativeMessageTime('invalid-date')).toBe('')
   })
 })

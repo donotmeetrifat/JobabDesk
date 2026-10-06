@@ -211,6 +211,24 @@ async function fetchImageAsBase64(url: string, pageToken?: string): Promise<{ da
   }
 }
 
+export function formatRelativeMessageTime(createdAt?: string | null): string {
+  if (!createdAt) return ''
+  try {
+    const diffMs = Date.now() - new Date(createdAt).getTime()
+    if (isNaN(diffMs) || diffMs < 0) return ''
+    const diffMins = Math.floor(diffMs / 60000)
+    if (diffMins < 5) return '[Just now]'
+    if (diffMins < 60) return `[${diffMins}m ago]`
+    const diffHours = Math.floor(diffMins / 60)
+    if (diffHours < 24) return `[${diffHours}h ago]`
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays === 1) return '[Yesterday]'
+    return `[${diffDays}d ago]`
+  } catch {
+    return ''
+  }
+}
+
 export function buildOfflineReply({
   detectedLang,
   messageText,
@@ -331,12 +349,23 @@ export function buildOfflineReply({
         reply = `Under our special offer, Canva Pro is completely free (৳0)! Please share your Email address so we can grant your digital access.`
       }
     } else {
-      if (detectedLang === 'banglish') {
-        reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
-      } else if (detectedLang === 'bn') {
-        reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
+      const isAskingFree = /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift|zero|0)\b/i.test(textLower)
+      if (isAskingFree) {
+        if (detectedLang === 'banglish') {
+          reply = `Amader Canva Pro er free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
+        } else if (detectedLang === 'bn') {
+          reply = `আমাদের Canva Pro-এর ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার সাবস্ক্রিপশনটি নিতে পারেন। আপনি কি বিস্তারিত জানতে চান?`
+        } else {
+          reply = `Our free Canva Pro promotional offer has now ended. You can purchase our regular subscription if you are interested. Would you like more details?`
+        }
       } else {
-        reply = `Canva Pro is available. Please let us know what specific details or access duration you need so our team can assist you!`
+        if (detectedLang === 'banglish') {
+          reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
+        } else if (detectedLang === 'bn') {
+          reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
+        } else {
+          reply = `Canva Pro is available. Please let us know what specific details or access duration you need so our team can assist you!`
+        }
       }
     }
   }
@@ -768,10 +797,12 @@ export async function handleIncomingCustomerMessage({
         conversationHistoryText = chronological
           .map((m) => {
             const role = m.sender_type === 'customer' ? 'Customer' : 'Salesman'
+            const timeTag = formatRelativeMessageTime(m.created_at)
+            const prefix = timeTag ? `${timeTag} ${role}` : role
             if (m.media_url && (m.content_type === 'image' || m.content_text === 'Photo')) {
-              return `${role}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
+              return `${prefix}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
             }
-            return `${role}: ${m.content_text || ''}`
+            return `${prefix}: ${m.content_text || ''}`
           })
           .join('\n')
       }
@@ -796,10 +827,12 @@ export async function handleIncomingCustomerMessage({
         conversationHistoryText = chronological
           .map((m) => {
             const role = m.sender_type === 'customer' ? 'Customer' : 'Salesman'
+            const timeTag = formatRelativeMessageTime(m.created_at)
+            const prefix = timeTag ? `${timeTag} ${role}` : role
             if (m.media_url && (m.content_type === 'image' || m.content_text === 'Photo')) {
-              return `${role}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
+              return `${prefix}: [Uploaded a product photo: ${m.content_text || 'Photo'}]`
             }
-            return `${role}: ${m.content_text || ''}`
+            return `${prefix}: ${m.content_text || ''}`
           })
           .join('\n')
       }
@@ -885,17 +918,21 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
-  // 4b. Fetch Active Broadcast Campaigns & AI Context for this account
+  // 4b. Fetch Active & Ended Broadcast Campaigns & AI Context for this account
   let activeBroadcastContext = ''
+  let endedBroadcastContext = ''
   try {
     const targetAccountId = account?.id || accountId
     if (targetAccountId) {
+      // 1. Active campaigns
       const { data: bData } = await client
         .from('broadcasts')
         .select('name, message_text, ai_context, template_variables, status, created_at, updated_at')
         .eq('account_id', targetAccountId)
         .neq('status', 'cancelled')
+        .neq('status', 'ended')
         .neq('status', 'draft')
+        .neq('status', 'failed')
         .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(5)
@@ -907,12 +944,34 @@ export async function handleIncomingCustomerMessage({
           const sentMsg = b.message_text || ''
           if (detail || sentMsg) {
             campaignLines.push(
-              `- Campaign: "${b.name}"\n  Broadcast Message Sent: "${sentMsg}"\n  Official Update Details & Offers for AI: "${detail || 'No specific discount or offer details configured. Do NOT invent discounts.'}"`
+              `- Campaign: "${b.name}"\n  Broadcast Message Sent: "${sentMsg}"\n  Official Active Offer/Details for AI: "${detail || 'No specific discount or offer details configured. Do NOT invent discounts.'}"`
             )
           }
         }
         if (campaignLines.length > 0) {
           activeBroadcastContext = campaignLines.join('\n\n')
+        }
+      }
+
+      // 2. Recently Ended / Cancelled / Turned Off campaigns
+      const { data: endedBData } = await client
+        .from('broadcasts')
+        .select('name, message_text, ai_context, template_variables, status, created_at, updated_at')
+        .eq('account_id', targetAccountId)
+        .in('status', ['cancelled', 'ended'])
+        .order('updated_at', { ascending: false })
+        .limit(3)
+
+      if (endedBData && endedBData.length > 0) {
+        const endedLines: string[] = []
+        for (const eb of endedBData) {
+          const detail = eb.ai_context || (eb.template_variables as any)?.ai_context || ''
+          endedLines.push(
+            `- Campaign: "${eb.name}" [STATUS: ENDED / TURNED OFF]\n  Previous Offer Details: "${detail || eb.message_text || 'Special promotional campaign'}"\n  CRITICAL MANDATE: This offer is OFFICIALLY CLOSED. If customer asks about it or follows up on past chat history, politely inform them: "আমাদের এই অফারটির মেয়াদ শেষ হয়ে গেছে" (This offer has expired / ended).`
+          )
+        }
+        if (endedLines.length > 0) {
+          endedBroadcastContext = endedLines.join('\n\n')
         }
       }
     }
@@ -1032,6 +1091,19 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
        - NEVER invent a price or discount (e.g. NEVER say "10% discount er por ৳45" and NEVER ask for ৳45 or any payment for a free item)!
        - For Free Digital Products: NEVER ask for physical delivery address or Cash on Delivery (COD). Only ask for the customer's Email address to deliver their free access!
      * If a product is listed in the catalog with a regular price and no active free offer exists, quote the exact catalog price and require standard payment.
+   - CRITICAL TEMPORAL & EXPIRED OFFER POLICY (OFFERS FROM PAST CHAT HISTORY):
+     * Check the relative timestamps on previous messages in RECENT CONVERSATION HISTORY (e.g. [2d ago], [Yesterday], [Hours ago]).
+     * The conversation history may show that days or hours ago, the customer or salesman discussed an offer, discount, or free giveaway (e.g., Canva Pro free, promotional coupon, or special discount).
+     * ABSOLUTE GROUND TRUTH RULE: Only offers currently listed in '=== RECENT BROADCAST CAMPAIGNS & PROMOTIONAL OFFERS ===' or in current store guidelines are active!
+     * If an offer discussed in previous messages (e.g. [2d ago] Salesman promised Canva Pro free) is NO LONGER listed under active broadcast campaigns, or is listed under ENDED / EXPIRED CAMPAIGNS, THAT OFFER HAS OFFICIALLY ENDED / EXPIRED!
+     * If the customer comes back and follows up on an expired offer (e.g. asks "is it still free?", "offer ta ache?", "canva pro pabo?", or shares their email/phone to claim the past offer):
+       - DO NOT confirm or grant the expired offer!
+       - Politely inform the customer that the previous promotional offer has ended / expired:
+         * Bengali: "আমাদের ওই অফারটির/ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার প্যাকেজটি নিতে পারেন।"
+         * Banglish: "Amader oi offer tir/free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular package ti nite paren."
+         * English: "That promotional offer has now ended. You can check our regular packages if you are interested."
+       - Provide the current catalog price or ask what other service they are looking for.
+       - ABSOLUTELY NEVER continue granting, confirming, or claiming an expired offer just because the chat history from days ago mentioned it!
    - Product Prices: Always quote the exact product price listed in CATALOG & INVENTORY unless an active broadcast campaign explicitly modifies it.
 
 3. NO UNSOLICITED PRODUCT LECTURES / ESSAYS:
@@ -1120,7 +1192,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
 === RECENT BROADCAST CAMPAIGNS & PROMOTIONAL OFFERS (OFFICIAL GROUND TRUTH) ===
 ${activeBroadcastContext ? activeBroadcastContext : 'No active broadcast campaigns or special promotional offers currently. Only standard catalog pricing and policies apply.'}
 
-=== CATALOG & INVENTORY ===
+${endedBroadcastContext ? `=== OFFICIALLY ENDED / EXPIRED CAMPAIGNS (OFFICIALLY CLOSED - DO NOT OFFER) ===\n${endedBroadcastContext}\n` : ''}=== CATALOG & INVENTORY ===
 ${
   products.length === 0
     ? 'No products available.'
@@ -1529,7 +1601,7 @@ Set "order": null if the customer is merely asking a question without ordering o
     knowledgeSourcesText &&
     /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te|for\s*free)\b/i.test(knowledgeSourcesText)
   )
-  const isFreeFromChat = /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te|for\s*free|free\s*deya\s*hocche|free\s*pabo|free\s*nite)\b/i.test(combinedHistory)
+  const isFreeFromChat = /\b(?:free|giveaway|100%\s*discount|ফ্রি|বিনামূল্যে|free\s*te|for\s*free|free\s*deya\s*hocche|free\s*pabo|free\s*nite)\b/i.test(messageText)
   const isFreeFromOrderData = Number(llmOrderData?.total) === 0 && Boolean(llmOrderData?.items?.length)
   const isCatalogFree = products.some(
     (p) => Number(p.price) === 0 && (messageText.toLowerCase().includes(p.name.toLowerCase()) || conversationHistoryText.toLowerCase().includes(p.name.toLowerCase()))
@@ -1558,6 +1630,23 @@ Set "order": null if the customer is merely asking a question without ordering o
       }
     }
   } else {
+    // Expired offer check: If Canva was discussed in chat or inquiry, but Canva is NOT free in the store currently:
+    if (isCanvaDiscussed && !isCanvaFreeInStore) {
+      const claimsCanvaFreeNow =
+        /\b(?:canva\b[^.]*\b(?:free|ফ্রি|বিনামূল্যে|৳০|৳0|zero\s*taka)|(?:free|ফ্রি|বিনামূল্যে|৳০|৳0)[^.]*\bcanva)\b/i.test(aiReply) ||
+        (/\b(?:সম্পূর্ণ\s*ফ্রি|shompurno\s*free|completely\s*free|ফ্রি\s*অ্যাক্সেস|free\s*access)\b/i.test(aiReply) && !/\b(?:শেষ|ended|over|sesh|expired)\b/i.test(aiReply))
+
+      if (claimsCanvaFreeNow) {
+        if (detectedLang === 'bn') {
+          aiReply = `আমাদের Canva Pro-এর ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার সাবস্ক্রিপশনটি নিতে পারেন। আপনি কি বিস্তারিত জানতে চান?`
+        } else if (detectedLang === 'banglish') {
+          aiReply = `Amader Canva Pro er free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
+        } else {
+          aiReply = `Our free Canva Pro promotional offer has now ended. You can purchase our regular subscription if you are interested. Would you like more details?`
+        }
+      }
+    }
+
     // If the business has NO active discount documented, strip any hallucinated "10% discount" or generic unverified percentage discounts
     const hasActiveDiscountInDocs = /\b(?:\d+%\s*discount|\d+%\s*off|ডিসকাউন্ট)\b/i.test(knowledgeSourcesText)
     if (!hasActiveDiscountInDocs && /\b(?:\b10%\s*discount\b|\b20%\s*discount\b|10%\s*discount\s*er\s*por)\b/i.test(aiReply)) {
