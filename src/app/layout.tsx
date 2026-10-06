@@ -82,9 +82,11 @@ const THEME_BOOT_SCRIPT = `
     var MODES = ${JSON.stringify(MODES)};
     var savedMode = localStorage.getItem(MODE_KEY);
     d.dataset.mode = MODES.indexOf(savedMode) !== -1 ? savedMode : MODE_DEFAULT;
+    d.classList.toggle('dark', d.dataset.mode === 'dark');
   } catch (_e) {
     d.dataset.theme = ${JSON.stringify(DEFAULT_THEME)};
     d.dataset.mode = ${JSON.stringify(DEFAULT_MODE)};
+    d.classList.toggle('dark', ${JSON.stringify(DEFAULT_MODE)} === 'dark');
   }
 })();
 `;

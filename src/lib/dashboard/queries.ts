@@ -42,6 +42,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     openDeals,
     messagesToday,
     messagesYesterday,
+    todayOrdersRes,
+    pendingOrdersRes,
   ] = await Promise.all([
     db.from('conversations').select('id', { count: 'exact', head: true }).eq('status', 'open'),
     db
@@ -73,10 +75,17 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .eq('sender_type', 'agent')
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
+    db.from('orders').select('id, total, status').gte('created_at', todayStart),
+    db.from('orders').select('id', { count: 'exact', head: true }).in('status', ['new', 'confirmed', 'processing']),
   ])
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
   const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+
+  const todayOrders = (todayOrdersRes.data ?? []) as { total: number | null; status: string }[]
+  const revenueToday = todayOrders
+    .filter((o) => o.status !== 'cancelled')
+    .reduce((sum, o) => sum + (Number(o.total) || 0), 0)
 
   return {
     activeConversations: {
@@ -96,6 +105,9 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
     },
+    revenueToday,
+    ordersTodayCount: todayOrders.length,
+    pendingOrdersCount: pendingOrdersRes.count ?? 0,
   }
 }
 

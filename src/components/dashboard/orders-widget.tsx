@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { ShoppingCart, ShoppingBag, Banknote, Clock, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { startOfLocalDay } from '@/lib/dashboard/date-utils'
-
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
 
@@ -26,12 +25,12 @@ interface OrderWidgetData {
 }
 
 const STATUS_BADGES: Record<string, string> = {
-  new: 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-  confirmed: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800',
-  processing: 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800',
-  shipped: 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300 dark:border-orange-800',
-  delivered: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800',
-  cancelled: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800',
+  new: 'bg-primary/10 text-primary border-primary/20',
+  confirmed: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  processing: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  shipped: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  delivered: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  cancelled: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
 }
 
 export function OrdersWidget({ currency }: { currency?: string } = {}) {
@@ -82,14 +81,14 @@ export function OrdersWidget({ currency }: { currency?: string } = {}) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border bg-card p-5 animate-pulse space-y-4">
-        <div className="h-6 w-36 bg-muted rounded" />
-        <div className="grid grid-cols-3 gap-3">
-          <div className="h-16 bg-muted rounded-lg" />
-          <div className="h-16 bg-muted rounded-lg" />
-          <div className="h-16 bg-muted rounded-lg" />
+      <div className="rounded-2xl border border-border/80 bg-card/80 p-5 animate-pulse space-y-4">
+        <div className="h-6 w-36 bg-muted rounded-md" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="h-16 bg-muted rounded-xl" />
+          <div className="h-16 bg-muted rounded-xl" />
+          <div className="h-16 bg-muted rounded-xl" />
         </div>
-        <div className="h-28 bg-muted rounded-lg" />
+        <div className="h-36 bg-muted rounded-xl" />
       </div>
     )
   }
@@ -97,81 +96,94 @@ export function OrdersWidget({ currency }: { currency?: string } = {}) {
   if (!data) return null
 
   return (
-    <div className="rounded-xl border bg-card p-5 space-y-4 shadow-xs">
+    <div className="rounded-2xl border border-border/80 bg-card/80 backdrop-blur-xs p-5 space-y-4 shadow-xs hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-primary/10 p-2 text-primary">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
             <ShoppingCart className="size-4" />
           </div>
-          <h2 className="text-base font-bold text-foreground">Orders Overview</h2>
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight text-foreground">Orders Overview</h2>
+            <p className="text-xs text-muted-foreground">Today&apos;s direct commerce transactions</p>
+          </div>
         </div>
         <Link
           href="/orders"
-          className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
+          className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
         >
-          View all orders <ArrowRight className="size-3" />
+          <span>View all orders</span>
+          <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />
         </Link>
       </div>
 
-      {/* 3 Metric Pills */}
+      {/* 3 Metric Pills with subtle ambient badges */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg border bg-background p-3 flex items-center gap-3">
-          <div className="rounded-md bg-blue-50 dark:bg-blue-950/50 p-2 text-blue-600">
+        <div className="rounded-xl border border-border/70 bg-background/60 p-3.5 flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
             <ShoppingBag className="size-4" />
           </div>
           <div>
             <p className="text-[11px] font-medium text-muted-foreground">Orders Today</p>
-            <p className="text-lg font-bold text-foreground">{data.ordersTodayCount}</p>
+            <p className="text-lg font-bold text-foreground tabular-nums">{data.ordersTodayCount.toLocaleString()}</p>
           </div>
         </div>
 
-        <div className="rounded-lg border bg-background p-3 flex items-center gap-3">
-          <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/50 p-2 text-emerald-600">
+        <div className="rounded-xl border border-border/70 bg-background/60 p-3.5 flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <Banknote className="size-4" />
           </div>
           <div>
             <p className="text-[11px] font-medium text-muted-foreground">Revenue Today</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(data.revenueToday, activeCurrency)}</p>
+            <p className="text-lg font-bold text-foreground tabular-nums">{formatCurrency(data.revenueToday, activeCurrency)}</p>
           </div>
         </div>
 
-        <div className="rounded-lg border bg-background p-3 flex items-center gap-3">
-          <div className="rounded-md bg-amber-50 dark:bg-amber-950/50 p-2 text-amber-600">
+        <div className="rounded-xl border border-border/70 bg-background/60 p-3.5 flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
             <Clock className="size-4" />
           </div>
           <div>
             <p className="text-[11px] font-medium text-muted-foreground">Pending Orders</p>
-            <p className="text-lg font-bold text-foreground">{data.pendingOrdersCount}</p>
+            <p className="text-lg font-bold text-foreground tabular-nums">{data.pendingOrdersCount.toLocaleString()}</p>
           </div>
         </div>
       </div>
 
       {/* Recent 5 Orders Table */}
-      <div className="space-y-2 pt-1">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recent Orders</p>
+      <div className="space-y-2.5 pt-1">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recent Orders</p>
+          <span className="text-[11px] text-muted-foreground tabular-nums">Latest {data.recentOrders.length}</span>
+        </div>
         {data.recentOrders.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-2 text-center border border-dashed rounded-md">
-            No orders created yet.
-          </p>
+          <div className="rounded-xl border border-dashed border-border/80 py-8 text-center">
+            <p className="text-xs text-muted-foreground">
+              No orders created yet today.
+            </p>
+          </div>
         ) : (
-          <div className="overflow-x-auto rounded-md border">
+          <div className="overflow-x-auto rounded-xl border border-border/70 bg-background/30">
             <table className="w-full text-left text-xs">
-              <thead className="bg-muted/50 border-b text-muted-foreground">
+              <thead className="bg-muted/40 border-b border-border/70 text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2">Order #</th>
-                  <th className="px-3 py-2">Customer</th>
-                  <th className="px-3 py-2">Total</th>
-                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3.5 py-2.5 font-medium">Order #</th>
+                  <th className="px-3.5 py-2.5 font-medium">Customer</th>
+                  <th className="px-3.5 py-2.5 font-medium">Total</th>
+                  <th className="px-3.5 py-2.5 font-medium">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border/60">
                 {data.recentOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-muted/40 transition-colors">
-                    <td className="px-3 py-2 font-mono font-medium text-foreground">{o.order_number}</td>
-                    <td className="px-3 py-2 text-foreground font-medium">{o.customer_name}</td>
-                    <td className="px-3 py-2 font-semibold">{formatCurrency(o.total, activeCurrency)}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGES[o.status] ?? STATUS_BADGES.new}`}>
+                  <tr key={o.id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-3.5 py-2.5 font-mono font-medium text-foreground">
+                      <Link href={`/orders`} className="hover:text-primary transition-colors">
+                        {o.order_number}
+                      </Link>
+                    </td>
+                    <td className="px-3.5 py-2.5 text-foreground font-medium">{o.customer_name}</td>
+                    <td className="px-3.5 py-2.5 font-semibold tabular-nums">{formatCurrency(o.total, activeCurrency)}</td>
+                    <td className="px-3.5 py-2.5">
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGES[o.status] ?? STATUS_BADGES.new}`}>
                         {o.status}
                       </span>
                     </td>

@@ -23,35 +23,46 @@ interface MetricCardProps {
 
 export function MetricCard({ title, value, icon: Icon, delta, subtitle }: MetricCardProps) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{title}</p>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="h-4 w-4" />
+    <div className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-xs transition-all duration-300 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5">
+      {/* Ambient theme glow */}
+      <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-primary/10 blur-2xl transition-all duration-500 group-hover:scale-125 group-hover:bg-primary/20" />
+
+      <div className="relative flex items-start justify-between">
+        <p className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">{title}</p>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-2xs transition-transform duration-300 group-hover:scale-110">
+          <Icon className="h-5 w-5" />
         </div>
       </div>
-      <p className="mt-3 text-[28px] leading-none font-bold tabular-nums text-foreground">
-        {value}
-      </p>
-      {delta ? <DeltaRow sign={delta.sign} label={delta.label} /> : subtitle ? (
-        <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
-      ) : null}
+
+      <div className="relative mt-3">
+        <p className="text-2xl sm:text-[28px] font-bold tracking-tight tabular-nums text-foreground">
+          {value}
+        </p>
+        {delta ? <DeltaRow sign={delta.sign} label={delta.label} /> : subtitle ? (
+          <p className="mt-2 text-xs text-muted-foreground truncate" title={subtitle}>{subtitle}</p>
+        ) : null}
+      </div>
     </div>
   )
 }
 
 function DeltaRow({ sign, label }: { sign: number; label: string }) {
-  const tone =
-    sign > 0
-      ? 'text-primary'
-      : sign < 0
-      ? 'text-red-400'
-      : 'text-muted-foreground'
-  const Arrow = sign > 0 ? ArrowUp : sign < 0 ? ArrowDown : Minus
+  const isPositive = sign > 0
+  const isNegative = sign < 0
+  const Arrow = isPositive ? ArrowUp : isNegative ? ArrowDown : Minus
+
+  const badgeStyle = isPositive
+    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+    : isNegative
+    ? 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400'
+    : 'border-border/60 bg-muted/60 text-muted-foreground'
+
   return (
-    <div className={cn('mt-2 flex items-center gap-1 text-sm', tone)}>
-      <Arrow className="h-4 w-4" aria-hidden />
-      <span className="tabular-nums">{label}</span>
+    <div className="mt-2 flex items-center">
+      <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums', badgeStyle)}>
+        <Arrow className="h-3 w-3" aria-hidden />
+        <span>{label}</span>
+      </span>
     </div>
   )
 }

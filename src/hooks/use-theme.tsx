@@ -84,6 +84,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(next);
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = next;
+      window.dispatchEvent(new CustomEvent('theme-change', { detail: next }));
     }
     try {
       localStorage.setItem(STORAGE_KEY, next);
@@ -97,6 +98,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(next);
     if (typeof document !== "undefined") {
       document.documentElement.dataset.mode = next;
+      document.documentElement.classList.toggle('dark', next === 'dark');
+      window.dispatchEvent(new CustomEvent('mode-change', { detail: next }));
     }
     try {
       localStorage.setItem(MODE_STORAGE_KEY, next);
