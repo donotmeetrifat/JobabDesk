@@ -14,6 +14,10 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import {
+  createClient as createSupabaseClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -21,6 +25,17 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+
+function getDbClient(fallback: SupabaseClient): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && serviceKey && serviceKey.trim().length > 0) {
+    return createSupabaseClient(url, serviceKey.trim(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return fallback;
+}
 
 export async function DELETE(
   _request: Request,
@@ -36,17 +51,13 @@ export async function DELETE(
     if (!limit.success) return rateLimitResponse(limit);
 
     const { id } = await params;
+    const db = getDbClient(ctx.supabase);
 
-    // No `eq('account_id', ctx.accountId)` — the RLS policy
-    // (`is_account_member(account_id, 'admin')`) already scopes
-    // the DELETE to invites in the caller's account. Adding the
-    // filter would be redundant; omitting it surfaces a
-    // cross-account attempt as a silent 0-row delete (which is
-    // exactly what we want for a revocation endpoint).
-    const { error, count } = await ctx.supabase
+    const { error, count } = await db
       .from("account_invitations")
       .delete({ count: "exact" })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("account_id", ctx.accountId);
 
     if (error) {
       console.error("[DELETE /api/account/invitations/[id]] error:", error);

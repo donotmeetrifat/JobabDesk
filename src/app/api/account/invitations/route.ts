@@ -18,6 +18,10 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import {
+  createClient as createSupabaseClient,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -32,6 +36,17 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+
+function getDbClient(fallback: SupabaseClient): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && serviceKey && serviceKey.trim().length > 0) {
+    return createSupabaseClient(url, serviceKey.trim(), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return fallback;
+}
 
 // Resolve the base URL we publish invite links under.
 //
@@ -139,8 +154,9 @@ const MAX_LABEL_LEN = 80;
 export async function GET() {
   try {
     const ctx = await requireRole("admin");
+    const db = getDbClient(ctx.supabase);
 
-    const { data, error } = await ctx.supabase
+    const { data, error } = await db
       .from("account_invitations")
       .select(
         "id, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id",
@@ -215,8 +231,9 @@ export async function POST(request: Request) {
     }
 
     const { token, hash } = generateInviteToken();
+    const db = getDbClient(ctx.supabase);
 
-    const { data, error } = await ctx.supabase
+    const { data, error } = await db
       .from("account_invitations")
       .insert({
         account_id: ctx.accountId,
@@ -232,7 +249,7 @@ export async function POST(request: Request) {
     if (error || !data) {
       console.error("[POST /api/account/invitations] insert error:", error);
       return NextResponse.json(
-        { error: "Failed to create invitation" },
+        { error: error?.message || "Failed to create invitation" },
         { status: 500 },
       );
     }
