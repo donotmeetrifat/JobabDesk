@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
 import { THEMES } from '@/lib/themes';
@@ -14,21 +13,12 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 import { SECTION_META, type SettingsSection } from './settings-sections';
-import { SettingsChip, StatusDot } from './settings-chip';
+import { SettingsChip } from './settings-chip';
 import { ROLE_META } from './role-meta';
 
 interface OverviewCounts {
   members: number | null;
   pendingInvites: number | null;
-  templates: number | null;
-  templatesPending: number | null;
-  tags: number | null;
-  customFields: number | null;
-}
-
-interface WhatsAppStatus {
-  configured: boolean;
-  connected: boolean;
 }
 
 export function SettingsOverview({
@@ -45,46 +35,21 @@ export function SettingsOverview({
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
-  // WhatsApp status is tracked separately: its health check decrypts the
-  // token and pings Meta, which is far slower than the cheap count
-  // queries. Gating it independently keeps a slow/flaky Meta round-trip
-  // from blanking the rest of the landing.
-  const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
-  const [whatsappLoading, setWhatsappLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !accountId) return;
     let cancelled = false;
-    const supabase = createClient();
-    const userId = user.id;
-    const acctId = accountId;
 
-    // Cheap counts — resolve fast, render immediately.
     (async () => {
       setCountsLoading(true);
-      const [membersRes, invitesRes, templatesTotal, templatesPending, tagsRes, fieldsRes] =
-        await Promise.allSettled([
-          fetch('/api/account/members', { cache: 'no-store' }).then((r) => r.json()),
-          canManageMembers
-            ? fetch('/api/account/invitations', { cache: 'no-store' }).then((r) =>
-                r.json(),
-              )
-            : Promise.resolve(null),
-          supabase
-            .from('message_templates')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId),
-          supabase
-            .from('message_templates')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('status', 'PENDING'),
-          supabase
-            .from('tags')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId),
-          supabase.from('custom_fields').select('id', { count: 'exact', head: true }),
-        ]);
+      const [membersRes, invitesRes] = await Promise.allSettled([
+        fetch('/api/account/members', { cache: 'no-store' }).then((r) => r.json()),
+        canManageMembers
+          ? fetch('/api/account/invitations', { cache: 'no-store' }).then((r) =>
+              r.json(),
+            )
+          : Promise.resolve(null),
+      ]);
 
       if (cancelled) return;
 
@@ -102,38 +67,8 @@ export function SettingsOverview({
       setCounts({
         members,
         pendingInvites,
-        templates:
-          templatesTotal.status === 'fulfilled'
-            ? templatesTotal.value.count ?? null
-            : null,
-        templatesPending:
-          templatesPending.status === 'fulfilled'
-            ? templatesPending.value.count ?? null
-            : null,
-        tags: tagsRes.status === 'fulfilled' ? tagsRes.value.count ?? null : null,
-        customFields:
-          fieldsRes.status === 'fulfilled' ? fieldsRes.value.count ?? null : null,
       });
       setCountsLoading(false);
-    })();
-
-    // WhatsApp connection status — slower, independent.
-    (async () => {
-      setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
-      if (cancelled) return;
-      setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
-      });
-      setWhatsappLoading(false);
     })();
 
     return () => {
@@ -151,28 +86,11 @@ export function SettingsOverview({
   const themeName = THEMES.find((t) => t.id === theme)?.name ?? theme;
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  // Per-tile loading + subtitle. `null` counts render as a graceful
-  // fallback so a single failed query never blanks a tile.
   const tiles: {
     section: SettingsSection;
     loading: boolean;
     subtitle: ReactNode;
   }[] = [
-    {
-      section: 'whatsapp',
-      loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
-        t('notSetup')
-      ) : whatsapp.connected ? (
-        <>
-          <StatusDot tone="ok" /> {t('connected')}
-        </>
-      ) : (
-        <>
-          <StatusDot tone="muted" /> {t('needsReconnecting')}
-        </>
-      ),
-    },
     {
       section: 'members',
       loading: countsLoading,
@@ -186,31 +104,9 @@ export function SettingsOverview({
             }`,
     },
     {
-      section: 'templates',
-      loading: countsLoading,
-      subtitle:
-        counts?.templates == null
-          ? t('manageTemplates')
-          : `${t('templatesCount', { count: counts.templates })}${
-              counts.templatesPending
-                ? ` · ${t('pendingReview', { count: counts.templatesPending })}`
-                : ''
-            }`,
-    },
-    {
       section: 'deals',
       loading: false,
       subtitle: `${defaultCurrency} — ${currencyLabel}`,
-    },
-    {
-      section: 'fields',
-      loading: countsLoading,
-      subtitle:
-        counts?.tags == null && counts?.customFields == null
-          ? t('tagsAndFields')
-          : `${t('tagsCount', { count: counts?.tags ?? 0 })} · ${t('fieldsCount', {
-              count: counts?.customFields ?? 0,
-            })}`,
     },
     {
       section: 'appearance',

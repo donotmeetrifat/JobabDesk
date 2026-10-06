@@ -9,15 +9,9 @@ import { useTheme } from '@/hooks/use-theme';
 import { SettingsRail } from '@/components/settings/settings-rail';
 import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
-import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
-import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TemplateManager } from '@/components/settings/template-manager';
-import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
-import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
-import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
   type SettingsSection,
@@ -27,9 +21,7 @@ import {
 // sits under a Suspense boundary. Without one, the production build hits
 // the "missing Suspense with CSR bailout" error and the whole page bails
 // to client-side rendering — shipping a settings screen whose rail never
-// wires up its click handlers. You land on the section the URL carried
-// (the account-menu Settings link points at `?tab=whatsapp`) and can't
-// navigate away. Mirror the login/signup split: a thin wrapper supplies
+// wires up its click handlers. Mirror the login/signup split: a thin wrapper supplies
 // the boundary; the inner component reads the query string.
 export default function SettingsPage() {
   return (
@@ -47,9 +39,7 @@ function SettingsPageInner() {
   const t = useTranslations('Settings');
 
   // The URL (`?tab=`) is the single source of truth for the active
-  // section — deep-linkable, and it keeps the existing links in the
-  // app sidebar/header working. Legacy tab values (tags, custom-fields)
-  // resolve onto their new home; unknown/empty → the Overview landing.
+  // section — deep-linkable. Unknown/empty → the Overview landing.
   const section = resolveSection(searchParams.get('tab'));
 
   const go = (next: SettingsSection) => {
@@ -72,15 +62,9 @@ function SettingsPageInner() {
   const panel: Record<SettingsSection, ReactNode> = {
     overview: <SettingsOverview onSelect={go} />,
     profile: <ProfileForm />,
-    security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: <WhatsAppConfig />,
-    templates: <TemplateManager />,
-    'quick-replies': <QuickRepliesManager />,
-    fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
     members: <MembersTab />,
-    api: <ApiKeysSettings />,
   };
 
   return (
