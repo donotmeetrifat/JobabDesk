@@ -1072,6 +1072,7 @@ Customer Communication Style: ${communicationGuidance}
 Delivery Rates & Policy: ${account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150'}
 Return Policy: ${account.return_policy || account.ai_return_policy || 'Standard exchange policy'}
 Payment Info: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
+${account.simulated_persona_preview ? `Sample Greeting / Persona Style: ${account.simulated_persona_preview}` : ''}
 `.trim()
 
   const systemPrompt = `You are an expert, friendly, and persuasive human sales representative and store assistant for "${resolvedStoreName}".

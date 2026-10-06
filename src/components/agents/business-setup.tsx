@@ -27,6 +27,7 @@ interface GuidedBusinessProfile {
   target_audience: string
   customer_relation_style: string
   ai_persona: string
+  simulated_persona_preview: string
   delivery_policy: string
   return_policy: string
   special_instructions: string
@@ -41,6 +42,7 @@ const EMPTY_PROFILE: GuidedBusinessProfile = {
   target_audience: '',
   customer_relation_style: 'Warm & Helpful (Consultative & Polite)',
   ai_persona: 'English Standard (with bilingual Bengali greetings)',
+  simulated_persona_preview: '',
   delivery_policy: '',
   return_policy: '',
   special_instructions: '',
@@ -75,6 +77,7 @@ export function BusinessSetup({ onNavigateToPlayground, onReadinessChange }: Bus
           target_audience: data.settings.target_audience || '',
           customer_relation_style: data.settings.customer_relation_style || 'Warm & Helpful (Consultative & Polite)',
           ai_persona: data.settings.ai_persona || data.settings.ai_auto_reply_tone || 'English Standard (with bilingual Bengali greetings)',
+          simulated_persona_preview: data.settings.simulated_persona_preview || '',
           delivery_policy: data.settings.delivery_policy || data.settings.ai_delivery_policy || '',
           return_policy: data.settings.return_policy || data.settings.ai_return_policy || '',
           special_instructions: data.settings.special_instructions || '',
@@ -110,6 +113,7 @@ export function BusinessSetup({ onNavigateToPlayground, onReadinessChange }: Bus
           customer_relation_style: settings.customer_relation_style,
           ai_persona: settings.ai_persona,
           ai_auto_reply_tone: settings.ai_persona,
+          simulated_persona_preview: settings.simulated_persona_preview,
           delivery_policy: settings.delivery_policy,
           ai_delivery_policy: settings.delivery_policy,
           return_policy: settings.return_policy,
@@ -223,6 +227,7 @@ Product Categories: ${settings.product_categories_sold.trim() || 'All catalog in
 Target Audience: ${settings.target_audience.trim() || 'All shoppers'}
 Formality & Salutation: ${settings.customer_relation_style}
 Language & Tone Style: ${settings.ai_persona}
+Sample Greeting / Persona Style: ${settings.simulated_persona_preview.trim() || simulatedMessage}
 
 === SHIPPING & LOGISTICS SLA ===
 ${settings.delivery_policy.trim() || 'Standard delivery terms apply.'}
@@ -503,13 +508,38 @@ ${settings.ai_store_instructions.trim() || 'If customer requests custom handling
                 <Bot className="h-4 w-4" />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-foreground">Live Simulated Persona Preview</span>
-                  <span className="text-[10px] text-muted-foreground">Zero-shot prompt output</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="simulated-preview" className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+                    Live Simulated Persona Preview
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettings((prev) => ({ ...prev, simulated_persona_preview: simulatedMessage }))}
+                      className="text-[11px] font-medium text-primary transition-colors hover:underline"
+                    >
+                      Use Generated Sample
+                    </button>
+                    {settings.simulated_persona_preview && (
+                      <button
+                        type="button"
+                        onClick={() => setSettings((prev) => ({ ...prev, simulated_persona_preview: '' }))}
+                        className="text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                    <span className="text-[10px] text-muted-foreground">Zero-shot prompt output</span>
+                  </div>
                 </div>
-                <p className="mt-1.5 rounded-lg border border-border/70 bg-card p-3 text-xs font-normal leading-relaxed text-foreground shadow-2xs">
-                  {simulatedMessage}
-                </p>
+                <textarea
+                  id="simulated-preview"
+                  rows={3}
+                  value={settings.simulated_persona_preview}
+                  onChange={(e) => setSettings({ ...settings, simulated_persona_preview: e.target.value })}
+                  placeholder={simulatedMessage}
+                  className="mt-1.5 w-full resize-y rounded-lg border border-border/70 bg-card p-3 text-xs font-normal leading-relaxed text-foreground shadow-2xs outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
               </div>
             </div>
           </div>
@@ -545,21 +575,21 @@ ${settings.ai_store_instructions.trim() || 'If customer requests custom handling
                 rows={3}
                 value={settings.delivery_policy}
                 onChange={(e) => setSettings({ ...settings, delivery_policy: e.target.value })}
-                placeholder="Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs). Nationwide: ৳150 (3-4 business days). Complimentary free shipping on all orders over ৳3,000."
+                placeholder="Standard Shipping: ৳80 (Inside Dhaka Metro). Nationwide: ৳150. Complimentary free shipping on all orders over ৳3,000."
                 className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-muted-foreground">Presets:</span>
                 <button
                   type="button"
-                  onClick={() => appendPreset('delivery_policy', 'Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs).')}
+                  onClick={() => appendPreset('delivery_policy', 'Standard Shipping: ৳80 (Inside Dhaka Metro).')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Inside Metro ৳80
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('delivery_policy', 'Nationwide Delivery: ৳150 (3-4 business days).')}
+                  onClick={() => appendPreset('delivery_policy', 'Nationwide Delivery: ৳150.')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Nationwide ৳150
@@ -644,28 +674,28 @@ ${settings.ai_store_instructions.trim() || 'If customer requests custom handling
                 rows={3}
                 value={settings.special_instructions}
                 onChange={(e) => setSettings({ ...settings, special_instructions: e.target.value })}
-                placeholder="bKash Merchant: 01700-000000 | Rocket Merchant: 01900-000000 | Nagad Merchant: 01800-000000. Cash on Delivery (COD) accepted nationwide across all covered districts."
+                placeholder="bKash: 01700-000000 | Rocket: 01900-000000 | Nagad: 01800-000000. Cash on Delivery (COD) accepted nationwide across all covered districts."
                 className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">Supported Badges:</span>
                 <button
                   type="button"
-                  onClick={() => appendPreset('special_instructions', 'bKash Merchant: 01700-000000')}
+                  onClick={() => appendPreset('special_instructions', 'bKash: 01700-000000')}
                   className="inline-flex items-center gap-1 rounded border border-pink-500/30 bg-pink-500/10 px-2 py-0.5 text-[10px] font-semibold text-pink-700 dark:text-pink-300 transition-colors hover:bg-pink-500/20"
                 >
                   bKash
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('special_instructions', 'Rocket Merchant: 01900-000000')}
+                  onClick={() => appendPreset('special_instructions', 'Rocket: 01900-000000')}
                   className="inline-flex items-center gap-1 rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 transition-colors hover:bg-indigo-500/20"
                 >
                   Rocket
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('special_instructions', 'Nagad Merchant: 01800-000000')}
+                  onClick={() => appendPreset('special_instructions', 'Nagad: 01800-000000')}
                   className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 transition-colors hover:bg-amber-500/20"
                 >
                   Nagad

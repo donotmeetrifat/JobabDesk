@@ -65,6 +65,7 @@ export async function PATCH(req: Request) {
       'return_policy',
       'special_instructions',
       'ai_persona',
+      'simulated_persona_preview',
       'whatsapp_phone_number_id',
       'whatsapp_waba_id',
       'whatsapp_access_token',
