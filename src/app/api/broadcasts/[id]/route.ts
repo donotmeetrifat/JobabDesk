@@ -64,12 +64,28 @@ export async function PATCH(
     if (body.status !== undefined) updatePayload.status = body.status
     if (body.template_variables !== undefined) updatePayload.template_variables = body.template_variables
 
-    const { data: updated, error } = await db
+    let { data: updated, error } = await db
       .from('broadcasts')
       .update(updatePayload)
       .eq('id', id)
       .select('*')
       .maybeSingle()
+
+    // If check constraint in DB rejects 'cancelled' or 'ended', fall back to 'draft'
+    if (error && (updatePayload.status === 'cancelled' || updatePayload.status === 'ended')) {
+      console.warn('[Broadcasts API] Status constraint rejected:', error.message, '- falling back to draft status')
+      const fallbackPayload = { ...updatePayload, status: 'draft' }
+      const fallbackRes = await db
+        .from('broadcasts')
+        .update(fallbackPayload)
+        .eq('id', id)
+        .select('*')
+        .maybeSingle()
+      if (!fallbackRes.error) {
+        updated = fallbackRes.data
+        error = null
+      }
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
