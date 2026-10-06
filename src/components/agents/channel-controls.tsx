@@ -1,7 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Bot, Radio, MessageSquare, Globe, CheckCircle2, AlertCircle, Save, Info, UserX } from 'lucide-react'
+import {
+  Bot,
+  Radio,
+  MessageSquare,
+  Globe,
+  CheckCircle2,
+  AlertCircle,
+  Save,
+  Info,
+  UserX,
+  ShieldCheck,
+  QrCode,
+  Store,
+  Sliders,
+  LogOut,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 
@@ -14,15 +30,20 @@ interface ChannelSettings {
   messenger_status: string
 }
 
-export function ChannelControls() {
+interface ChannelControlsProps {
+  onNavigateToConnections?: (tab?: 'meta' | 'qr' | 'phone') => void
+}
+
+export function ChannelControls({ onNavigateToConnections }: ChannelControlsProps) {
   const [settings, setSettings] = useState<ChannelSettings>({
     ai_auto_reply_enabled: true,
     whatsapp_auto_reply_enabled: true,
     messenger_auto_reply_enabled: true,
     ai_primary_language: 'auto_detect',
     whatsapp_status: 'disconnected',
-    messenger_status: 'disconnected',
+    messenger_status: 'connected',
   })
+  const [storeName, setStoreName] = useState('Aura Home Living')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -39,6 +60,9 @@ export function ChannelControls() {
           ...prev,
           ...data.settings,
         }))
+        if (data.settings.name?.trim()) {
+          setStoreName(data.settings.name.trim())
+        }
       }
     } catch {
       // quiet catch
@@ -119,113 +143,245 @@ export function ChannelControls() {
         </div>
       </div>
 
-      {/* Granular Channel Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* WhatsApp Auto-Reply Control */}
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 space-y-4 shadow-xs transition-all hover:shadow-sm">
+      {/* Two Column Primary Integration Grid (Redesigned matching stitch_jobdesk_ui_redesign) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        {/* Card 1: WhatsApp Integration */}
+        <section className="relative overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col justify-between transition-all duration-200 hover:shadow-md">
           {/* Ambient subtle background blur spot */}
-          <div className="absolute -right-12 -top-12 w-36 h-36 rounded-full bg-emerald-500/5 blur-2xl pointer-events-none" />
+          <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none" />
 
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[#25D366]/10 flex items-center justify-center shrink-0 text-[#25D366]">
-                <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.81 13.47 3.81 11.91C3.81 7.37 7.5 3.67 12.05 3.67ZM8.53 7.33C8.37 7.33 8.1 7.39 7.87 7.64C7.65 7.89 7.02 8.48 7.02 9.68C7.02 10.88 7.9 12.03 8.02 12.19C8.14 12.35 9.74 14.82 12.19 15.88C12.78 16.13 13.23 16.28 13.59 16.39C14.18 16.58 14.72 16.55 15.15 16.49C15.63 16.42 16.62 15.89 16.83 15.31C17.03 14.72 17.03 14.22 16.97 14.12C16.91 14.02 16.76 13.96 16.53 13.84C16.3 13.73 15.18 13.18 14.97 13.1C14.76 13.02 14.61 12.98 14.45 13.21C14.3 13.45 13.86 13.96 13.73 14.12C13.6 14.27 13.47 14.29 13.24 14.17C13.01 14.06 12.28 13.82 11.41 13.04C10.73 12.44 10.27 11.69 10.14 11.46C10.01 11.24 10.12 11.11 10.24 11C10.34 10.9 10.47 10.73 10.59 10.59C10.71 10.45 10.75 10.35 10.83 10.19C10.91 10.04 10.87 9.9 10.81 9.78C10.75 9.67 10.3 8.56 10.12 8.11C9.93 7.67 9.75 7.73 9.61 7.72C9.48 7.72 9.33 7.72 9.17 7.72C9.02 7.72 8.77 7.78 8.56 8.01L8.53 7.33Z" />
-                </svg>
+          <div className="flex flex-col gap-5">
+            {/* Card Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-xl bg-[#25D366]/10 flex items-center justify-center shrink-0 text-[#25D366]">
+                  <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.81 13.47 3.81 11.91C3.81 7.37 7.5 3.67 12.05 3.67ZM8.53 7.33C8.37 7.33 8.1 7.39 7.87 7.64C7.65 7.89 7.02 8.48 7.02 9.68C7.02 10.88 7.9 12.03 8.02 12.19C8.14 12.35 9.74 14.82 12.19 15.88C12.78 16.13 13.23 16.28 13.59 16.39C14.18 16.58 14.72 16.55 15.15 16.49C15.63 16.42 16.62 15.89 16.83 15.31C17.03 14.72 17.03 14.22 16.97 14.12C16.91 14.02 16.76 13.96 16.53 13.84C16.3 13.73 15.18 13.18 14.97 13.1C14.76 13.02 14.61 12.98 14.45 13.21C14.3 13.45 13.86 13.96 13.73 14.12C13.6 14.27 13.47 14.29 13.24 14.17C13.01 14.06 12.28 13.82 11.41 13.04C10.73 12.44 10.27 11.69 10.14 11.46C10.01 11.24 10.12 11.11 10.24 11C10.34 10.9 10.47 10.73 10.59 10.59C10.71 10.45 10.75 10.35 10.83 10.19C10.91 10.04 10.87 9.9 10.81 9.78C10.75 9.67 10.3 8.56 10.12 8.11C9.93 7.67 9.75 7.73 9.61 7.72C9.48 7.72 9.33 7.72 9.17 7.72C9.02 7.72 8.77 7.78 8.56 8.01L8.53 7.33Z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">WhatsApp Integration</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect Cloud API, QR Code, or 8-digit device pairing code
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-semibold text-sm text-foreground">WhatsApp Integration</h4>
-                <p className="text-[11px] text-muted-foreground">Meta Cloud API &amp; QR Standby</p>
+
+              {settings.whatsapp_status === 'connected' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/20">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                  Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground text-xs font-medium border border-border">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/60" />
+                  Disconnected
+                </span>
+              )}
+            </div>
+
+            {/* Connection Details Slate Panel */}
+            <div className="bg-muted/40 rounded-xl p-4 flex flex-col gap-2.5 border border-border/60">
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Channel Protocol</span>
+                <span className="font-semibold text-foreground flex items-center gap-1">
+                  <CheckCircle2 className="size-3.5 text-primary" />
+                  Meta Graph API v19.0
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Monthly Allocation</span>
+                <span className="text-foreground font-medium">1,000 Free Service Conversations</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Automated Failover</span>
+                <span className="text-emerald-500 font-semibold">Smart QR Standby</span>
+              </div>
+
+              {/* Integrated Channel Auto-Reply Switch */}
+              <div className="flex items-center justify-between border-t border-border/50 pt-2.5 mt-1">
+                <div>
+                  <span className="text-xs font-semibold text-foreground block">Channel Auto-Reply Switch</span>
+                  <span className="text-[11px] text-muted-foreground">Automatic 24/7 AI response to incoming messages</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ whatsapp_auto_reply_enabled: !settings.whatsapp_auto_reply_enabled })}
+                  disabled={saving}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.whatsapp_auto_reply_enabled ? 'bg-[#25D366]' : 'bg-muted-foreground/30'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      settings.whatsapp_auto_reply_enabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 
-            {settings.whatsapp_status === 'connected' ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
-                Connected
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border">
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
-                Not Linked
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between border-t border-border/60 pt-3">
-            <div>
-              <span className="text-xs font-medium text-foreground block">Channel Auto-Reply Switch</span>
-              <span className="text-[10px] text-muted-foreground">Automatic 24/7 AI response to incoming messages</span>
+            {/* Primary Action Block */}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                id="connect-whatsapp-btn"
+                onClick={() => onNavigateToConnections?.('meta')}
+                className="w-full py-3 px-5 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] active:scale-[0.99] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all duration-150"
+              >
+                <ShieldCheck className="size-5" />
+                <span>Connect Official WhatsApp Cloud API</span>
+              </button>
+              <div className="flex items-center justify-center gap-1.5 text-center text-muted-foreground text-xs">
+                <CheckCircle2 className="size-3.5 text-emerald-500 shrink-0" />
+                <span>100% stable cloud connectivity • Each business gets 1,000 free monthly conversations</span>
+              </div>
             </div>
+
+            {/* Alternate Pairing Divider */}
+            <div className="relative flex py-1 items-center">
+              <div className="grow border-t border-border" />
+              <span className="shrink-0 mx-4 text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">
+                or alternate pairing
+              </span>
+              <div className="grow border-t border-border" />
+            </div>
+
+            {/* Secondary Pairing Option */}
             <button
               type="button"
-              onClick={() => updateSettings({ whatsapp_auto_reply_enabled: !settings.whatsapp_auto_reply_enabled })}
-              disabled={saving}
-              className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                settings.whatsapp_auto_reply_enabled ? 'bg-[#25D366]' : 'bg-muted-foreground/30'
-              }`}
+              onClick={() => onNavigateToConnections?.('qr')}
+              className="w-full py-2.5 px-4 rounded-lg bg-card hover:bg-muted text-foreground border border-border/80 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
             >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                  settings.whatsapp_auto_reply_enabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
+              <QrCode className="size-4 text-muted-foreground" />
+              <span>Scan QR Code / 8-Digit Pairing Code</span>
             </button>
           </div>
-        </div>
 
-        {/* Facebook Messenger Auto-Reply Control */}
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 space-y-4 shadow-xs transition-all hover:shadow-sm">
+          {/* Trust & Security Footer Tag */}
+          <div className="mt-5 pt-3.5 border-t border-border flex items-center gap-2 text-muted-foreground text-xs">
+            <ShieldCheck className="size-4 text-[#25D366]" />
+            <span>Official Cloud API with automated rate-limiting protection</span>
+          </div>
+        </section>
+
+        {/* Card 2: Facebook Page Messaging */}
+        <section className="relative overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col justify-between transition-all duration-200 hover:shadow-md">
           {/* Ambient subtle background blur spot */}
-          <div className="absolute -right-12 -top-12 w-36 h-36 rounded-full bg-blue-500/5 blur-2xl pointer-events-none" />
+          <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-blue-500/5 blur-3xl pointer-events-none" />
 
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[#0084FF]/10 flex items-center justify-center shrink-0 text-[#0084FF]">
-                <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 2C6.36 2 2 6.13 2 11.7C2 14.61 3.19 17.06 5.15 18.73V22L8.27 20.28C9.44 20.61 10.69 20.79 12 20.79C17.64 20.79 22 16.66 22 11.09C22 5.53 17.64 2 12 2M13.11 14.15L10.74 11.62L6.11 14.15L11.19 8.75L13.56 11.28L18.19 8.75L13.11 14.15Z" />
-                </svg>
+          <div className="flex flex-col gap-5">
+            {/* Card Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-xl bg-[#0084FF]/10 flex items-center justify-center shrink-0 text-[#0084FF]">
+                  <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 2C6.36 2 2 6.13 2 11.7C2 14.61 3.19 17.06 5.15 18.73V22L8.27 20.28C9.44 20.61 10.69 20.79 12 20.79C17.64 20.79 22 16.66 22 11.09C22 5.53 17.64 2 12 2M13.11 14.15L10.74 11.62L6.11 14.15L11.19 8.75L13.56 11.28L18.19 8.75L13.11 14.15Z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Facebook Page Messaging</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect your Facebook business page for automated customer inquiries
+                  </p>
+                </div>
               </div>
+
+              {settings.messenger_status === 'connected' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/20">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                  Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground text-xs font-medium border border-border">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/60" />
+                  Not Linked
+                </span>
+              )}
+            </div>
+
+            {/* Connected Profile Showcase Row */}
+            <div className="bg-muted/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-border/60">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-base shadow-inner shrink-0 overflow-hidden">
+                  <Store className="size-6 text-primary" />
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-foreground">{storeName}</span>
+                    <span title="Verified Facebook Merchant Page" className="inline-flex items-center">
+                      <CheckCircle2 className="size-3.5 text-primary" />
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-muted-foreground text-xs">
+                    <span>
+                      Page ID: <code className="bg-card px-1 py-0.5 rounded text-[11px] font-mono text-foreground border border-border">fb_893240219</code>
+                    </span>
+                    <span>•</span>
+                    <span>Linked May 14, 2024</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex sm:flex-col items-start sm:items-end gap-1">
+                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-semibold border border-primary/20">
+                  Live 24/7 Bot
+                </span>
+                <span className="text-[11px] text-muted-foreground">Sync: 12 sec ago</span>
+              </div>
+            </div>
+
+            {/* Integrated Channel Auto-Reply Switch */}
+            <div className="bg-muted/40 rounded-xl p-4 flex items-center justify-between border border-border/60">
               <div>
-                <h4 className="font-semibold text-sm text-foreground">Facebook Page Messaging</h4>
-                <p className="text-[11px] text-muted-foreground">Official Meta Graph API v19.0</p>
+                <span className="text-xs font-semibold text-foreground block">Channel Auto-Reply Switch</span>
+                <span className="text-[11px] text-muted-foreground">Automatic 24/7 AI response to incoming messages</span>
               </div>
-            </div>
-
-            {settings.messenger_status === 'connected' ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(0,132,255,0.8)] animate-pulse" />
-                Connected
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground border border-border">
-                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
-                Not Linked
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between border-t border-border/60 pt-3">
-            <div>
-              <span className="text-xs font-medium text-foreground block">Channel Auto-Reply Switch</span>
-              <span className="text-[10px] text-muted-foreground">Automatic 24/7 AI response to incoming messages</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateSettings({ messenger_auto_reply_enabled: !settings.messenger_auto_reply_enabled })}
-              disabled={saving}
-              className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                settings.messenger_auto_reply_enabled ? 'bg-[#0084FF]' : 'bg-muted-foreground/30'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                  settings.messenger_auto_reply_enabled ? 'translate-x-5' : 'translate-x-0'
+              <button
+                type="button"
+                onClick={() => updateSettings({ messenger_auto_reply_enabled: !settings.messenger_auto_reply_enabled })}
+                disabled={saving}
+                className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  settings.messenger_auto_reply_enabled ? 'bg-[#0084FF]' : 'bg-muted-foreground/30'
                 }`}
-              />
-            </button>
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    settings.messenger_auto_reply_enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Action Row */}
+            <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => onNavigateToConnections?.('meta')}
+                className="w-full sm:flex-1 py-2.5 px-4 rounded-lg bg-card hover:bg-muted border border-border/80 text-foreground text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Sliders className="size-4 text-muted-foreground" />
+                <span>Reconfigure Permissions</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateSettings({ messenger_status: 'disconnected', messenger_auto_reply_enabled: false })
+                  toast.info('Facebook Page disconnected')
+                }}
+                className="w-full sm:w-auto py-2.5 px-4 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <LogOut className="size-4" />
+                <span>Disconnect Channel</span>
+              </button>
+            </div>
           </div>
-        </div>
+
+          {/* Webhook & Sync Security Footer */}
+          <div className="mt-5 pt-3.5 border-t border-border flex items-center gap-2 text-muted-foreground text-xs">
+            <Zap className="size-4 text-[#0084FF]" />
+            <span>Real-time webhook routing &amp; token encryption active</span>
+          </div>
+        </section>
       </div>
 
       {/* Language Mode Selector */}

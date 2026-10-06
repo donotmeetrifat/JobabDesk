@@ -87,7 +87,7 @@ export function AiRouterPanel() {
         </TabsContent>
 
         <TabsContent value="controls">
-          <ChannelControls />
+          <ChannelControls onNavigateToConnections={() => setActiveTab('connections')} />
         </TabsContent>
 
         <TabsContent value="playground">
