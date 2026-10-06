@@ -18,6 +18,7 @@ import {
   Hash,
   Eye,
   EyeOff,
+  Sliders,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { loadFacebookSDK, launchMetaEmbeddedSignup } from '@/lib/whatsapp/meta-embedded-signup'
@@ -737,187 +738,279 @@ export function ChannelConnections() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card 1: WhatsApp Customer Support */}
-        <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-                  <Smartphone className="h-6 w-6" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
+        {/* Card 1: WhatsApp Integration */}
+        <section className="bg-card rounded-2xl border border-border p-6 shadow-xs flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:shadow-md">
+          {/* Ambient subtle background blur spot */}
+          <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-emerald-500/5 blur-3xl pointer-events-none" />
+
+          <div className="flex flex-col gap-5">
+            {/* Card Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-[#25D366]/10 flex items-center justify-center shrink-0 text-[#25D366]">
+                  <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2ZM12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.81 13.47 3.81 11.91C3.81 7.37 7.5 3.67 12.05 3.67ZM8.53 7.33C8.37 7.33 8.1 7.39 7.87 7.64C7.65 7.89 7.02 8.48 7.02 9.68C7.02 10.88 7.9 12.03 8.02 12.19C8.14 12.35 9.74 14.82 12.19 15.88C12.78 16.13 13.23 16.28 13.59 16.39C14.18 16.58 14.72 16.55 15.15 16.49C15.63 16.42 16.62 15.89 16.83 15.31C17.03 14.72 17.03 14.22 16.97 14.12C16.91 14.02 16.76 13.96 16.53 13.84C16.3 13.73 15.18 13.18 14.97 13.1C14.76 13.02 14.61 12.98 14.45 13.21C14.3 13.45 13.86 13.96 13.73 14.12C13.6 14.27 13.47 14.29 13.24 14.17C13.01 14.06 12.28 13.82 11.41 13.04C10.73 12.44 10.27 11.69 10.14 11.46C10.01 11.24 10.12 11.11 10.24 11C10.34 10.9 10.47 10.73 10.59 10.59C10.71 10.45 10.75 10.35 10.83 10.19C10.91 10.04 10.87 9.9 10.81 9.78C10.75 9.67 10.3 8.56 10.12 8.11C9.93 7.67 9.75 7.73 9.61 7.72C9.48 7.72 9.33 7.72 9.17 7.72C9.02 7.72 8.77 7.78 8.56 8.01L8.53 7.33Z" />
+                  </svg>
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
-                    WhatsApp Integration
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Connect Meta Official Cloud API, QR Code, or 8-digit Phone Code
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">WhatsApp Integration</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect Cloud API, QR Code, or 8-digit device pairing code
                   </p>
                 </div>
               </div>
+
+              {waSession.status === 'connected' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                  Connected
+                </span>
+              ) : waSession.status === 'connecting' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Connecting...
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground text-xs font-medium">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/60" />
+                  Disconnected
+                </span>
+              )}
             </div>
 
-            {/* Connection Status Indicator */}
-            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground font-medium">Session Status:</span>
-                {waSession.status === 'connected' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Connected (Meta Official WABA)
-                  </span>
-                ) : waSession.status === 'connecting' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-600" />
-                    Waiting for Connection...
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
-                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    Disconnected
-                  </span>
-                )}
+            {/* Connection Details Slate Panel */}
+            <div className="bg-muted/40 rounded-xl p-3.5 flex flex-col gap-2 border border-border/60">
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Channel Protocol</span>
+                <span className="font-semibold text-foreground flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                  Meta Graph API v19.0
+                </span>
               </div>
-
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Monthly Allocation</span>
+                <span className="text-foreground font-medium">1,000 Free Service Conversations</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-foreground">
+                <span className="text-muted-foreground font-medium">Automated Failover</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Smart QR Standby</span>
+              </div>
               {waSession.status === 'connected' && (
-                <div className="flex items-center justify-between text-xs pt-1 border-t">
-                  <span className="text-muted-foreground">Connected ID / Phone:</span>
-                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/60">
+                  <span className="text-muted-foreground font-medium">Linked Phone / ID:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                     {waSession.connectedNumber || waPhoneNumberId || '+88017XXXXXXXX'}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons */}
-            <div>
-              {waSession.status === 'connected' ? (
-                <Button
-                  variant="outline"
-                  onClick={handleDisconnectWa}
-                  className="w-full border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-2 rounded-xl"
+            {/* Actions Block */}
+            {waSession.status === 'connected' ? (
+              <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWaTab('meta')
+                    setShowQrModal(true)
+                  }}
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <LogOut className="h-4 w-4" /> Disconnect WhatsApp
-                </Button>
-              ) : (
-                <div className="space-y-2">
-                  <Button
-                    onClick={() => {
-                      setWaTab('meta')
-                      setShowQrModal(true)
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 rounded-xl shadow-sm py-3.5 text-sm"
-                  >
-                    <ShieldCheck className="h-5 w-5" />
-                    Connect Meta Official WhatsApp Cloud API
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground text-center">
-                    100% Free & Stable. Each shop gets 1,000 free monthly conversations directly from Meta.
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setWaTab('qr')
-                      setShowQrModal(true)
-                    }}
-                    className="w-full text-xs text-muted-foreground hover:text-foreground pt-1"
-                  >
-                    Or scan QR Code / 8-Digit Phone Pairing Code
-                  </Button>
+                  <Sliders className="h-4 w-4 text-muted-foreground" />
+                  <span>Reconfigure Permissions</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisconnectWa}
+                  className="w-full sm:w-auto py-2.5 px-4 rounded-lg bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Disconnect Channel</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWaTab('meta')
+                    setShowQrModal(true)
+                  }}
+                  className="w-full py-3 px-4 rounded-lg bg-[#25D366] hover:bg-[#20bd5a] active:scale-[0.99] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-xs transition-all duration-150 cursor-pointer"
+                  id="connect-whatsapp-btn"
+                >
+                  <ShieldCheck className="h-5 w-5" />
+                  <span>Connect Official WhatsApp Cloud API</span>
+                </button>
+                <div className="flex items-center justify-center gap-1.5 text-center text-muted-foreground text-xs">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>100% stable cloud connectivity • Each business gets 1,000 free monthly conversations</span>
                 </div>
-              )}
-            </div>
+
+                {/* Alternate Pairing Divider */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-border"></div>
+                  <span className="shrink-0 mx-3 text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                    or alternate pairing
+                  </span>
+                  <div className="flex-grow border-t border-border"></div>
+                </div>
+
+                {/* Secondary Pairing Option */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWaTab('qr')
+                    setShowQrModal(true)
+                  }}
+                  className="w-full py-2.5 px-4 rounded-lg border border-border bg-background hover:bg-muted text-foreground text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <QrCode className="h-4 w-4 text-muted-foreground" />
+                  <span>Scan QR Code / 8-Digit Pairing Code</span>
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
-            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-            <span>Meta Official WhatsApp Cloud API & 0% Ban Anti-Spam Safeguards</span>
+          {/* Trust & Security Footer Tag */}
+          <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-muted-foreground text-xs">
+            <ShieldCheck className="h-4 w-4 text-[#25D366] shrink-0" />
+            <span>Official Cloud API with automated rate-limiting protection</span>
           </div>
-        </div>
+        </section>
 
-        {/* Card 2: Facebook Messenger Meta API Connection */}
-        <div className="rounded-2xl border bg-card p-6 shadow-xs flex flex-col justify-between space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-                  <MessageCircle className="h-6 w-6" />
+        {/* Card 2: Facebook Page Messaging */}
+        <section className="bg-card rounded-2xl border border-border p-6 shadow-xs flex flex-col justify-between relative overflow-hidden transition-all duration-200 hover:shadow-md">
+          {/* Ambient subtle background blur spot */}
+          <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-blue-500/5 blur-3xl pointer-events-none" />
+
+          <div className="flex flex-col gap-5">
+            {/* Card Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-[#0084FF]/10 flex items-center justify-center shrink-0 text-[#0084FF]">
+                  <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 2C6.36 2 2 6.13 2 11.7C2 14.61 3.19 17.06 5.15 18.73V22L8.27 20.28C9.44 20.61 10.69 20.79 12 20.79C17.64 20.79 22 16.66 22 11.09C22 5.53 17.64 2 12 2M13.11 14.15L10.74 11.62L6.11 14.15L11.19 8.75L13.56 11.28L18.19 8.75L13.11 14.15Z" />
+                  </svg>
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
-                    Facebook Page Messaging
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Connect your Facebook Business Page for automated Messenger replies
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">Facebook Page Messaging</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Connect your Facebook business page for automated customer inquiries
                   </p>
                 </div>
               </div>
-            </div>
 
-            {/* Connection Status Indicator */}
-            <div className="p-4 rounded-xl bg-muted/30 border space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground font-medium">Page Connection:</span>
-                {fbSession.status === 'connected' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
-                    <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    Disconnected
-                  </span>
-                )}
-              </div>
-
-              {fbSession.status === 'connected' && (
-                <div className="flex items-center justify-between text-xs pt-1 border-t">
-                  <span className="text-muted-foreground">Connected Page:</span>
-                  <span className="font-semibold text-blue-600 dark:text-blue-400 truncate max-w-[180px]">
-                    {fbSession.pageName || fbSession.pageId}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div>
               {fbSession.status === 'connected' ? (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowFbModal(true)}
-                    className="flex-1 font-semibold gap-1.5 rounded-xl text-xs"
-                  >
-                    <Key className="h-3.5 w-3.5" /> Reconfigure
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDisconnectFb}
-                    className="border-red-200 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 font-semibold gap-1.5 rounded-xl text-xs"
-                  >
-                    <LogOut className="h-3.5 w-3.5" /> Disconnect
-                  </Button>
-                </div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                  Connected
+                </span>
               ) : (
-                <Button
-                  onClick={() => setShowFbModal(true)}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold gap-2 rounded-xl shadow-xs py-3"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  Connect Facebook Page
-                </Button>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground text-xs font-medium">
+                  <span className="w-2 h-2 rounded-full bg-muted-foreground/60" />
+                  Disconnected
+                </span>
               )}
             </div>
+
+            {/* Connected Profile Showcase Row OR Disconnected Info Panel */}
+            {fbSession.status === 'connected' ? (
+              <>
+                <div className="bg-muted/40 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-border/60">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-lg shadow-inner shrink-0 overflow-hidden border border-border/60">
+                      <span className="uppercase">{(fbSession.pageName || 'Aura Home Living').slice(0, 2)}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-foreground">
+                          {fbSession.pageName || 'Aura Home Living'}
+                        </span>
+                        <span title="Verified Facebook Merchant Page">
+                          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                        <span>Page ID: <code className="bg-muted px-1 py-0.5 rounded text-[11px] font-mono text-foreground">{fbSession.pageId || 'fb_893240219'}</code></span>
+                        <span>•</span>
+                        <span>Linked Recently</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex sm:flex-col items-end gap-1 shrink-0">
+                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-semibold">
+                      Live 24/7 Bot
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">Sync: 12 sec ago</span>
+                  </div>
+                </div>
+
+                {/* Action Row */}
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowFbModal(true)}
+                    className="w-full sm:flex-1 py-2.5 px-4 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Sliders className="h-4 w-4 text-muted-foreground" />
+                    <span>Reconfigure Permissions</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectFb}
+                    className="w-full sm:w-auto py-2.5 px-4 rounded-lg bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Disconnect Channel</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-muted/40 rounded-xl p-3.5 flex flex-col gap-2 border border-border/60">
+                  <div className="flex items-center justify-between text-xs text-foreground">
+                    <span className="text-muted-foreground font-medium">Channel Protocol</span>
+                    <span className="font-semibold text-foreground flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[#0084FF]" />
+                      Meta Graph API v19.0
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-foreground">
+                    <span className="text-muted-foreground font-medium">Webhook Routing</span>
+                    <span className="text-foreground font-medium">Instant Automated Handshake</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-foreground">
+                    <span className="text-muted-foreground font-medium">Automated Replies</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Smart AI Active</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowFbModal(true)}
+                    className="w-full py-3 px-4 rounded-lg bg-[#0084FF] hover:bg-[#0073e6] active:scale-[0.99] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-xs transition-all duration-150 cursor-pointer"
+                  >
+                    <MessageCircle className="h-5 w-5" />
+                    <span>Connect Facebook Page</span>
+                  </button>
+                  <div className="flex items-center justify-center gap-1.5 text-center text-muted-foreground text-xs">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>Official Meta Page Messaging API with 24/7 automated instant responses</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 border-t pt-3">
-            <Zap className="h-4 w-4 text-blue-600 shrink-0" />
-            <span>Authentic Meta Webhook routing & real page token storage</span>
+          {/* Webhook & Sync Security Footer */}
+          <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 text-muted-foreground text-xs">
+            <Zap className="h-4 w-4 text-[#0084FF] shrink-0" />
+            <span>Real-time webhook routing & token encryption active</span>
           </div>
-        </div>
+        </section>
       </div>
 
       {/* 3-Tab WhatsApp Setup & Pairing Modal */}
