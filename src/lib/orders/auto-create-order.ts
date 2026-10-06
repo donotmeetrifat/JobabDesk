@@ -90,9 +90,15 @@ export async function detectAndCreateOrderFromChat({
 
   const db = supabase || getAdminClient()
 
-  // 1. Extract contact details from current message & order conversation session
+  // 1. Extract contact details from current message & order conversation session (customer lines only)
   const extracted = extractCustomerInfoFromMessage(messageText)
-  const historyExtracted = extractCustomerInfoFromMessage(conversationHistoryText)
+  const customerOnlyHistoryText = (conversationHistoryText || '')
+    .split('\n')
+    .filter((l) => !/^\s*(?:\[[^\]]+\]\s*)?(?:Salesman|Bot|Assistant|Agent|Shop|AI)\s*:/i.test(l))
+    .map((l) => l.replace(/^\s*(?:\[[^\]]+\]\s*)?(?:Customer|User)\s*:\s*/i, '').trim())
+    .filter(Boolean)
+    .join('\n')
+  const historyExtracted = extractCustomerInfoFromMessage(customerOnlyHistoryText)
 
   let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || historyExtracted.phone || (llmOrderData?.customer_phone && !isFacebookPsid(llmOrderData.customer_phone) ? llmOrderData.customer_phone : null) || null
   let address = customerAddress || extracted.address || historyExtracted.address || llmOrderData?.customer_address || null
@@ -490,12 +496,20 @@ export async function detectAndCreateOrderFromChat({
     if (trimmed.length < 2 || trimmed.length > 50) return false
     if (/^(messenger user|unknown|user|guest|customer|test|admin|owner|null|undefined|none|n\/a)$/i.test(trimmed)) return false
     if (/^\+?\d+$/.test(trimmed)) return false
+    if (/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(trimmed)) return false
+    if (/\b(?:delivery\s*package|package|parcel|share|please|address|phone|email|method|product|item|full\s*name)\b/i.test(trimmed)) return false
+    if (/\b(?:পূর্ণাঙ্গ|ডেলিভারি|ঠিকানা|বাসা\/রোড|থানা|জেলা|বুকিং)\b/i.test(trimmed)) return false
     return true
   }
 
   const hasName = isValidHumanName(resolvedName)
   const hasPhone = Boolean(phone && !isFacebookPsid(phone) && phone.length >= 10)
-  const hasAddress = Boolean(address && address.trim().length >= 5)
+  const hasAddress = Boolean(
+    address &&
+    address.trim().length >= 5 &&
+    !address.endsWith('?') &&
+    !/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস)\b/i.test(address)
+  )
   const hasEmail = Boolean(email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()))
 
   let isOrderComplete = false

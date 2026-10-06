@@ -77,14 +77,23 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     }
   }
 
+  // Helper to reject bot prompt instructions or questions
+  const isTemplateInstruction = (str: string) => {
+    if (!str) return false
+    const s = str.toLowerCase().trim()
+    if (s.endsWith('?')) return true
+    if (/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস|delivery\s*package)\b/i.test(s)) return true
+    return false
+  }
+
   // 3. ADDRESS EXTRACTION
-  // Look for explicit prefix: Address: ..., Adreass: ..., Adress: ..., Addres: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
+  // Look for explicit prefix: Address: ..., Adreess: ..., Adress: ..., Addres: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
   const explicitAddressRegex =
-    /(?:(?:delivery\s*ad{1,2}r?e?a?s{1,2}|shipping\s*ad{1,2}r?e?a?s{1,2}|home\s*ad{1,2}r?e?a?s{1,2}|ad{1,2}r?e?a?s{1,2}|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
+    /(?:(?:delivery\s*add?r?e{1,3}a?s{1,3}|shipping\s*add?r?e{1,3}a?s{1,3}|home\s*add?r?e{1,3}a?s{1,3}|add?r?e{1,3}a?s{1,3}|thikana|ঠিকানা|বাসা|বাসার\s*ঠিকানা|লোকেশন|location)\s*[:=-]\s*)([^\n\r]+)/i
   const explicitMatch = cleanText.match(explicitAddressRegex)
   if (explicitMatch && explicitMatch[1]) {
     const addr = explicitMatch[1].trim()
-    if (addr.length >= 5) {
+    if (addr.length >= 5 && !isTemplateInstruction(addr)) {
       result.address = addr
     }
   }
@@ -106,6 +115,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     for (const line of lines) {
       const trimmedLine = line.trim()
       if (trimmedLine.length < 8) continue
+      if (isTemplateInstruction(trimmedLine)) continue
       if (result.phone && trimmedLine.includes(result.phone)) continue
 
       const lowerLine = trimmedLine.toLowerCase()
@@ -120,7 +130,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   // Clean address prefix if still present
   if (result.address) {
     result.address = result.address
-      .replace(/^(?:(?:delivery\s*|shipping\s*|home\s*)?ad{1,2}r?e?a?s{1,2}|thikana|ঠিকানা|বাসার\s*ঠিকানা|বাসা|লোকেশন|location)\s*[:=-]\s*/i, '')
+      .replace(/^(?:(?:delivery\s*|shipping\s*|home\s*)?add?r?e{1,3}a?s{1,3}|thikana|ঠিকানা|বাসার\s*ঠিকানা|বাসা|লোকেশন|location)\s*[:=-]\s*/i, '')
       .trim()
   }
 
@@ -134,7 +144,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     )
     result.address = result.address
       .replace(stripRegex, '')
-      .replace(/[\s,।|•-]*((?:phone|mobile|cell|contact|call|phn|mob|ph|num(?:ber)?|ফোন|নাম্বার|মোবাইল)[:\s-]*)$/i, '')
+      .replace(/[\s,।|•-]*((?:phone|mobile|cell|contact|call|phn|mob|ph|num(?:ber)?|ফোন|নাম্বার|মোবাইল)[:\\s-]*)$/i, '')
       .replace(/[,\s.]+$/, '')
       .trim()
   }
@@ -147,11 +157,18 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   const suffixMatch = cleanText.match(nameSuffixRegex)
   const candidate = prefixMatch?.[1] || suffixMatch?.[1]
 
-  const INVALID_NAME_WORDS = /^(address|phone|email|cod|bkash|nagad|rocket|order|product|price|taka|dam|koto|delivery|cash|yes|no|ok|haan|ji)$/i
+  const INVALID_NAME_WORDS = /^(?:address|phone|email|cod|bkash|nagad|rocket|order|product|price|taka|dam|koto|delivery|cash|yes|no|ok|haan|ji|for|the|to|in|at|of|package|parcel|delivery\s*package|sir|madam|bhaiya|apu)$/i
 
   if (candidate) {
     const candidateName = candidate.replace(/[\n\r,।|•].*$/, '').trim()
-    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http') && !INVALID_NAME_WORDS.test(candidateName)) {
+    if (
+      candidateName.length >= 2 &&
+      !candidateName.toLowerCase().startsWith('http') &&
+      !INVALID_NAME_WORDS.test(candidateName) &&
+      !isTemplateInstruction(candidateName) &&
+      !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(candidateName) &&
+      !/\b(?:delivery\s*package|package|parcel|share|please|address|phone|email|method|product|item)\b/i.test(candidateName)
+    ) {
       result.name = candidateName
     }
   }
@@ -166,7 +183,9 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
         firstLine.length <= 35 &&
         !/\d/.test(firstLine) &&
         !/[@:=-]/.test(firstLine) &&
-        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket)\b/i.test(firstLine) &&
+        !isTemplateInstruction(firstLine) &&
+        !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(firstLine) &&
+        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|package|parcel|share|please)\b/i.test(firstLine) &&
         /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(firstLine)
       ) {
         result.name = firstLine
@@ -178,7 +197,9 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
         singleLine.length <= 35 &&
         !/\d/.test(singleLine) &&
         !/[@:=-]/.test(singleLine) &&
-        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|yes|no|ok)\b/i.test(singleLine) &&
+        !isTemplateInstruction(singleLine) &&
+        !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(singleLine) &&
+        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|yes|no|ok|package|parcel|share|please)\b/i.test(singleLine) &&
         /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(singleLine)
       ) {
         result.name = singleLine

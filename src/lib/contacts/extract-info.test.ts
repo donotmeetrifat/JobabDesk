@@ -28,4 +28,22 @@ COD`
     const info = extractCustomerInfoFromMessage('Rifat Hasan')
     expect(info.name).toBe('Rifat Hasan')
   })
+
+  it('rejects bot instructions or template questions from being extracted as name or address', () => {
+    const promptText = 'আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা) জানিয়ে দিন?'
+    const info = extractCustomerInfoFromMessage(promptText)
+    expect(info.name).toBeUndefined()
+    expect(info.address).toBeUndefined()
+  })
+
+  it('rejects "delivery package" or phrases like "order din" from being treated as names', () => {
+    const info = extractCustomerInfoFromMessage('delivery package for you')
+    expect(info.name).toBeUndefined()
+  })
+
+  it('extracts email cleanly without false positives', () => {
+    const info = extractCustomerInfoFromMessage('Amar email: customer123@gmail.com phone: 01711223344')
+    expect(info.email).toBe('customer123@gmail.com')
+    expect(info.phone).toBe('+8801711223344')
+  })
 })
