@@ -38,24 +38,28 @@ interface MessengerStatus {
 }
 
 export function ChannelConnections() {
-  const [waSession, setWaSession] = useState<WhatsAppStatus>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('jobabdesk_wa_session')
-        if (cached) return JSON.parse(cached)
-      } catch {}
-    }
-    return { status: 'disconnected', qrCode: '', connectedNumber: '' }
+  const [waSession, setWaSession] = useState<WhatsAppStatus>({
+    status: 'disconnected',
+    qrCode: '',
+    connectedNumber: '',
   })
-  const [fbSession, setFbSession] = useState<MessengerStatus>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem('jobabdesk_fb_session')
-        if (cached) return JSON.parse(cached)
-      } catch {}
-    }
-    return { status: 'disconnected', pageId: '', pageName: '' }
+  const [fbSession, setFbSession] = useState<MessengerStatus>({
+    status: 'disconnected',
+    pageId: '',
+    pageName: '',
   })
+
+  // Safe client hydration for cached local sessions
+  useEffect(() => {
+    try {
+      const cachedWa = localStorage.getItem('jobabdesk_wa_session')
+      if (cachedWa) setWaSession(JSON.parse(cachedWa))
+    } catch {}
+    try {
+      const cachedFb = localStorage.getItem('jobabdesk_fb_session')
+      if (cachedFb) setFbSession(JSON.parse(cachedFb))
+    } catch {}
+  }, [])
 
   const [loadingWa, setLoadingWa] = useState(false)
   const [loadingFb, setLoadingFb] = useState(false)

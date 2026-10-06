@@ -215,32 +215,49 @@ export function BusinessSetup({ onNavigateToPlayground, onReadinessChange }: Bus
     })
   }
 
+  // Live Simulated Persona Preview Text
+  const simulatedMessage = useMemo(() => {
+    const storeName = (settings.name || '').trim() || 'Aura Home Living'
+    const topCategories = tags.length > 0 ? tags.slice(0, 2).join(', ').toLowerCase() : 'custom ceramics, lighting recommendations'
+    const relationStyle = settings.customer_relation_style || ''
+    if (relationStyle.includes('Sir/Madam')) {
+      return `“Hello Sir/Madam! Welcome to ${storeName}. Are you looking for ${topCategories}, catalog recommendations, or need an update on an existing order? I am pleased to assist you.”`
+    }
+    if (relationStyle.includes('Bhai/Apu')) {
+      return `“আসসালামু আলাইকুম ভাইয়া/আপু! ${storeName}-এ আপনাকে স্বাগতম। আপনি কি ${topCategories} সম্পর্কিত কোনো তথ্য বা আপনার অর্ডারের আপডেট খুঁজছেন? আমি আপনাকে সাহায্য করতে পেরে আনন্দিত!”`
+    }
+    if (relationStyle.includes('Direct')) {
+      return `“Hi! Welcome to ${storeName}. Check out our featured ${topCategories} or reply with your order number to track delivery instantly.”`
+    }
+    return `“Hello! Welcome to ${storeName}. Are you looking for ${topCategories}, or need an update on an existing order? I’m delighted to help you find the perfect piece!”`
+  }, [settings.name, settings.customer_relation_style, tags])
+
   // Compiled System Prompt for Preview
   const compiledPrompt = useMemo(() => {
     return `=== STORE IDENTITY & CORE KNOWLEDGE ===
-Store Name: ${settings.name.trim() || '(Not set yet)'}
-Tagline: ${settings.business_tagline.trim() || 'N/A'}
-Description: ${settings.ai_business_description.trim() || 'N/A'}
-Product Categories: ${settings.product_categories_sold.trim() || 'All catalog inventory'}
+Store Name: ${(settings.name || '').trim() || '(Not set yet)'}
+Tagline: ${(settings.business_tagline || '').trim() || 'N/A'}
+Description: ${(settings.ai_business_description || '').trim() || 'N/A'}
+Product Categories: ${(settings.product_categories_sold || '').trim() || 'All catalog inventory'}
 
 === AUDIENCE & CONVERSATIONAL PERSONA ===
-Target Audience: ${settings.target_audience.trim() || 'All shoppers'}
-Formality & Salutation: ${settings.customer_relation_style}
-Language & Tone Style: ${settings.ai_persona}
-Sample Greeting / Persona Style: ${settings.simulated_persona_preview.trim() || simulatedMessage}
+Target Audience: ${(settings.target_audience || '').trim() || 'All shoppers'}
+Formality & Salutation: ${settings.customer_relation_style || 'N/A'}
+Language & Tone Style: ${settings.ai_persona || 'N/A'}
+Sample Greeting / Persona Style: ${(settings.simulated_persona_preview || '').trim() || simulatedMessage}
 
 === SHIPPING & LOGISTICS SLA ===
-${settings.delivery_policy.trim() || 'Standard delivery terms apply.'}
+${(settings.delivery_policy || '').trim() || 'Standard delivery terms apply.'}
 
 === RETURN, EXCHANGE & REFUNDS ===
-${settings.return_policy.trim() || 'Contact support for return inquiries.'}
+${(settings.return_policy || '').trim() || 'Contact support for return inquiries.'}
 
 === PAYMENT & CHECKOUT INSTRUCTIONS ===
-${settings.special_instructions.trim() || 'Cash on Delivery and Mobile Banking accepted.'}
+${(settings.special_instructions || '').trim() || 'Cash on Delivery and Mobile Banking accepted.'}
 
 === HUMAN ESCALATION PROTOCOL ===
-${settings.ai_store_instructions.trim() || 'If customer requests custom handling, tag #NeedsHumanLead and escalate.'}`
-  }, [settings])
+${(settings.ai_store_instructions || '').trim() || 'If customer requests custom handling, tag #NeedsHumanLead and escalate.'}`
+  }, [settings, simulatedMessage])
 
   const copyPromptToClipboard = () => {
     void navigator.clipboard.writeText(compiledPrompt)
@@ -248,22 +265,6 @@ ${settings.ai_store_instructions.trim() || 'If customer requests custom handling
     setTimeout(() => setCopiedPrompt(false), 2000)
     toast.success('System prompt copied to clipboard!')
   }
-
-  // Live Simulated Persona Preview Text
-  const simulatedMessage = useMemo(() => {
-    const storeName = settings.name.trim() || 'Aura Home Living'
-    const topCategories = tags.length > 0 ? tags.slice(0, 2).join(', ').toLowerCase() : 'custom ceramics, lighting recommendations'
-    if (settings.customer_relation_style.includes('Sir/Madam')) {
-      return `“Hello Sir/Madam! Welcome to ${storeName}. Are you looking for ${topCategories}, catalog recommendations, or need an update on an existing order? I am pleased to assist you.”`
-    }
-    if (settings.customer_relation_style.includes('Bhai/Apu')) {
-      return `“আসসালামু আলাইকুম ভাইয়া/আপু! ${storeName}-এ আপনাকে স্বাগতম। আপনি কি ${topCategories} সম্পর্কিত কোনো তথ্য বা আপনার অর্ডারের আপডেট খুঁজছেন? আমি আপনাকে সাহায্য করতে পেরে আনন্দিত!”`
-    }
-    if (settings.customer_relation_style.includes('Direct')) {
-      return `“Hi! Welcome to ${storeName}. Check out our featured ${topCategories} or reply with your order number to track delivery instantly.”`
-    }
-    return `“Hello! Welcome to ${storeName}. Are you looking for ${topCategories}, or need an update on an existing order? I’m delighted to help you find the perfect piece!”`
-  }, [settings.name, settings.customer_relation_style, tags])
 
   if (loading) {
     return (

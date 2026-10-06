@@ -34,7 +34,7 @@ export function SandboxAndLogs() {
       id: 'welcome-1',
       sender: 'ai',
       text: 'Hello! I am your Multi-Language AI Assistant. Ask me anything in English, Bengali (বাংলা), or Banglish!',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: 'Just now',
       detectedLanguage: 'en',
       intentDetected: 'general_faq',
       providerUsed: 'gemini',
