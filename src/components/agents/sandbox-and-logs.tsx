@@ -22,8 +22,6 @@ const PRIMARY_LOGO = '/logo.png'
 const FALLBACK_LOGO =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuBwlphn8_lGOmoT1WzuKQCi6OWITBE7ur_-mHUR3Pqg9-uTidribbppFAWbAAPtwQjSlMlFI3V7LZqDDb1Mj9eseOOsdDY_RUyKnYvlz-jrEN9LPQvFoBkPfLejgB1_WWl5HSD_HLe5f_OtZ3QXl7yQcBp5UKs8fvi_qk5u8Wv9xMFqbKgAKCi9Y5hWSJC2sTnF6cGCbtUf_3UoFEajD0QYeQq_kWuQtLEtzW5-K3nDGxHB-eX8tXVmfBLxCK2VkFdIqLo'
 
-const STORAGE_KEY = 'jobabdesk_playground_history'
-
 function JobabLogoAvatar({ size = 'md', className = '' }: { size?: 'sm' | 'md'; className?: string }) {
   const [src, setSrc] = useState(PRIMARY_LOGO)
   const isSm = size === 'sm'
@@ -50,43 +48,49 @@ function JobabLogoAvatar({ size = 'md', className = '' }: { size?: 'sm' | 'md'; 
   )
 }
 
+// Generates an initial multi-lingual set (English, Bangla, Banglish) based on the store's business data
 function getInitialQueries(store: string, categoriesStr: string): string[] {
   const categories = categoriesStr
     ? categoriesStr.split(',').map((c) => c.trim()).filter(Boolean)
     : []
 
-  if (categories.length >= 2) {
+  const item1 = categories[0]
+  const item2 = categories[1] || categories[0]
+
+  if (item1) {
     return [
-      `"${categories[0]} এর দাম কত?"`,
-      `"${categories[1]} স্টকে আছে কি?"`,
-      `"ডেলিভারি চার্জ কত এবং কত দিন লাগবে?"`,
-      `"ক্যাশ অন ডেলিভারি (COD) অ্যাভেইলেবল?"`,
-    ]
-  } else if (categories.length === 1) {
-    return [
-      `"${categories[0]} এর প্রাইস ও ভ্যারিয়েন্ট কী কী?"`,
-      `"ডেলিভারি চার্জ কত এবং সারা বাংলাদেশে ডেলিভারি দেন?"`,
-      `"রিটার্ন বা এক্সচেঞ্জ পলিসি কী?"`,
-      `"Do you accept bKash or COD?"`,
+      // 1. Banglish
+      `"${item1} er price koto ar stock e ache?"`,
+      // 2. বাংলা (Pure Bengali)
+      `"${item2 ? item2 + ' এর' : 'প্রোডাক্টের'} ডেলিভারি চার্জ কত এবং কত দিন লাগবে?"`,
+      // 3. English
+      `"Do you accept bKash or Cash on Delivery?"`,
+      // 4. Banglish
+      `"bhai delivery charge koto ar return policy ki?"`,
     ]
   }
 
   return [
-    `"${store} এ কী কী প্রোডাক্ট পাওয়া যায়?"`,
-    `"ডেলিভারি চার্জ কত এবং কত দিন সময় লাগে?"`,
-    `"কোন কোন পেমেন্ট মেথড এক্সেপ্ট করেন?"`,
-    `"রিটার্ন বা রিপ্লেসমেন্ট পলিসি কী?"`,
+    // 1. Banglish
+    `"bhai delivery charge koto ar return policy ki?"`,
+    // 2. বাংলা (Pure Bengali)
+    `"আপনাদের শপে কী কী প্রোডাক্ট অ্যাভেইলেবল আছে?"`,
+    // 3. English
+    `"Do you accept bKash or Cash on Delivery?"`,
+    // 4. Banglish
+    `"Dhaka er baire delivery charge koto ar koto din lage?"`,
   ]
 }
 
+// Generates dynamic follow-up suggestions across English, বাংলা, and Banglish based on the conversation
 function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: string, categoriesStr: string): string[] {
   const text = (lastUserMsg + ' ' + lastAiReply).toLowerCase()
   const categories = categoriesStr
     ? categoriesStr.split(',').map((c) => c.trim()).filter(Boolean)
     : []
-  const topCat = categories[0] || 'প্রোডাক্ট'
+  const topCat = categories[0] || 'product'
 
-  // If user/AI discussed delivery / shipping
+  // If discussing delivery / shipping
   if (
     text.includes('delivery') ||
     text.includes('ডেলিভারি') ||
@@ -95,14 +99,18 @@ function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: s
     text.includes('dhaka')
   ) {
     return [
-      `"ঢাকার বাইরে কত দিনে ডেলিভারি পাবো?"`,
-      `"ফ্রি ডেলিভারি পেতে কত টাকার অর্ডার করতে হবে?"`,
-      `"ক্যাশ অন ডেলিভারিতে প্রোডাক্ট চেক করে নেওয়া যাবে?"`,
-      `"অর্ডার কনফার্ম করার নিয়ম কী?"`,
+      // Banglish
+      `"Dhaka er baire delivery charge koto?"`,
+      // বাংলা
+      `"ঢাকার ভেতরে কত দিনে ডেলিভারি পাওয়া যাবে?"`,
+      // English
+      `"Is Cash on Delivery available all over Bangladesh?"`,
+      // Banglish
+      `"delivery man ashle package check kora jabe?"`,
     ]
   }
 
-  // If user/AI discussed price / product / stock
+  // If discussing price / product / stock
   if (
     text.includes('dam') ||
     text.includes('দাম') ||
@@ -114,14 +122,18 @@ function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: s
     text.includes('tk')
   ) {
     return [
-      `"এই প্রোডাক্টের কোন ডিসকাউন্ট অফার চলছে?"`,
-      `"আর কী কী কালার বা ভ্যারিয়েন্ট অ্যাভেইলেবল আছে?"`,
-      `"অর্ডার করতে কী কী ইনফরমেশন লাগবে?"`,
-      `"ঢাকার ভেতরে ডেলিভারি চার্জ কত?"`,
+      // Banglish
+      `"bhai eitate kono discount offer ache?"`,
+      // বাংলা
+      `"আর কী কী কালার বা ভ্যারিয়েন্ট স্টকে রয়েছে?"`,
+      // English
+      `"How can I confirm my order right now?"`,
+      // Banglish
+      `"Dhaka er moddhe delivery fee koto?"`,
     ]
   }
 
-  // If user/AI discussed return / refund / warranty
+  // If discussing return / refund / warranty
   if (
     text.includes('return') ||
     text.includes('রিটার্ন') ||
@@ -131,14 +143,18 @@ function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: s
     text.includes('refund')
   ) {
     return [
-      `"প্রোডাক্টে সমস্যা পেলে কত দিনের মধ্যে জানাতে হবে?"`,
-      `"রিটার্ন করার সময় ডেলিভারি চার্জ কে দিবে?"`,
-      `"টাকা রিফান্ড পেতে কত দিন সময় লাগে?"`,
-      `"কাস্টমার সার্ভিসে সরাসরি যোগাযোগ করবো কীভাবে?"`,
+      // English
+      `"How many days do I have to request a return?"`,
+      // বাংলা
+      `"রিটার্ন করার সময় ডেলিভারি চার্জ কে দেবে?"`,
+      // Banglish
+      `"product damaged thakle exchange kivabe korbo?"`,
+      // English
+      `"Can I contact your customer support hotline?"`,
     ]
   }
 
-  // If user/AI discussed payment / bKash / Nagad / checkout
+  // If discussing payment / bKash / Nagad / checkout
   if (
     text.includes('bkash') ||
     text.includes('nagad') ||
@@ -148,14 +164,18 @@ function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: s
     text.includes('টাকা')
   ) {
     return [
-      `"অগ্রিম কত টাকা দিতে হবে নাকি পুরোটা ক্যাশ অন ডেলিভারি?"`,
-      `"পেমেন্ট করার পর ট্রানজেকশন আইডি কীভাবে দিবো?"`,
-      `"ডেলিভারি চার্জ কি আগে দিতে হয়?"`,
-      `"আমার অর্ডার ট্র্যাকিং নাম্বার কীভাবে পাবো?"`,
+      // Banglish
+      `"advance payment koto taka dite hobe?"`,
+      // বাংলা
+      `"বিকাশ মার্চেন্ট নাম্বারে কীভাবে পেমেন্ট করবো?"`,
+      // English
+      `"Do you accept Visa/Mastercard or only bKash/COD?"`,
+      // Banglish
+      `"payment confirmation message kokhon pabo?"`,
     ]
   }
 
-  // If user/AI discussed order confirmation
+  // If discussing order placement or confirmation
   if (
     text.includes('order') ||
     text.includes('অর্ডার') ||
@@ -164,27 +184,27 @@ function getContextualQueries(lastUserMsg: string, lastAiReply: string, store: s
     text.includes('confirm')
   ) {
     return [
-      `"আমার নাম, ঠিকানা ও ফোন নাম্বার কীভাবে পাঠাবো?"`,
-      `"অর্ডার কনফার্ম হতে কতক্ষণ সময় লাগবে?"`,
-      `"ডেলিভারি ম্যান কি কল দিয়ে আসবে?"`,
-      `"ক্যান্সেল করতে চাইলে কীভাবে করবো?"`,
+      // Banglish
+      `"amar address ar phone number kivabe pathabo?"`,
+      // English
+      `"How long does it take to dispatch my package?"`,
+      // বাংলা
+      `"অর্ডার কনফার্ম করার পর ট্র্যাকিং কোড পাবো?"`,
+      // Banglish
+      `"urgent delivery deya shombhob?"`,
     ]
   }
 
-  if (categories.length > 1) {
-    return [
-      `"আপনাদের ${categories[1]} দেখতে পারি?"`,
-      `"বর্তমান অফার বা প্রোমো কোড আছে কি?"`,
-      `"ডেলিভারি কত দিনের মধ্যে পাওয়া যাবে?"`,
-      `"অর্ডার করার প্রক্রিয়া বুঝিয়ে বলুন"`,
-    ]
-  }
-
+  // Default rich multi-lingual fallback
   return [
-    `"${topCat} এর স্পেসিফিকেশন জানতে চাই"`,
-    `"ডেলিভারি চার্জ ও পেমেন্ট প্রসেস কী?"`,
-    `"রিটার্ন বা ওয়ারেন্টি সুবিধা আছে কি?"`,
-    `"অর্ডার কনফার্ম করতে কী করতে হবে?"`,
+    // Banglish
+    `"${topCat} er details specifications jante chai"`,
+    // বাংলা
+    `"ডেলিভারি চার্জ এবং রিটার্ন পলিসি কী?"`,
+    // English
+    `"Do you provide cash on delivery across Bangladesh?"`,
+    // Banglish
+    `"order confirm korar process ta bolen"`,
   ]
 }
 
@@ -196,7 +216,6 @@ export function SandboxAndLogs() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [promptChips, setPromptChips] = useState<string[]>([])
   const chatStreamRef = useRef<HTMLDivElement>(null)
-  const isHydratedRef = useRef(false)
 
   // 1. Fetch real business identity and settings
   useEffect(() => {
@@ -214,36 +233,17 @@ export function SandboxAndLogs() {
       })
   }, [])
 
-  // 2. Chat history persistence with localStorage
+  // 2. Fetch persistent chat history from the user's account in the database (Server-side Account Storage)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed)
+    fetch('/api/ai/playground')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages)
         }
-      }
-    } catch {
-      // Ignore localStorage read errors
-    }
+      })
+      .catch(() => {})
   }, [])
-
-  useEffect(() => {
-    if (!isHydratedRef.current) {
-      isHydratedRef.current = true
-      return
-    }
-    try {
-      if (messages.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // Ignore localStorage write errors
-    }
-  }, [messages])
 
   // 3. Scroll to bottom smoothly on message updates
   useEffect(() => {
@@ -287,9 +287,14 @@ export function SandboxAndLogs() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
 
-      setMessages((prev) => [...prev, aiMsg])
+      // If the backend returned updated account messages, sync with them
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        setMessages(data.messages)
+      } else {
+        setMessages((prev) => [...prev, aiMsg])
+      }
 
-      // Dynamically update suggested queries based on the conversation
+      // Dynamically update suggested queries across English, Bangla, and Banglish
       const nextQueries = getContextualQueries(text, aiReplyText, storeName, productCategories)
       setPromptChips(nextQueries)
     } catch {
@@ -307,13 +312,15 @@ export function SandboxAndLogs() {
     }
   }
 
-  // 5. Clear Chat Handler
-  function handleClearChat() {
+  // 5. Clear Chat Handler (Deletes from Account in Database)
+  async function handleClearChat() {
     setMessages([])
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {}
     setPromptChips(getInitialQueries(storeName, productCategories))
+    try {
+      await fetch('/api/ai/playground', { method: 'DELETE' })
+    } catch (e) {
+      console.warn('Could not clear account playground messages in database:', e)
+    }
   }
 
   return (
@@ -347,7 +354,7 @@ export function SandboxAndLogs() {
               type="button"
               id="clearChatBtn"
               onClick={handleClearChat}
-              title="Clear Chat History"
+              title="Clear Chat History from Account"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 text-xs font-medium transition-colors border border-border/60 hover:border-rose-500/20"
             >
               <Trash2 className="size-3.5" />
@@ -432,7 +439,7 @@ export function SandboxAndLogs() {
           )}
         </div>
 
-        {/* Dynamic Suggested Queries Section */}
+        {/* Dynamic Multi-Lingual Suggested Queries Section (English, Bangla, Banglish) */}
         {promptChips.length > 0 && (
           <div className="px-6 py-3 bg-card border-t border-border/80">
             <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground font-medium">
