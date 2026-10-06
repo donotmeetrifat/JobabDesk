@@ -140,11 +140,18 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   }
 
   // 4. NAME EXTRACTION
-  const nameRegex = /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|name\s*[:=-]|naam\s*[:=-]|na+m\s*[:=-]|নাম\s*[:=-]|কাস্টমার\s*নাম\s*[:=-]|customer\s*name\s*[:=-])\s*)([a-zA-Z\s\u0980-\u09FF]{2,35})/i
-  const nameMatch = cleanText.match(nameRegex)
-  if (nameMatch && nameMatch[1]) {
-    const candidateName = nameMatch[1].replace(/[\n\r,।|•-].*$/, '').trim()
-    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http') && !/^(address|phone|email|cod|bkash|nagad|order)$/i.test(candidateName)) {
+  const namePrefixRegex = /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|(?:full\s*name|delivery\s*name|customer\s*name|name|naam|na+m|নাম|কাস্টমার\s*নাম)\s*(?:is|holo|hoche|hobe|:|=|-)?)\s*)([a-zA-Z.\s\u0980-\u09FF]{2,35})/i
+  const nameSuffixRegex = /^([a-zA-Z.\s\u0980-\u09FF]{2,35})\s+(?:is\s*(?:the|my)?\s*(?:full\s*)?name|amar\s*na+m|hoche\s*amar\s*na+m|holo\s*amar\s*na+m)/i
+
+  const prefixMatch = cleanText.match(namePrefixRegex)
+  const suffixMatch = cleanText.match(nameSuffixRegex)
+  const candidate = prefixMatch?.[1] || suffixMatch?.[1]
+
+  const INVALID_NAME_WORDS = /^(address|phone|email|cod|bkash|nagad|rocket|order|product|price|taka|dam|koto|delivery|cash|yes|no|ok|haan|ji)$/i
+
+  if (candidate) {
+    const candidateName = candidate.replace(/[\n\r,।|•].*$/, '').trim()
+    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http') && !INVALID_NAME_WORDS.test(candidateName)) {
       result.name = candidateName
     }
   }
@@ -159,10 +166,22 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
         firstLine.length <= 35 &&
         !/\d/.test(firstLine) &&
         !/[@:=-]/.test(firstLine) &&
-        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad)\b/i.test(firstLine) &&
-        /^[a-zA-Z\s\u0980-\u09FF]+$/.test(firstLine)
+        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket)\b/i.test(firstLine) &&
+        /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(firstLine)
       ) {
         result.name = firstLine
+      }
+    } else if (lines.length === 1) {
+      const singleLine = lines[0]
+      if (
+        singleLine.length >= 2 &&
+        singleLine.length <= 35 &&
+        !/\d/.test(singleLine) &&
+        !/[@:=-]/.test(singleLine) &&
+        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|yes|no|ok)\b/i.test(singleLine) &&
+        /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(singleLine)
+      ) {
+        result.name = singleLine
       }
     }
   }

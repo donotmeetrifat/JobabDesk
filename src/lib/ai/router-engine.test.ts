@@ -174,3 +174,17 @@ describe('router-engine formatRelativeMessageTime', () => {
     expect(formatRelativeMessageTime('invalid-date')).toBe('')
   })
 })
+
+describe('router-engine checkout info extraction and language persistence', () => {
+  it('persists Bengali language when customer sends English-script address and checkout details', () => {
+    const history = 'Bot: ধন্যবাদ! number 7 radiance এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ৪টি তথ্য জানিয়ে দিন:'
+    const checkoutMsg = `Rifat\nAdreess: Mirpur 14,Muktijuddho sarok,Master goli,CB-204/A\n+880 1613-441083\nCOD`
+    expect(detectLanguage(checkoutMsg, history)).toBe('bn')
+  })
+
+  it('persists Bengali language on follow-up full name answer', () => {
+    const history = 'Bot: ধন্যবাদ! পার্সেল বুকিংয়ের জন্য অনুগ্রহ করে আপনার পুরো নামটি (Delivery Name) জানিয়ে দিন।'
+    expect(detectLanguage('rifat is the full name', history)).toBe('bn')
+  })
+})
+

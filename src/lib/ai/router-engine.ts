@@ -152,14 +152,27 @@ export function detectLanguage(
       return 'banglish'
     }
 
+    const historyBnMatch = recentHistory?.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
+    const isHistoryBengali = Boolean(historyBnMatch && historyBnMatch.length > 5)
+
+    // In Bangladesh, customers often send addresses, names, COD, and short replies in English characters
+    // even during an active Bengali conversation. Maintain Bengali unless customer explicitly requested English.
+    const isCheckoutOrShortReply =
+      clean.length < 80 ||
+      /\b(?:address|adreess|phone|phn|mobile|cod|cash|delivery|bkash|nagad|name|naam|trx|trxid|road|basha|thana|goli|sarok|dhaka|mirpur)\b/i.test(clean) ||
+      /\d{5,}/.test(clean)
+
+    if (isHistoryBengali && !englishRequestRegex.test(clean) && isCheckoutOrShortReply) {
+      return 'bn'
+    }
+
     if (englishScore > 0 && englishScore >= banglishScore) {
       return 'en'
     }
 
     // If ambiguous (e.g. only product name or numbers), check conversation history
     if (recentHistory) {
-      const historyBnMatch = recentHistory.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
-      if (historyBnMatch && historyBnMatch.length > 5) return 'bn'
+      if (isHistoryBengali) return 'bn'
 
       const histWords = recentHistory.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
       let histBanglish = 0
@@ -1692,7 +1705,7 @@ Set "order": null if the customer is merely asking a question without ordering o
     if (!n) return false
     const trimmed = n.trim()
     if (trimmed.length < 2 || trimmed.length > 50) return false
-    if (/^(messenger user|unknown|user|guest|customer|test|rifat|admin|owner|null|undefined)$/i.test(trimmed)) return false
+    if (/^(messenger user|unknown|user|guest|customer|test|admin|owner|null|undefined|none|n\/a)$/i.test(trimmed)) return false
     if (/^\+?\d+$/.test(trimmed)) return false
     return true
   }

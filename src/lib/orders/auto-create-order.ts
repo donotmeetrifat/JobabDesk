@@ -488,7 +488,7 @@ export async function detectAndCreateOrderFromChat({
     if (!n) return false
     const trimmed = n.trim()
     if (trimmed.length < 2 || trimmed.length > 50) return false
-    if (/^(messenger user|unknown|user|guest|customer|test|rifat|admin|owner|null|undefined)$/i.test(trimmed)) return false
+    if (/^(messenger user|unknown|user|guest|customer|test|admin|owner|null|undefined|none|n\/a)$/i.test(trimmed)) return false
     if (/^\+?\d+$/.test(trimmed)) return false
     return true
   }
