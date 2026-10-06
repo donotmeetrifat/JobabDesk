@@ -1696,6 +1696,8 @@
       "unknownError": "Unknown error",
       "displayName": "Display name",
       "email": "Email",
+      "cannotBeChanged": "Cannot be changed",
+      "emailReadOnlyHint": "Email is permanently linked to your account and cannot be edited.",
       "emailChangeHint": "Check the inbox for <bold>{oldEmail}</bold> and <bold>{newEmail}</bold> — both need to confirm before the change takes effect.",
       "accountDetails": "Account details",
       "role": "Role",

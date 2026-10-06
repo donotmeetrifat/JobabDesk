@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, Mail, CircleAlert } from 'lucide-react';
+import { Loader2, Upload, Trash2, Lock, CircleAlert } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -27,11 +27,6 @@ const ALLOWED_MIME = new Set([
   'image/gif',
 ]);
 
-// Rough email shape check — the real validator is Supabase Auth, which
-// rejects anything malformed when we call updateUser({ email }). We
-// just want to stop obvious typos before making a network call.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export function ProfileForm() {
   const t = useTranslations('Settings.profile');
   const { user, profile, refreshProfile } = useAuth();
@@ -44,7 +39,6 @@ export function ProfileForm() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [emailChangePending, setEmailChangePending] = useState(false);
 
   // Seed form state once the profile loads.
   useEffect(() => {
@@ -107,11 +101,6 @@ export function ProfileForm() {
       toast.error(t('nameRequired'));
       return;
     }
-    const trimmedEmail = email.trim();
-    if (!EMAIL_RE.test(trimmedEmail)) {
-      toast.error(t('invalidEmail'));
-      return;
-    }
 
     setSaving(true);
     try {
@@ -152,38 +141,12 @@ export function ProfileForm() {
         throw new Error(t('saveFailed', { message: updateError.message }));
       }
 
-      // Email change goes through Supabase Auth, which emails a
-      // confirmation to both the old and new addresses. We don't
-      // touch profiles.email — Supabase will push the change there
-      // after the user clicks the link (handled by the handle_new_user
-      // trigger pattern in production deployments).
-      let emailSent = false;
-      if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
-        const { error: emailError } = await supabase.auth.updateUser({
-          email: trimmedEmail,
-        });
-        if (emailError) {
-          // Partial success: name/avatar saved but email didn't.
-          toast.success(t('profileSaved'));
-          toast.error(t('emailChangeFailed', { message: emailError.message }));
-          setSaving(false);
-          await refreshProfile();
-          return;
-        }
-        emailSent = true;
-      }
-
-      setEmailChangePending(emailSent);
       setPendingAvatar(null);
       setPreviewUrl(null);
       setRemoveAvatar(false);
       await refreshProfile();
 
-      toast.success(
-        emailSent
-          ? t('profileSavedEmailCheck')
-          : t('profileSaved'),
-      );
+      toast.success(t('profileSaved'));
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('unknownError');
       toast.error(msg);
@@ -195,7 +158,6 @@ export function ProfileForm() {
   const dirty =
     !!profile &&
     (fullName.trim() !== (profile.full_name ?? '') ||
-      email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
       pendingAvatar !== null ||
       removeAvatar);
 
@@ -278,31 +240,28 @@ export function ProfileForm() {
             />
           </div>
 
-          {/* Email */}
+          {/* Email — permanent identifier, cannot be modified */}
           <div className="space-y-2">
-            <Label htmlFor="profile-email" className="text-foreground">
-              {t('email')}
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="profile-email" className="text-foreground">
+                {t('email')}
+              </Label>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Lock className="size-3" />
+                {t('cannotBeChanged')}
+              </span>
+            </div>
             <Input
               id="profile-email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={saving}
-              required
+              disabled
+              readOnly
+              className="cursor-not-allowed bg-muted/60 text-muted-foreground select-all"
             />
-            {emailChangePending && (
-              <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                <Mail className="mt-0.5 size-3.5 shrink-0" />
-                <span>
-                  {t.rich('emailChangeHint', { 
-                    oldEmail: profile?.email || '', 
-                    newEmail: email,
-                    bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
-                  })}
-                </span>
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              {t('emailReadOnlyHint')}
+            </p>
           </div>
 
           {/* Read-only block */}

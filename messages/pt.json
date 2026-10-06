@@ -1689,6 +1689,8 @@
       "unknownError": "Erro desconhecido",
       "displayName": "Nome de exibição",
       "email": "E-mail",
+      "cannotBeChanged": "Não pode ser alterado",
+      "emailReadOnlyHint": "O e-mail está permanentemente vinculado à sua conta e não pode ser editado.",
       "emailChangeHint": "Verifique as caixas de entrada de <bold>{oldEmail}</bold> e <bold>{newEmail}</bold> — ambas precisam confirmar antes que a alteração entre em vigor.",
       "accountDetails": "Detalhes da conta",
       "role": "Função",
