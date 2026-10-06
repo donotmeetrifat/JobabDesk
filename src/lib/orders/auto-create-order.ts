@@ -250,6 +250,8 @@ export async function detectAndCreateOrderFromChat({
 
   const NON_PRODUCT_WORDS = /^(bkash|b-kash|b_kash|বিকাশ|nagad|নগদ|rocket|রকেট|upay|উপায়|cod|cash on delivery|ক্যাশ|ক্যাশ অন ডেলিভারি|delivery|charge|fee|subtotal|total|discount|phone|mobile|number|address|contact|order|taka|tk|bdt|bangladesh|customer order)$/i
 
+  const fullText = `${conversationHistoryText || ''}\n${messageText || ''}`.trim()
+
   // 3. Resolve Items
   let items: ExtractedOrderItem[] = []
 
@@ -296,22 +298,53 @@ export async function detectAndCreateOrderFromChat({
 
   // If no items extracted by LLM, extract from conversation text & catalog products
   if (items.length === 0) {
-    const fullText = `${conversationHistoryText}\n${messageText}`
+    const sortedProds = [...catalogProducts].sort((a, b) => b.name.length - a.name.length)
 
-    // 1) Scan catalog products mentioned in conversation
-    for (const prod of catalogProducts) {
+    // 1) First, scan catalog products mentioned in current messageText
+    for (const prod of sortedProds) {
       const prodNameEscaped = prod.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const regex = new RegExp(`(?:\\b|\\s|^)${prodNameEscaped}(?:\\b|\\s|$)`, 'i')
-      if (regex.test(fullText)) {
+      if (regex.test(messageText)) {
+        // Extract quantity from messageText (e.g. "2 simple cream" or "simple cream 2 ta")
+        const qtyMatch = messageText.match(new RegExp(`(?:order\\s+)?(\\d+)\\s*(?:pcs|ta|piece|ti|টা|টি)?\\s*${prodNameEscaped}|${prodNameEscaped}\\s*(\\d+)\\s*(?:pcs|ta|piece|ti|টা|টি)?`, 'i'))
+        const parsedQty = qtyMatch ? (parseInt(qtyMatch[1] || qtyMatch[2], 10) || 1) : 1
         const price = Math.max(0, Number(prod.price) || 0)
         items.push({
           product_id: prod.id || null,
           product_name: prod.name,
           product_sku: prod.sku || null,
           unit_price: price,
-          quantity: 1,
-          total: price,
+          quantity: parsedQty,
+          total: price * parsedQty,
         })
+        break // Stop at the product explicitly mentioned in the current message
+      }
+    }
+
+    // 2) If not in current message, look back at recent conversation history backwards
+    if (items.length === 0 && conversationHistoryText) {
+      const lines = conversationHistoryText.split('\n').filter(Boolean)
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]
+        for (const prod of sortedProds) {
+          const prodNameEscaped = prod.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const regex = new RegExp(`(?:\\b|\\s|^)${prodNameEscaped}(?:\\b|\\s|$)`, 'i')
+          if (regex.test(line)) {
+            const qtyMatch = line.match(new RegExp(`(?:order\\s+)?(\\d+)\\s*(?:pcs|ta|piece|ti|টা|টি)?\\s*${prodNameEscaped}|${prodNameEscaped}\\s*(\\d+)\\s*(?:pcs|ta|piece|ti|টা|টি)?`, 'i'))
+            const parsedQty = qtyMatch ? (parseInt(qtyMatch[1] || qtyMatch[2], 10) || 1) : 1
+            const price = Math.max(0, Number(prod.price) || 0)
+            items.push({
+              product_id: prod.id || null,
+              product_name: prod.name,
+              product_sku: prod.sku || null,
+              unit_price: price,
+              quantity: parsedQty,
+              total: price * parsedQty,
+            })
+            break
+          }
+        }
+        if (items.length > 0) break // Stop at the most recent product intent
       }
     }
 
@@ -377,7 +410,7 @@ export async function detectAndCreateOrderFromChat({
   }
 
   // 4. Check if order is Digital vs Physical
-  const isDigital = Boolean(llmOrderData?.is_digital) || checkIsDigitalOrder(items)
+  const isDigital = items.length > 0 ? checkIsDigitalOrder(items) : Boolean(llmOrderData?.is_digital)
 
   // Calculate Financials
   let subtotal = items.reduce((sum, item) => sum + item.total, 0)
@@ -472,18 +505,30 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  // 6. Completeness Validation:
-  // - Free Products: Only Require Phone + Email (digital) or Phone + Delivery Address (physical). ZERO payment/TrxID needed.
-  // - Digital Paid Products: Require Phone, Email, and Confirmed Payment (prepaid). COD is forbidden.
-  // - Physical Paid Products: Require Phone, Physical Address, and Confirmed Payment Method (COD or bKash/Nagad).
-  const hasPhone = Boolean(phone)
-  const hasAddress = Boolean(address && address.length >= 6)
-  const hasEmail = Boolean(email && email.includes('@'))
+  // 6. Strict Order Completeness Validation:
+  // - Physical Products: MUST know ALL 4 items: Customer Name, Delivery Address, Delivery Number (Phone), Payment Method.
+  //   * If COD: Confirmed immediately upon choosing COD.
+  //   * If Online Payment: Must have payment confirmed / TrxID before adding to orders page.
+  // - Digital Products: MUST know ALL 3 items: Phone Number, Email Address, Payment Method (online payment confirmed or free promo).
+  const isValidHumanName = (n?: string | null): boolean => {
+    if (!n) return false
+    const trimmed = n.trim()
+    if (trimmed.length < 2 || trimmed.length > 50) return false
+    if (/^(messenger user|unknown|user|guest|customer|test|rifat|admin|owner|null|undefined)$/i.test(trimmed)) return false
+    if (/^\+?\d+$/.test(trimmed)) return false
+    return true
+  }
+
+  const hasName = isValidHumanName(resolvedName)
+  const hasPhone = Boolean(phone && !isFacebookPsid(phone) && phone.length >= 10)
+  const hasAddress = Boolean(address && address.trim().length >= 5)
+  const hasEmail = Boolean(email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()))
 
   let isOrderComplete = false
   const missingRequirements: string[] = []
 
   if (isDigital) {
+    // DIGITAL PRODUCT: 3 items (Phone, Email, Payment Method)
     if (!hasPhone) missingRequirements.push('phone')
     if (!hasEmail) missingRequirements.push('email')
     if (!isFreeOrder && (!explicitPaymentMethod || explicitPaymentMethod === 'cod' || !isPaymentConfirmed)) {
@@ -491,21 +536,31 @@ export async function detectAndCreateOrderFromChat({
     }
     isOrderComplete = hasPhone && hasEmail && (isFreeOrder || (isPaymentConfirmed && Boolean(explicitPaymentMethod) && explicitPaymentMethod !== 'cod'))
   } else {
-    if (!hasPhone) missingRequirements.push('phone')
+    // PHYSICAL PRODUCT: 4 items (Name, Delivery Address, Delivery Phone, Payment Method)
+    if (!hasName) missingRequirements.push('name')
     if (!hasAddress) missingRequirements.push('delivery_address')
+    if (!hasPhone) missingRequirements.push('delivery_number')
     if (!isFreeOrder && !explicitPaymentMethod) {
       missingRequirements.push('payment_method')
+    } else if (!isFreeOrder && explicitPaymentMethod !== 'cod' && !isPaymentConfirmed) {
+      missingRequirements.push('payment_confirmation')
     }
-    isOrderComplete = hasPhone && hasAddress && (isFreeOrder || Boolean(explicitPaymentMethod))
+
+    isOrderComplete =
+      hasName &&
+      hasAddress &&
+      hasPhone &&
+      (isFreeOrder || (explicitPaymentMethod === 'cod') || (Boolean(explicitPaymentMethod) && isPaymentConfirmed))
   }
 
   // Update contact information in CRM even if order is not fully complete yet
-  if (contactId && (phone || address || email)) {
+  if (contactId && (phone || address || email || (hasName && resolvedName))) {
     try {
       const contactUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
       if (phone && !isFacebookPsid(phone)) contactUpdates.phone = phone
       if (address) contactUpdates.address = address
       if (email) contactUpdates.email = email
+      if (hasName && resolvedName) contactUpdates.name = resolvedName
       await db.from('contacts').update(contactUpdates).eq('id', contactId)
     } catch {
       // safe fallback
@@ -570,7 +625,7 @@ export async function detectAndCreateOrderFromChat({
       const isSameItems = existingItems.length > 0 && items.length > 0 &&
         existingItems.every((ei: any) => items.some(ni => ni.product_name.toLowerCase() === ei.product_name.toLowerCase()))
 
-      const shouldUpdateExisting = Boolean(isProductChange || hasPlaceholder || isSameItems || conversationId)
+      const shouldUpdateExisting = Boolean(isProductChange || hasPlaceholder || isSameItems)
 
       if (shouldUpdateExisting) {
         const changeNote = isProductChange

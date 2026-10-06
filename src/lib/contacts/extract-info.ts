@@ -139,13 +139,31 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
       .trim()
   }
 
-  // 4. NAME EXTRACTION (Optional)
-  const nameRegex = /(?:my\s*name\s*is|name\s*[:=-]|naam\s*[:=-]|নাম\s*[:=-])\s*([a-zA-Z\s\u0980-\u09FF]{2,30})/i
+  // 4. NAME EXTRACTION
+  const nameRegex = /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|name\s*[:=-]|naam\s*[:=-]|na+m\s*[:=-]|নাম\s*[:=-]|কাস্টমার\s*নাম\s*[:=-]|customer\s*name\s*[:=-])\s*)([a-zA-Z\s\u0980-\u09FF]{2,35})/i
   const nameMatch = cleanText.match(nameRegex)
   if (nameMatch && nameMatch[1]) {
-    const candidateName = nameMatch[1].trim()
-    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http')) {
+    const candidateName = nameMatch[1].replace(/[\n\r,।|•-].*$/, '').trim()
+    if (candidateName.length >= 2 && !candidateName.toLowerCase().startsWith('http') && !/^(address|phone|email|cod|bkash|nagad|order)$/i.test(candidateName)) {
       result.name = candidateName
+    }
+  }
+
+  // Also check if line 1 of a multi-line format has a pure name like "Rifat" or "Sara Khan" when other lines are Address/Phone
+  if (!result.name) {
+    const lines = cleanText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
+    if (lines.length >= 2) {
+      const firstLine = lines[0]
+      if (
+        firstLine.length >= 2 &&
+        firstLine.length <= 35 &&
+        !/\d/.test(firstLine) &&
+        !/[@:=-]/.test(firstLine) &&
+        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad)\b/i.test(firstLine) &&
+        /^[a-zA-Z\s\u0980-\u09FF]+$/.test(firstLine)
+      ) {
+        result.name = firstLine
+      }
     }
   }
 

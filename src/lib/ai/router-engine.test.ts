@@ -123,6 +123,31 @@ describe('router-engine buildOfflineReply for free offers', () => {
     expect(replyEn.reply).not.toContain('৳0')
     expect(replyEn.reply).toContain('offer has now ended')
   })
+
+  it('handles physical product inquiry (e.g. Simple Cream) by asking for delivery address and COD, without asking for email', () => {
+    const products = [
+      { name: 'Simple Cream', price: 650, stock_qty: 25, is_in_stock: true, category: 'skincare' },
+    ]
+    const account = {
+      ai_store_instructions: 'We sell skincare products.',
+      special_instructions: 'Payment: COD or bKash 01326596251',
+    }
+
+    const replyBn = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'Simple cream nite chai',
+      products,
+      recentOrders: [],
+      account,
+    })
+
+    expect(replyBn.reply).toContain('Simple Cream')
+    expect(replyBn.reply).toContain('৳650')
+    expect(replyBn.reply).toContain('ডেলিভারি ঠিকানা')
+    expect(replyBn.reply).toContain('ক্যাশ অন ডেলিভারি')
+    expect(replyBn.reply).not.toContain('ইমেইল')
+    expect(replyBn.reply).not.toContain('Canva')
+  })
 })
 
 describe('router-engine formatRelativeMessageTime', () => {
