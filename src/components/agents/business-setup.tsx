@@ -15,11 +15,9 @@ import {
   Info,
   Copy,
   Check,
-  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
 
 interface GuidedBusinessProfile {
   name: string
@@ -35,27 +33,28 @@ interface GuidedBusinessProfile {
   ai_store_instructions: string
 }
 
-const DEFAULT_PROFILE: GuidedBusinessProfile = {
-  name: 'Aura Home Living',
-  business_tagline: 'Modern sustainable home decor & artisanal accents',
-  ai_business_description: 'Curating sustainably sourced ceramics, bamboo furniture, and minimal lighting for modern spaces. Handcrafted across Southeast Asia with carbon-neutral shipping.',
-  product_categories_sold: 'Home Decor, Lighting, Ceramics & Tableware, Textiles & Throws',
-  target_audience: 'Urban interior enthusiasts, new homeowners, and boutique designers seeking modern minimalist aesthetics.',
+const EMPTY_PROFILE: GuidedBusinessProfile = {
+  name: '',
+  business_tagline: '',
+  ai_business_description: '',
+  product_categories_sold: '',
+  target_audience: '',
   customer_relation_style: 'Warm & Helpful (Consultative & Polite)',
   ai_persona: 'English Standard (with bilingual Bengali greetings)',
-  delivery_policy: 'Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs). Nationwide: ৳150 (3-4 business days). Complimentary free shipping on all orders over ৳3,000.',
-  return_policy: '7-day hassle-free exchange on undamaged items with original tags and packaging. For transit damages, instant replacement is arranged upon submitting unboxing photos.',
-  special_instructions: 'bKash Merchant: 01700-000000 | Rocket Merchant: 01900-000000 | Nagad Merchant: 01800-000000. Cash on Delivery (COD) accepted nationwide across all covered districts.',
-  ai_store_instructions: 'AI automatically answers inventory, catalog specs, and shipping status. If a customer inquires about custom bulk orders, broken shipments, or asks to speak with an interior designer, escalate directly to human team.',
+  delivery_policy: '',
+  return_policy: '',
+  special_instructions: '',
+  ai_store_instructions: '',
 }
 
 interface BusinessSetupProps {
   onNavigateToPlayground?: () => void
+  onReadinessChange?: (percent: number) => void
 }
 
-export function BusinessSetup({ onNavigateToPlayground }: BusinessSetupProps) {
-  const [settings, setSettings] = useState<GuidedBusinessProfile>(DEFAULT_PROFILE)
-  const [initialSettings, setInitialSettings] = useState<GuidedBusinessProfile>(DEFAULT_PROFILE)
+export function BusinessSetup({ onNavigateToPlayground, onReadinessChange }: BusinessSetupProps) {
+  const [settings, setSettings] = useState<GuidedBusinessProfile>(EMPTY_PROFILE)
+  const [initialSettings, setInitialSettings] = useState<GuidedBusinessProfile>(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [newTagInput, setNewTagInput] = useState('')
@@ -69,17 +68,17 @@ export function BusinessSetup({ onNavigateToPlayground }: BusinessSetupProps) {
       const data = await res.json()
       if (data.settings) {
         const loaded: GuidedBusinessProfile = {
-          name: data.settings.name || DEFAULT_PROFILE.name,
-          business_tagline: data.settings.business_tagline || DEFAULT_PROFILE.business_tagline,
-          ai_business_description: data.settings.ai_business_description || DEFAULT_PROFILE.ai_business_description,
-          product_categories_sold: data.settings.product_categories_sold || DEFAULT_PROFILE.product_categories_sold,
-          target_audience: data.settings.target_audience || DEFAULT_PROFILE.target_audience,
-          customer_relation_style: data.settings.customer_relation_style || DEFAULT_PROFILE.customer_relation_style,
-          ai_persona: data.settings.ai_persona || data.settings.ai_auto_reply_tone || DEFAULT_PROFILE.ai_persona,
-          delivery_policy: data.settings.delivery_policy || data.settings.ai_delivery_policy || DEFAULT_PROFILE.delivery_policy,
-          return_policy: data.settings.return_policy || data.settings.ai_return_policy || DEFAULT_PROFILE.return_policy,
-          special_instructions: data.settings.special_instructions || DEFAULT_PROFILE.special_instructions,
-          ai_store_instructions: data.settings.ai_store_instructions || DEFAULT_PROFILE.ai_store_instructions,
+          name: data.settings.name || '',
+          business_tagline: data.settings.business_tagline || '',
+          ai_business_description: data.settings.ai_business_description || '',
+          product_categories_sold: data.settings.product_categories_sold || '',
+          target_audience: data.settings.target_audience || '',
+          customer_relation_style: data.settings.customer_relation_style || 'Warm & Helpful (Consultative & Polite)',
+          ai_persona: data.settings.ai_persona || data.settings.ai_auto_reply_tone || 'English Standard (with bilingual Bengali greetings)',
+          delivery_policy: data.settings.delivery_policy || data.settings.ai_delivery_policy || '',
+          return_policy: data.settings.return_policy || data.settings.ai_return_policy || '',
+          special_instructions: data.settings.special_instructions || '',
+          ai_store_instructions: data.settings.ai_store_instructions || '',
         }
         setSettings(loaded)
         setInitialSettings(loaded)
@@ -198,6 +197,10 @@ export function BusinessSetup({ onNavigateToPlayground }: BusinessSetupProps) {
     return { readinessSteps: completed, readinessPercent: percent }
   }, [settings])
 
+  useEffect(() => {
+    onReadinessChange?.(readinessPercent)
+  }, [readinessPercent, onReadinessChange])
+
   // Presets Helpers
   const appendPreset = (field: keyof GuidedBusinessProfile, text: string) => {
     setSettings((prev) => {
@@ -211,27 +214,27 @@ export function BusinessSetup({ onNavigateToPlayground }: BusinessSetupProps) {
   // Compiled System Prompt for Preview
   const compiledPrompt = useMemo(() => {
     return `=== STORE IDENTITY & CORE KNOWLEDGE ===
-Store Name: ${settings.name || 'Store'}
-Tagline: ${settings.business_tagline || 'N/A'}
-Description: ${settings.ai_business_description || 'N/A'}
-Product Categories: ${settings.product_categories_sold || 'All catalog inventory'}
+Store Name: ${settings.name.trim() || '(Not set yet)'}
+Tagline: ${settings.business_tagline.trim() || 'N/A'}
+Description: ${settings.ai_business_description.trim() || 'N/A'}
+Product Categories: ${settings.product_categories_sold.trim() || 'All catalog inventory'}
 
 === AUDIENCE & CONVERSATIONAL PERSONA ===
-Target Audience: ${settings.target_audience || 'All shoppers'}
+Target Audience: ${settings.target_audience.trim() || 'All shoppers'}
 Formality & Salutation: ${settings.customer_relation_style}
 Language & Tone Style: ${settings.ai_persona}
 
 === SHIPPING & LOGISTICS SLA ===
-${settings.delivery_policy || 'Standard delivery terms apply.'}
+${settings.delivery_policy.trim() || 'Standard delivery terms apply.'}
 
 === RETURN, EXCHANGE & REFUNDS ===
-${settings.return_policy || 'Contact support for return inquiries.'}
+${settings.return_policy.trim() || 'Contact support for return inquiries.'}
 
 === PAYMENT & CHECKOUT INSTRUCTIONS ===
-${settings.special_instructions || 'Cash on Delivery and Mobile Banking accepted.'}
+${settings.special_instructions.trim() || 'Cash on Delivery and Mobile Banking accepted.'}
 
 === HUMAN ESCALATION PROTOCOL ===
-${settings.ai_store_instructions || 'If customer requests custom handling, tag #NeedsHumanLead and escalate.'}`
+${settings.ai_store_instructions.trim() || 'If customer requests custom handling, tag #NeedsHumanLead and escalate.'}`
   }, [settings])
 
   const copyPromptToClipboard = () => {
@@ -243,10 +246,10 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
 
   // Live Simulated Persona Preview Text
   const simulatedMessage = useMemo(() => {
-    const storeName = settings.name || 'Aura Home Living'
-    const topCategories = tags.length > 0 ? tags.slice(0, 2).join(', ').toLowerCase() : 'our catalog'
+    const storeName = settings.name.trim() || 'Aura Home Living'
+    const topCategories = tags.length > 0 ? tags.slice(0, 2).join(', ').toLowerCase() : 'custom ceramics, lighting recommendations'
     if (settings.customer_relation_style.includes('Sir/Madam')) {
-      return `“Hello Sir/Madam! Welcome to ${storeName}. Are you looking for custom ${topCategories}, catalog recommendations, or need an update on an existing order? I am pleased to assist you.”`
+      return `“Hello Sir/Madam! Welcome to ${storeName}. Are you looking for ${topCategories}, catalog recommendations, or need an update on an existing order? I am pleased to assist you.”`
     }
     if (settings.customer_relation_style.includes('Bhai/Apu')) {
       return `“আসসালামু আলাইকুম ভাইয়া/আপু! ${storeName}-এ আপনাকে স্বাগতম। আপনি কি ${topCategories} সম্পর্কিত কোনো তথ্য বা আপনার অর্ডারের আপডেট খুঁজছেন? আমি আপনাকে সাহায্য করতে পেরে আনন্দিত!”`
@@ -254,7 +257,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
     if (settings.customer_relation_style.includes('Direct')) {
       return `“Hi! Welcome to ${storeName}. Check out our featured ${topCategories} or reply with your order number to track delivery instantly.”`
     }
-    return `“Hello! Welcome to ${storeName}. Are you looking for custom ${topCategories}, lighting recommendations, or need an update on an existing order? I’m delighted to help you find the perfect piece!”`
+    return `“Hello! Welcome to ${storeName}. Are you looking for ${topCategories}, or need an update on an existing order? I’m delighted to help you find the perfect piece!”`
   }, [settings.name, settings.customer_relation_style, tags])
 
   if (loading) {
@@ -345,7 +348,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 value={settings.name}
                 onChange={(e) => setSettings({ ...settings, name: e.target.value })}
                 placeholder="Aura Home Living"
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
 
@@ -359,7 +362,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 value={settings.business_tagline}
                 onChange={(e) => setSettings({ ...settings, business_tagline: e.target.value })}
                 placeholder="Modern sustainable home decor & artisanal accents"
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
 
@@ -372,8 +375,8 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 rows={2}
                 value={settings.ai_business_description}
                 onChange={(e) => setSettings({ ...settings, ai_business_description: e.target.value })}
-                placeholder="Curating sustainably sourced ceramics, bamboo furniture, and minimal lighting for modern spaces..."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Curating sustainably sourced ceramics, bamboo furniture, and minimal lighting for modern spaces. Handcrafted across Southeast Asia with carbon-neutral shipping."
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
 
@@ -381,23 +384,25 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
               <label className="mb-1.5 block text-xs font-semibold text-foreground" htmlFor="biz-categories">
                 Primary Product Categories Sold
               </label>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground"
-                  >
-                    <span>{tag}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="text-muted-foreground hover:text-rose-500"
+              {tags.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground"
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        className="text-muted-foreground hover:text-rose-500"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   id="biz-categories"
@@ -411,7 +416,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                     }
                   }}
                   placeholder="Type new category and press enter (e.g. Planters, Wall Art)..."
-                  className="flex-1 rounded-lg border border-border bg-background px-3.5 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="flex-1 rounded-lg border border-border bg-background px-3.5 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary"
                 />
                 <button
                   type="button"
@@ -454,7 +459,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 value={settings.target_audience}
                 onChange={(e) => setSettings({ ...settings, target_audience: e.target.value })}
                 placeholder="Urban interior enthusiasts, new homeowners, and boutique designers seeking modern minimalist aesthetics."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
 
@@ -540,28 +545,28 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 rows={3}
                 value={settings.delivery_policy}
                 onChange={(e) => setSettings({ ...settings, delivery_policy: e.target.value })}
-                placeholder="Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs). Nationwide: ৳150 (3-4 business days)..."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs). Nationwide: ৳150 (3-4 business days). Complimentary free shipping on all orders over ৳3,000."
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-muted-foreground">Presets:</span>
                 <button
                   type="button"
-                  onClick={() => appendPreset('delivery_policy', 'Inside Dhaka Metro: ৳80 (24-48 hrs)')}
+                  onClick={() => appendPreset('delivery_policy', 'Standard Shipping: ৳80 (Inside Dhaka Metro, 24-48 hrs).')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Inside Metro ৳80
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('delivery_policy', 'Nationwide Delivery: ৳150 (3-4 business days)')}
+                  onClick={() => appendPreset('delivery_policy', 'Nationwide Delivery: ৳150 (3-4 business days).')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Nationwide ৳150
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('delivery_policy', 'Free shipping on all orders over ৳3,000')}
+                  onClick={() => appendPreset('delivery_policy', 'Complimentary free shipping on all orders over ৳3,000.')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Free Over ৳3,000
@@ -581,21 +586,21 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 rows={3}
                 value={settings.return_policy}
                 onChange={(e) => setSettings({ ...settings, return_policy: e.target.value })}
-                placeholder="7-day hassle-free exchange on undamaged items with original tags and packaging..."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="7-day hassle-free exchange on undamaged items with original tags and packaging. For transit damages, instant replacement is arranged upon submitting unboxing photos."
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-muted-foreground">Presets:</span>
                 <button
                   type="button"
-                  onClick={() => appendPreset('return_policy', '7-day hassle-free return and exchange policy.')}
+                  onClick={() => appendPreset('return_policy', '7-day hassle-free exchange on undamaged items with original tags and packaging.')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   7-Day Return
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('return_policy', 'Instant replacement guarantee for any transit damages.')}
+                  onClick={() => appendPreset('return_policy', 'For transit damages, instant replacement is arranged upon submitting unboxing photos.')}
                   className="rounded bg-muted px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
                 >
                   Transit Damage Guarantee
@@ -639,8 +644,8 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 rows={3}
                 value={settings.special_instructions}
                 onChange={(e) => setSettings({ ...settings, special_instructions: e.target.value })}
-                placeholder="bKash Merchant: 01700-000000 | Rocket Merchant: 01900-000000 | Nagad Merchant: 01800-000000..."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="bKash Merchant: 01700-000000 | Rocket Merchant: 01900-000000 | Nagad Merchant: 01800-000000. Cash on Delivery (COD) accepted nationwide across all covered districts."
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">Supported Badges:</span>
@@ -667,7 +672,7 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 </button>
                 <button
                   type="button"
-                  onClick={() => appendPreset('special_instructions', 'Cash on Delivery (COD) accepted nationwide.')}
+                  onClick={() => appendPreset('special_instructions', 'Cash on Delivery (COD) accepted nationwide across all covered districts.')}
                   className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 transition-colors hover:bg-emerald-500/20"
                 >
                   Cash on Delivery
@@ -684,8 +689,8 @@ ${settings.ai_store_instructions || 'If customer requests custom handling, tag #
                 rows={3}
                 value={settings.ai_store_instructions}
                 onChange={(e) => setSettings({ ...settings, ai_store_instructions: e.target.value })}
-                placeholder="AI automatically answers inventory, catalog specs, and shipping status. If a customer inquires about custom bulk orders..."
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                placeholder="AI automatically answers inventory, catalog specs, and shipping status. If a customer inquires about custom bulk orders, broken shipments, or asks to speak with an interior designer, escalate directly to human team."
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-xs leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Info className="h-3.5 w-3.5 shrink-0 text-primary" />
