@@ -140,10 +140,12 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
 ];
 
 /**
- * Clean solid background applied to the chat area (both the
- * active thread and the empty state).
+ * Premium chat canvas background applied to the chat area (both the
+ * active thread and the empty state). Features soft background tones and
+ * an elegant micro-dot lattice that eliminates harsh glare while providing
+ * clear contrast for message bubbles.
  */
-const DOODLE_BG_CLASSES = "bg-background";
+const CHAT_CANVAS_CLASSES = "inbox-chat-canvas";
 
 export function MessageThread({
   conversation,
@@ -999,7 +1001,7 @@ export function MessageThread({
   // Empty state — only show when no conversation is selected
   if (!conversation) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
+      <div className={cn("flex flex-1 flex-col items-center justify-center", CHAT_CANVAS_CLASSES)}>
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
           <MessageSquare className="h-8 w-8 text-muted-foreground" />
         </div>
@@ -1051,7 +1053,7 @@ export function MessageThread({
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
+    <div className={cn("flex min-w-0 flex-1 flex-col", CHAT_CANVAS_CLASSES)}>
       {/* Header — solid card surface sits on top of the doodle so the
           name/avatar/dropdowns stay legible. */}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
@@ -1288,7 +1290,7 @@ export function MessageThread({
               <div key={group.date}>
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+                  <span className="rounded-full border border-border/70 bg-card/90 px-3.5 py-1 text-[11px] font-medium text-muted-foreground shadow-xs backdrop-blur-md">
                     {formatDateSeparator(group.date, t)}
                   </span>
                 </div>

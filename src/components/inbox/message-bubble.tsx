@@ -62,17 +62,17 @@ function StatusIcon({
 }) {
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className="h-3 w-3 text-primary-foreground/70" />;
     case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
+      return <Check className="h-3 w-3 text-primary-foreground/70" />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck className="h-3 w-3 text-primary-foreground/70" />;
     case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      return <CheckCheck className="h-3.5 w-3.5 text-sky-200" />;
     case "failed":
       return (
         <span className="inline-flex" title={title ?? undefined}>
-          <XCircle className="h-3 w-3 text-red-400" />
+          <XCircle className="h-3 w-3 text-rose-300" />
         </span>
       );
     default:
@@ -99,7 +99,7 @@ function MessageContent({
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed tracking-normal">
           {message.content_text}
         </p>
       );
@@ -257,16 +257,16 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex flex-col transition-all duration-300 ease-out animate-in fade-in-50 slide-in-from-bottom-2",
+        "flex flex-col transition-all duration-150 ease-out animate-in fade-in-50 slide-in-from-bottom-1",
         isAgent ? "items-end" : "items-start",
       )}
     >
       <div
         className={cn(
-          "relative rounded-2xl px-4 py-2.5 transition-all duration-200 shadow-sm",
+          "relative rounded-2xl px-4 py-2.5 transition-all duration-150 shadow-sm",
           isAgent
-            ? "rounded-br-xs bg-primary text-primary-foreground shadow-primary/10 hover:shadow-md"
-            : "rounded-bl-xs bg-muted/80 backdrop-blur-xs text-foreground border border-border/40 shadow-xs hover:bg-muted",
+            ? "rounded-br-xs bg-primary text-primary-foreground shadow-sm shadow-primary/20 hover:shadow-md border border-primary/25"
+            : "rounded-bl-xs bg-card text-card-foreground border border-border/80 shadow-xs hover:shadow-sm",
         )}
       >
         {reply && (
@@ -284,7 +284,7 @@ export function MessageBubble({
         />
         <div
           className={cn(
-            "mt-1 flex items-center gap-1",
+            "mt-1.5 flex items-center gap-1.5",
             isAgent ? "justify-end" : "justify-start",
           )}
         >
@@ -303,12 +303,12 @@ export function MessageBubble({
           )}
           <span
             className={cn(
-              "text-[10px]",
+              "text-[10.5px] font-medium tabular-nums",
               // Outbound bubbles sit on the primary fill, so the
               // timestamp must read against that (not the neutral
               // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              // mode. Inbound bubbles use the card surface.
+              isAgent ? "text-primary-foreground/75" : "text-muted-foreground",
             )}
           >
             {time}
