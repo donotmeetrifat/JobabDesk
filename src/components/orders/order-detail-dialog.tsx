@@ -26,6 +26,8 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency } from '@/lib/currency'
 import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 interface OrderDetailDialogProps {
@@ -82,6 +84,7 @@ const STEPPER_STAGES: StepStage[] = [
 ]
 
 export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: OrderDetailDialogProps) {
+  const { defaultCurrency } = useAuth()
   const [updating, setUpdating] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
@@ -522,7 +525,7 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 <div className="flex justify-between text-muted-foreground">
                   <span>Subtotal:</span>
                   <span className="font-mono font-semibold text-foreground">
-                    ৳{(Number(order.subtotal) || 0).toLocaleString()}
+                    {formatCurrency(Number(order.subtotal) || 0, defaultCurrency)}
                   </span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
@@ -533,7 +536,7 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                         FREE
                       </span>
                     ) : (
-                      `৳${Number(order.delivery_charge).toLocaleString()}`
+                      formatCurrency(Number(order.delivery_charge), defaultCurrency)
                     )}
                   </span>
                 </div>
@@ -541,7 +544,7 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 {Number(order.discount) > 0 && (
                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
                     <span>Discount:</span>
-                    <span className="font-mono">-৳{Number(order.discount).toLocaleString()}</span>
+                    <span className="font-mono">-{formatCurrency(Number(order.discount), defaultCurrency)}</span>
                   </div>
                 )}
 
@@ -549,7 +552,7 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 <div className="border-t border-border pt-2.5 flex items-center justify-between">
                   <span className="font-bold text-foreground text-sm">Total Amount:</span>
                   <span className="text-primary text-lg font-bold font-mono">
-                    ৳{(Number(order.total) || 0).toLocaleString()}
+                    {formatCurrency(Number(order.total) || 0, defaultCurrency)}
                   </span>
                 </div>
               </div>
@@ -588,10 +591,10 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                         <span className="capitalize">{item.product_name}</span>
                       </td>
                       <td className="px-4 py-3 font-mono text-muted-foreground">{item.product_sku || '—'}</td>
-                      <td className="px-4 py-3 text-right font-mono">৳{(Number(item.unit_price) || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-mono">{formatCurrency(Number(item.unit_price) || 0, defaultCurrency)}</td>
                       <td className="px-4 py-3 text-center font-mono font-bold">{item.quantity}</td>
                       <td className="px-4 py-3 text-right font-bold text-foreground font-mono">
-                        ৳{(Number(item.total) || 0).toLocaleString()}
+                        {formatCurrency(Number(item.total) || 0, defaultCurrency)}
                       </td>
                     </tr>
                   ))}

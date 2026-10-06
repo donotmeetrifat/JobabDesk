@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
 
 interface Product {
   id: string
@@ -26,6 +28,9 @@ interface Props {
 }
 
 export function ProductTable({ products, loading, selectedIds, onSelect, onSelectAll, onEdit, onDelete }: Props) {
+  const { defaultCurrency } = useAuth()
+  const currencySymbol = getCurrencySymbol(defaultCurrency)
+
   if (loading) return (
     <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
       Loading products...
@@ -60,7 +65,7 @@ export function ProductTable({ products, loading, selectedIds, onSelect, onSelec
             <th className="px-4 py-3 text-left font-medium">Name</th>
             <th className="px-4 py-3 text-left font-medium">Brand</th>
             <th className="px-4 py-3 text-left font-medium">Category</th>
-            <th className="px-4 py-3 text-left font-medium">Price (৳)</th>
+            <th className="px-4 py-3 text-left font-medium">Price ({currencySymbol})</th>
             <th className="px-4 py-3 text-left font-medium">Stock</th>
             <th className="px-4 py-3 text-left font-medium">Status</th>
             <th className="px-4 py-3 text-left font-medium">SKU</th>
@@ -84,7 +89,7 @@ export function ProductTable({ products, loading, selectedIds, onSelect, onSelec
               <td className="px-4 py-3 font-medium">{product.name}</td>
               <td className="px-4 py-3 text-muted-foreground">{product.brand ?? '—'}</td>
               <td className="px-4 py-3 text-muted-foreground">{product.category ?? '—'}</td>
-              <td className="px-4 py-3">৳{Number(product.price).toLocaleString()}</td>
+              <td className="px-4 py-3">{formatCurrency(product.price, defaultCurrency)}</td>
               <td className="px-4 py-3">{product.stock_qty}</td>
               <td className="px-4 py-3">
                 {product.is_in_stock

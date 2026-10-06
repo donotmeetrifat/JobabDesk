@@ -1,5 +1,6 @@
 import { isFacebookPsid } from '@/lib/contacts/extract-info'
 import { checkIsDigitalOrder } from '@/lib/products/product-type'
+import { formatCurrency } from '@/lib/currency'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 interface OrderNotificationParams {
@@ -78,6 +79,14 @@ export async function sendOrderStatusNotification({
       contact = ct
     }
 
+    // 3. Fetch account default currency
+    const { data: acc } = await db
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = acc?.default_currency || 'BDT'
+
     const customerName = order.customer_name || contact?.name || 'Customer'
     const orderNum = order.order_number || `ORD-${order.id.slice(0, 8)}`
     const totalAmount = Number(order.total) || 0
@@ -88,7 +97,7 @@ export async function sendOrderStatusNotification({
         ? items
             .map(
               (it: any) =>
-                `• ${it.product_name} × ${it.quantity} (৳${(Number(it.unit_price) || 0).toLocaleString()})`
+                `• ${it.product_name} × ${it.quantity} (${formatCurrency(Number(it.unit_price) || 0, currency)})`
             )
             .join('\n')
         : '• অর্ডারকৃত পণ্য (Ordered Items)'
@@ -113,7 +122,7 @@ export async function sendOrderStatusNotification({
       ? 'Free Promotional Campaign (সম্পূর্ণ ফ্রি)'
       : (paymentMethodMap[order.payment_method] || order.payment_method || 'Cash on Delivery')
     const paymentStatusLabel = isFree ? 'ফ্রি অর্ডার' : (paymentStatusMap[order.payment_status] || order.payment_status || 'আনপেইড')
-    const totalAmountDisplay = isFree ? '৳0 (বিনামূল্যে / Free Offer)' : `৳${totalAmount.toLocaleString()}`
+    const totalAmountDisplay = isFree ? `${formatCurrency(0, currency)} (বিনামূল্যে / Free Offer)` : formatCurrency(totalAmount, currency)
 
     const isDigital = Boolean(order.is_digital) || checkIsDigitalOrder(items)
     const emailDestination = order.customer_email || contact?.email || 'চ্যাটে ডেলিভারি'

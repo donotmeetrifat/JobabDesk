@@ -7,9 +7,12 @@ import { createClient } from '@/lib/supabase/client'
 import { OrderTable } from './order-table'
 import { OrderDialog } from './order-dialog'
 import { OrderDetailDialog } from './order-detail-dialog'
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency } from '@/lib/currency'
 import type { Order, OrderStats, PaymentStatus } from '@/types/orders'
 
 export function OrdersShell() {
+  const { defaultCurrency } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -329,7 +332,7 @@ export function OrdersShell() {
         <div className="rounded-xl border bg-card p-4 flex items-center justify-between shadow-xs">
           <div>
             <p className="text-xs font-medium text-muted-foreground">Total Revenue</p>
-            <p className="text-2xl font-bold text-foreground mt-1">৳{stats.totalRevenue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(stats.totalRevenue, defaultCurrency)}</p>
           </div>
           <div className="rounded-xl bg-primary/10 p-2.5 text-primary">
             <Banknote className="size-5" />

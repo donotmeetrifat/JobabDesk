@@ -62,23 +62,38 @@ export const CURRENCIES: CurrencyOption[] = [
 export function formatCurrency(
   value: number,
   currency: string = DEFAULT_CURRENCY,
+  options?: { decimals?: boolean },
 ): string {
   const code = (currency || DEFAULT_CURRENCY).trim();
   const amount = Number(value) || 0;
+  const hasDecimals = options?.decimals ?? (amount % 1 !== 0);
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: code,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: hasDecimals ? 2 : 0,
     }).format(amount);
   } catch {
     // Invalid ISO code — show the raw code + grouped number so the
     // value is still legible instead of throwing.
     return `${code} ${new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: 0,
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: hasDecimals ? 2 : 0,
     }).format(amount)}`;
   }
+}
+
+/**
+ * Returns the short currency symbol (e.g. "$", "৳", "€") for a given currency code.
+ * Falls back to the code itself if no custom symbol is mapped.
+ */
+export function getCurrencySymbol(
+  currency: string = DEFAULT_CURRENCY,
+): string {
+  const code = (currency || DEFAULT_CURRENCY).trim();
+  const item = CURRENCIES.find((c) => c.code === code);
+  return item?.symbol ?? code;
 }
 
 /**

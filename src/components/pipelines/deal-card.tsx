@@ -3,6 +3,7 @@
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { useAuth } from "@/hooks/use-auth";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -27,6 +28,7 @@ function initials(name?: string, fallback?: string) {
 }
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+  const { defaultCurrency } = useAuth();
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
@@ -82,7 +84,7 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
       <div className="mt-2 flex items-center justify-between">
         <span className="text-sm font-bold text-primary">
-          {formatCurrency(deal.value, deal.currency)}
+          {formatCurrency(deal.value, deal.currency || defaultCurrency)}
         </span>
         {deal.expected_close_date && (
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">

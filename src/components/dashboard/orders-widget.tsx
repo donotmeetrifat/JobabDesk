@@ -6,6 +6,9 @@ import { ShoppingCart, ShoppingBag, Banknote, Clock, ArrowRight } from 'lucide-r
 import { createClient } from '@/lib/supabase/client'
 import { startOfLocalDay } from '@/lib/dashboard/date-utils'
 
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency } from '@/lib/currency'
+
 interface OrderSummary {
   id: string
   order_number: string
@@ -31,7 +34,9 @@ const STATUS_BADGES: Record<string, string> = {
   cancelled: 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800',
 }
 
-export function OrdersWidget() {
+export function OrdersWidget({ currency }: { currency?: string } = {}) {
+  const { defaultCurrency } = useAuth()
+  const activeCurrency = currency || defaultCurrency
   const [data, setData] = useState<OrderWidgetData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -126,7 +131,7 @@ export function OrdersWidget() {
           </div>
           <div>
             <p className="text-[11px] font-medium text-muted-foreground">Revenue Today</p>
-            <p className="text-lg font-bold text-foreground">৳{data.revenueToday.toLocaleString()}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(data.revenueToday, activeCurrency)}</p>
           </div>
         </div>
 
@@ -164,7 +169,7 @@ export function OrdersWidget() {
                   <tr key={o.id} className="hover:bg-muted/40 transition-colors">
                     <td className="px-3 py-2 font-mono font-medium text-foreground">{o.order_number}</td>
                     <td className="px-3 py-2 text-foreground font-medium">{o.customer_name}</td>
-                    <td className="px-3 py-2 font-semibold">৳{o.total.toLocaleString()}</td>
+                    <td className="px-3 py-2 font-semibold">{formatCurrency(o.total, activeCurrency)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGES[o.status] ?? STATUS_BADGES.new}`}>
                         {o.status}

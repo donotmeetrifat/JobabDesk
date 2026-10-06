@@ -2,6 +2,8 @@
 
 import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency } from '@/lib/currency'
 import type { Order, OrderStatus, PaymentStatus } from '@/types/orders'
 
 interface OrderTableProps {
@@ -73,6 +75,7 @@ export function OrderTable({
   onCancel,
   onUpdatePaymentStatus,
 }: OrderTableProps) {
+  const { defaultCurrency } = useAuth()
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.has(o.id))
 
   if (loading && orders.length === 0) {
@@ -232,7 +235,7 @@ export function OrderTable({
 
                 {/* Total */}
                 <td className="px-3 py-3 font-bold text-foreground whitespace-nowrap text-sm">
-                  ৳{(Number(order.total) || 0).toLocaleString()}
+                  {formatCurrency(Number(order.total) || 0, defaultCurrency)}
                 </td>
 
                 {/* Payment */}

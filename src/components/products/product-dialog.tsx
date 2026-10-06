@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
+import { getCurrencySymbol } from '@/lib/currency'
 
 interface Product {
   id: string
@@ -31,6 +33,8 @@ const empty = {
 }
 
 export function ProductDialog({ open, product, onClose, onSaved }: Props) {
+  const { defaultCurrency } = useAuth()
+  const currencySymbol = getCurrencySymbol(defaultCurrency)
   const [form, setForm] = useState(empty)
   const [saving, setSaving] = useState(false)
 
@@ -115,14 +119,14 @@ export function ProductDialog({ open, product, onClose, onSaved }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <label className="text-sm font-medium">Price (৳) *</label>
+              <label className="text-sm font-medium">Price ({currencySymbol}) *</label>
               <input type="number" min="0" step="0.01" value={form.price}
                 onChange={e => set('price', e.target.value)}
                 className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="0" required />
             </div>
             <div className="grid gap-1.5">
-              <label className="text-sm font-medium">Original Price (৳)</label>
+              <label className="text-sm font-medium">Original Price ({currencySymbol})</label>
               <input type="number" min="0" step="0.01" value={form.compare_at_price}
                 onChange={e => set('compare_at_price', e.target.value)}
                 className="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"

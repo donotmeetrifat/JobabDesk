@@ -221,7 +221,7 @@ export default function DashboardPage() {
       <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
 
       {/* Orders widget */}
-      <OrdersWidget />
+      <OrdersWidget currency={defaultCurrency} />
 
       {/* Activity feed */}
       <ActivityFeed items={activity} loading={activityLoading} />

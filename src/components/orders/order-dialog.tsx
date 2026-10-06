@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { X, Search, Plus, Trash2, UserCheck, Package } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/hooks/use-auth'
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
 import type { Order, OrderItem, OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 interface OrderDialogProps {
@@ -35,6 +37,8 @@ const PAYMENT_METHODS: Array<{ id: PaymentMethod; label: string }> = [
 ]
 
 export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps) {
+  const { defaultCurrency } = useAuth()
+  const currencySymbol = getCurrencySymbol(defaultCurrency)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
@@ -460,7 +464,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
             {/* Extra Adjustments */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-foreground">Delivery Charge (৳)</label>
+                <label className="text-xs font-medium text-foreground">Delivery Charge ({currencySymbol})</label>
                 <input
                   type="number"
                   min="0"
@@ -470,7 +474,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-foreground">Discount (৳)</label>
+                <label className="text-xs font-medium text-foreground">Discount ({currencySymbol})</label>
                 <input
                   type="number"
                   min="0"
@@ -531,7 +535,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                           <span className="font-medium text-foreground">{p.name}</span>
                           {p.sku && <span className="ml-2 font-mono text-muted-foreground text-[10px]">{p.sku}</span>}
                         </div>
-                        <span className="font-semibold text-primary">৳{Number(p.price).toLocaleString()}</span>
+                        <span className="font-semibold text-primary">{formatCurrency(Number(p.price) || 0, defaultCurrency)}</span>
                       </button>
                     ))}
                   </div>
@@ -551,7 +555,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                   />
                   <input
                     type="number"
-                    placeholder="Price (৳)"
+                    placeholder={`Price (${currencySymbol})`}
                     min="0"
                     value={manualPrice}
                     onChange={(e) => setManualPrice(e.target.value)}
@@ -592,7 +596,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                         {/* Price & Quantity Controls */}
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1">
-                            <span className="text-muted-foreground">৳</span>
+                            <span className="text-muted-foreground">{currencySymbol}</span>
                             <input
                               type="number"
                               min="0"
@@ -621,7 +625,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                           </div>
 
                           <span className="font-semibold text-foreground w-16 text-right">
-                            ৳{item.total.toLocaleString()}
+                            {formatCurrency(item.total, defaultCurrency)}
                           </span>
 
                           <button
@@ -643,23 +647,23 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
             <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-xs">
               <div className="flex justify-between text-muted-foreground">
                 <span>Subtotal</span>
-                <span>৳{subtotal.toLocaleString()}</span>
+                <span>{formatCurrency(subtotal, defaultCurrency)}</span>
               </div>
               {discount > 0 && (
                 <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
                   <span>Discount</span>
-                  <span>- ৳{discount.toLocaleString()}</span>
+                  <span>- {formatCurrency(discount, defaultCurrency)}</span>
                 </div>
               )}
               {deliveryCharge > 0 && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>Delivery Charge</span>
-                  <span>+ ৳{deliveryCharge.toLocaleString()}</span>
+                  <span>+ {formatCurrency(deliveryCharge, defaultCurrency)}</span>
                 </div>
               )}
               <div className="border-t pt-2 flex justify-between items-center text-sm font-bold text-foreground">
                 <span>Total</span>
-                <span className="text-base text-primary">৳{total.toLocaleString()}</span>
+                <span className="text-base text-primary">{formatCurrency(total, defaultCurrency)}</span>
               </div>
             </div>
           </div>
