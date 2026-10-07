@@ -116,25 +116,7 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // Only if accountId was NOT provided at all should we fallback to other accounts
-    if (!accountRecord && !accountId) {
-      const { data: anyAcc } = await db
-        .from('accounts')
-        .select('*')
-        .not('facebook_page_access_token', 'is', null)
-        .limit(1)
-        .maybeSingle()
-      accountRecord = anyAcc
-    }
 
-    if (!accountRecord && !accountId) {
-      const { data: anyFirstAcc } = await db
-        .from('accounts')
-        .select('*')
-        .limit(1)
-        .maybeSingle()
-      accountRecord = anyFirstAcc
-    }
 
     if (accountRecord) {
       actualAccountId = accountRecord.id

@@ -210,16 +210,6 @@ ${itemListText}
           .maybeSingle()
         pageAccessToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || ''
       }
-
-      if (!pageAccessToken) {
-        const { data: anyChan } = await db
-          .from('channel_connections')
-          .select('metadata')
-          .eq('channel_type', 'messenger')
-          .limit(1)
-          .maybeSingle()
-        pageAccessToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
-      }
     } catch (tokenErr) {
       console.warn('[OrderNotification] Error fetching page token:', tokenErr)
     }

@@ -661,16 +661,7 @@ export async function handleIncomingCustomerMessage({
     } catch {}
   }
 
-  if (!account) {
-    try {
-      const { data: anyAcct } = await client
-        .from('accounts')
-        .select('*')
-        .limit(1)
-        .maybeSingle()
-      if (anyAcct) account = anyAcct
-    } catch {}
-  }
+
 
   if (!account) {
     account = {

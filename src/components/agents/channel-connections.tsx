@@ -49,17 +49,7 @@ export function ChannelConnections() {
     pageName: '',
   })
 
-  // Safe client hydration for cached local sessions
-  useEffect(() => {
-    try {
-      const cachedWa = localStorage.getItem('jobabdesk_wa_session')
-      if (cachedWa) setWaSession(JSON.parse(cachedWa))
-    } catch {}
-    try {
-      const cachedFb = localStorage.getItem('jobabdesk_fb_session')
-      if (cachedFb) setFbSession(JSON.parse(cachedFb))
-    } catch {}
-  }, [])
+
 
   const [loadingWa, setLoadingWa] = useState(false)
   const [loadingFb, setLoadingFb] = useState(false)
@@ -145,9 +135,6 @@ export function ChannelConnections() {
             qrCode: '',
           }
           setWaSession(newSession)
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
-          }
           setLoadingWa(false)
           return
         }
@@ -160,7 +147,7 @@ export function ChannelConnections() {
           const aiData = await aiRes.json()
           const settings = aiData.settings || aiData
           const waPhone = settings.whatsapp_phone_number_id || settings.whatsapp_connected_number
-          if (waPhone || settings.whatsapp_status === 'connected') {
+          if ((waPhone || settings.whatsapp_phone_number_id) && settings.whatsapp_status === 'connected') {
             if (settings.whatsapp_phone_number_id) setWaPhoneNumberId(settings.whatsapp_phone_number_id)
             if (settings.whatsapp_access_token) setWaAccessToken(settings.whatsapp_access_token)
             if (settings.whatsapp_waba_id) setWaWabaId(settings.whatsapp_waba_id)
@@ -171,9 +158,6 @@ export function ChannelConnections() {
               qrCode: '',
             }
             setWaSession(newSession)
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('jobabdesk_wa_session', JSON.stringify(newSession))
-            }
             setLoadingWa(false)
             return
           }
@@ -186,12 +170,8 @@ export function ChannelConnections() {
         const data: WhatsAppStatus = await gwRes.json()
         if (data.status === 'connected') {
           setWaSession(data)
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('jobabdesk_wa_session', JSON.stringify(data))
-          }
           setShowQrModal(false)
         } else {
-          // NEVER overwrite an active connected session with an unconfigured gateway's disconnected status
           setWaSession((prev) => {
             if (prev.status === 'connected') {
               return prev
@@ -221,9 +201,6 @@ export function ChannelConnections() {
 
         if (data.status === 'connected') {
           setFbSession(data)
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('jobabdesk_fb_session', JSON.stringify(data))
-          }
           setLoadingFb(false)
           return
         }
@@ -237,40 +214,25 @@ export function ChannelConnections() {
           const settings = aiData.settings || aiData
           const pageId = settings.facebook_page_id
           const pageName = settings.facebook_page_name || pageId
-          if (pageId || settings.messenger_status === 'connected') {
+          if (pageId && settings.messenger_status === 'connected') {
             if (pageId) setFbPageId(pageId)
             if (pageName) setFbPageName(pageName)
 
-            const newSession: MessengerStatus = {
+            setFbSession({
               status: 'connected',
-              pageId: pageId || '',
+              pageId: pageId,
               pageName: pageName || 'Connected Page',
-            }
-            setFbSession(newSession)
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
-            }
+            })
             setLoadingFb(false)
             return
           }
         }
       } catch {}
 
-      // If both explicitly returned disconnected, verify before marking disconnected
-      setFbSession((prev) => {
-        // Only clear if not already confirmed connected
-        if (prev.status === 'connected') {
-          // Check localStorage as fallback
-          try {
-            const cached = localStorage.getItem('jobabdesk_fb_session')
-            if (cached) {
-              const parsed = JSON.parse(cached)
-              if (parsed.status === 'connected') return parsed
-            }
-          } catch {}
-        }
-        return { status: 'disconnected', pageId: '', pageName: '' }
-      })
+      // If not connected on the authenticated account, strictly set disconnected
+      setFbSession({ status: 'disconnected', pageId: '', pageName: '' })
+      setFbPageId('')
+      setFbPageName('')
     } catch {
       // quiet catch
     } finally {

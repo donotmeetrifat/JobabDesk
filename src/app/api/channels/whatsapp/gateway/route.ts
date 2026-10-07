@@ -66,11 +66,6 @@ export async function DELETE() {
       targetAccountId = data?.id || ''
     }
 
-    if (!targetAccountId) {
-      const { data: first } = await db.from('accounts').select('id').limit(1).maybeSingle()
-      targetAccountId = first?.id || ''
-    }
-
     if (targetAccountId) {
       await db.from('accounts').update(updates).eq('id', targetAccountId)
     }

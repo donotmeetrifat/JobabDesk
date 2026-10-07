@@ -33,13 +33,8 @@ export async function sendMetaWhatsAppMessage({
     account = data
   }
 
-  if (!account) {
-    const { data } = await db
-      .from('accounts')
-      .select('whatsapp_phone_number_id, whatsapp_access_token')
-      .limit(1)
-      .maybeSingle()
-    account = data
+  if (!account && !process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    return { success: false, error: 'Meta WhatsApp credentials not configured for this account' }
   }
 
   const phoneNumberId = account?.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID

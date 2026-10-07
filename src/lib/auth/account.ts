@@ -120,7 +120,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     .rpc("get_account_context", { p_user_id: user.id })
     .maybeSingle();
 
-  const ctx = rawCtx as {
+  let ctx = rawCtx as {
     account_id: string;
     account_role: string;
     account_name: string;
@@ -128,8 +128,62 @@ export async function getCurrentAccount(): Promise<AccountContext> {
 
   if (ctxErr) {
     console.error("[getCurrentAccount] context fetch error:", ctxErr);
-    throw new ForbiddenError("Could not load account context");
   }
+
+  // Auto-healing: If user exists but has no account linked (e.g. signup trigger mismatch),
+  // automatically provision their personal account row and link it safely.
+  if (!ctx || !ctx.account_id || !ctx.account_role) {
+    try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co';
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const { createClient: createSupabaseJsClient } = await import('@supabase/supabase-js');
+      const admin = serviceKey ? createSupabaseJsClient(url, serviceKey.trim(), { auth: { persistSession: false } }) : supabase;
+
+      const { data: existingAcct } = await admin
+        .from('accounts')
+        .select('id, name')
+        .eq('owner_user_id', user.id)
+        .maybeSingle();
+
+      let targetAcctId = existingAcct?.id;
+      let targetAcctName = existingAcct?.name || (user.user_metadata as any)?.full_name || user.email?.split('@')[0] || 'My Store';
+
+      if (!targetAcctId) {
+        const { data: newAcct } = await admin
+          .from('accounts')
+          .insert({
+            name: targetAcctName,
+            owner_user_id: user.id,
+          })
+          .select('id, name')
+          .single();
+
+        if (newAcct) {
+          targetAcctId = newAcct.id;
+          targetAcctName = newAcct.name;
+        }
+      }
+
+      if (targetAcctId) {
+        await admin
+          .from('profiles')
+          .update({
+            account_id: targetAcctId,
+            account_role: 'owner',
+          })
+          .eq('user_id', user.id);
+
+        ctx = {
+          account_id: targetAcctId,
+          account_role: 'owner',
+          account_name: targetAcctName,
+        };
+      }
+    } catch (healErr) {
+      console.error('[getCurrentAccount] Auto-healing account error:', healErr);
+    }
+  }
+
   if (!ctx || !ctx.account_id || !ctx.account_role) {
     throw new ForbiddenError("Profile is not linked to an account");
   }

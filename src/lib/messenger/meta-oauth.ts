@@ -42,14 +42,9 @@ export async function getMessengerStatus(targetId: string, supabase?: any): Prom
       account = data
     }
 
-    // 3. Fallback: try querying first account with supabase client
-    if (!account && supabase) {
-      const { data } = await supabase
-        .from('accounts')
-        .select('*')
-        .limit(1)
-        .maybeSingle()
-      account = data
+    // If no account found for targetId, do NOT fall back to any other account
+    if (!account) {
+      return { status: 'disconnected', pageId: '', pageName: '', hasToken: false }
     }
 
     let pageId = (account?.facebook_page_id || account?.fb_page_id || '').trim()

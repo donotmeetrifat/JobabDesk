@@ -232,17 +232,6 @@ export async function POST(request: Request) {
       }
 
       if (!fbToken) {
-        const { data: anyChan } = await admin
-          .from('channel_connections')
-          .select('metadata, external_account_id')
-          .eq('channel_type', 'messenger')
-          .limit(1)
-          .maybeSingle();
-        fbToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || '';
-        if (!fbPageId) fbPageId = anyChan?.external_account_id || '';
-      }
-
-      if (!fbToken) {
         return NextResponse.json(
           { error: 'Facebook Page Access Token not configured for this account' },
           { status: 400 },

@@ -51,28 +51,6 @@ export async function resolveMetaPageAccessToken(db: any, accountId?: string | n
       pageAccessToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || ''
     }
 
-    if (!pageAccessToken) {
-      const { data: anyChan } = await db
-        .from('channel_connections')
-        .select('metadata')
-        .eq('channel_type', 'messenger')
-        .limit(1)
-        .maybeSingle()
-      pageAccessToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
-    }
-
-    if (!pageAccessToken) {
-      const { data: anyAcc } = await db
-        .from('accounts')
-        .select('facebook_page_access_token, facebook_page_id')
-        .not('facebook_page_access_token', 'is', null)
-        .limit(1)
-        .maybeSingle()
-      if (anyAcc?.facebook_page_access_token) {
-        pageAccessToken = anyAcc.facebook_page_access_token
-      }
-    }
-
     // If User Access Token, resolve to Page Access Token via /me/accounts or /me/assigned_pages
     if (pageAccessToken) {
       try {
@@ -274,15 +252,6 @@ export async function sendWhatsAppBroadcastMessage({
           .maybeSingle()
         account = data
       }
-      if (!account) {
-        const { data } = await db
-          .from('accounts')
-          .select('whatsapp_phone_number_id, whatsapp_access_token')
-          .limit(1)
-          .maybeSingle()
-        account = data
-      }
-
       const phoneNumberId = account?.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID
       const accessToken = account?.whatsapp_access_token || process.env.WHATSAPP_ACCESS_TOKEN
 

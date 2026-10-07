@@ -283,11 +283,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setAccount(accountRow);
         if (!data.account_id || !accountRole) {
-          // The row exists but carries no tenancy. Migration 017 made
-          // both columns NOT NULL for new signups, so this is a user
-          // whose bootstrap didn't complete (handle_new_user swallows a
-          // failure as a WARNING) or one predating that migration.
-          // Every insert and update they attempt will be denied by RLS.
+          // Trigger server auto-healing to bootstrap personal account
+          fetch('/api/account')
+            .then((res) => res.json())
+            .then((acctRes) => {
+              if (acctRes?.account?.id) {
+                // Re-fetch profile immediately now that account is provisioned
+                fetchProfile(userId);
+              }
+            })
+            .catch(() => {});
+
           setStatusDetail(
             `profile ${data.id} has no ${!data.account_id ? "account_id" : "account_role"}`,
           );
@@ -386,6 +392,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+      }
+    } catch {}
     window.location.href = "/login";
   }, []);
 

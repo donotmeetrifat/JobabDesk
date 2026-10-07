@@ -219,15 +219,6 @@ export async function POST(request: Request) {
           .maybeSingle()
         fbToken = chan?.metadata?.access_token || chan?.metadata?.accessToken || ''
       }
-      if (!fbToken) {
-        const { data: anyChan } = await admin
-          .from('channel_connections')
-          .select('metadata')
-          .eq('channel_type', 'messenger')
-          .limit(1)
-          .maybeSingle()
-        fbToken = anyChan?.metadata?.access_token || anyChan?.metadata?.accessToken || ''
-      }
 
       if (fbToken && psid && !psid.includes('-')) {
         let activePageToken = fbToken
