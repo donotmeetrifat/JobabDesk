@@ -581,15 +581,16 @@ export async function syncFacebookMessengerConversations(
 
         if (existingConv) {
           conversationId = existingConv.id
-          await db
-            .from('conversations')
-            .update({
-              last_message_text: latestMsg,
-              last_message_at: latestTime,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conversationId)
-            .catch(() => {})
+          try {
+            await db
+              .from('conversations')
+              .update({
+                last_message_text: latestMsg,
+                last_message_at: latestTime,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', conversationId)
+          } catch {}
         } else {
           const convPayload = {
             account_id: actualAccountId,
