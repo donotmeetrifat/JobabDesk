@@ -71,9 +71,10 @@ export async function syncFacebookMessengerConversations(
 ): Promise<SyncResult> {
   const adminClient = getAdminClient()
   const db = supabase || adminClient
+  const dbErrors: string[] = []
 
   try {
-    // 1. Resolve account record
+    // 1. Resolve account record and credentials
     let actualAccountId = accountId
     let pageId = explicitPageId?.trim() || ''
     let pageToken = explicitPageToken?.trim() || ''
@@ -114,42 +115,41 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
+    if (!accountRecord && explicitUserId) {
+      const { data: prof } = await db
+        .from('profiles')
+        .select('account_id')
+        .eq('user_id', explicitUserId)
+        .maybeSingle()
+      if (prof?.account_id) {
+        const { data: acc } = await db
+          .from('accounts')
+          .select('*')
+          .eq('id', prof.account_id)
+          .maybeSingle()
+        accountRecord = acc
+      }
+    }
+
     if (accountRecord) {
       actualAccountId = accountRecord.id
       pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
       pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
 
-      // Backfill: Repair any contacts, conversations, or profiles that mistakenly received owner_user_id as account_id
+      // Backfill repair if owner_user_id was mistakenly stored as account_id
       if (accountRecord.owner_user_id && accountRecord.owner_user_id !== accountRecord.id) {
         try {
           await db.from('contacts').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
           await db.from('conversations').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
           await db.from('profiles').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-          if (adminClient && adminClient !== db) {
-            await adminClient.from('contacts').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-            await adminClient.from('conversations').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-            await adminClient.from('profiles').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-          }
         } catch (repairErr) {
           console.warn('[Sync account_id repair warning]:', repairErr)
         }
       }
     }
 
-    // Ensure the explicit user's profile is aligned to actualAccountId
-    if (explicitUserId && actualAccountId) {
-      try {
-        await db.from('profiles').update({ account_id: actualAccountId }).eq('user_id', explicitUserId)
-        if (adminClient && adminClient !== db) {
-          await adminClient.from('profiles').update({ account_id: actualAccountId }).eq('user_id', explicitUserId)
-        }
-      } catch (pErr) {
-        console.warn('[Sync profile alignment warning]:', pErr)
-      }
-    }
-
-    // Try channel_connections table if token is still missing
+    // Try channel_connections table if credentials still missing
     if (!pageToken) {
       try {
         let chanQuery = db
@@ -172,27 +172,25 @@ export async function syncFacebookMessengerConversations(
       } catch {}
     }
 
-    // Resolve Page ID and Page Name from token if present
+    // Verify and resolve Page ID and Page Name from token if present
     if (pageToken) {
       try {
         const meRes = await fetch(
           `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${encodeURIComponent(pageToken)}`
         )
         let isPage = false
-        let meData: any = null
         if (meRes.ok) {
-          meData = await meRes.json()
+          const meData = await meRes.json()
           if (meData?.category) {
-            // Definitively a Facebook Page token
             isPage = true
             pageId = meData.id
             pageName = meData.name || pageName || 'Facebook Page'
           }
         }
 
-        // If not a Page token, it is a User or System User token
+        // If not a Page token, it is a User/System token
         if (!isPage) {
-          // Method A: Check /me/accounts
+          // Check /me/accounts
           try {
             const accsRes = await fetch(
               `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
@@ -201,10 +199,7 @@ export async function syncFacebookMessengerConversations(
               const accsData = await accsRes.json()
               const pages: any[] = accsData.data || []
               if (pages.length > 0) {
-                const matched = pageId
-                  ? pages.find((p) => p.id === pageId)
-                  : pages[0]
-
+                const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
                 if (matched) {
                   pageId = matched.id
                   pageName = matched.name || pageName
@@ -215,7 +210,7 @@ export async function syncFacebookMessengerConversations(
             }
           } catch {}
 
-          // Method B: Check /me/assigned_pages
+          // Check /me/assigned_pages
           if (!isPage) {
             try {
               const assignedRes = await fetch(
@@ -225,79 +220,13 @@ export async function syncFacebookMessengerConversations(
                 const assignedData = await assignedRes.json()
                 const pages: any[] = assignedData.data || []
                 if (pages.length > 0) {
-                  const matched = pageId
-                    ? pages.find((p) => p.id === pageId)
-                    : pages[0]
+                  const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
                   if (matched) {
                     pageId = matched.id
                     pageName = matched.name || pageName
                     if (matched.access_token) pageToken = matched.access_token
                     isPage = true
                   }
-                }
-              }
-            } catch {}
-          }
-
-          // Method C: Check /me/businesses
-          if (!isPage) {
-            try {
-              const bizRes = await fetch(
-                `https://graph.facebook.com/v20.0/me/businesses?fields=id,name,owned_pages{id,name,access_token},client_pages{id,name,access_token}&access_token=${encodeURIComponent(pageToken)}`
-              )
-              if (bizRes.ok) {
-                const bizData = await bizRes.json()
-                const bizList: any[] = bizData.data || []
-                const pages: any[] = []
-                for (const b of bizList) {
-                  if (b.owned_pages?.data) pages.push(...b.owned_pages.data)
-                  if (b.client_pages?.data) pages.push(...b.client_pages.data)
-                }
-                if (pages.length > 0) {
-                  const matched = pageId
-                    ? pages.find((p) => p.id === pageId)
-                    : pages[0]
-                  if (matched) {
-                    pageId = matched.id
-                    pageName = matched.name || pageName
-                    if (matched.access_token) pageToken = matched.access_token
-                    isPage = true
-                  }
-                }
-              }
-            } catch {}
-          }
-
-          // Fallback check from channel_connections
-          if (!pageId && actualAccountId) {
-            try {
-              const { data: chan } = await db
-                .from('channel_connections')
-                .select('external_account_id, display_name')
-                .eq('account_id', actualAccountId)
-                .eq('channel_type', 'messenger')
-                .limit(1)
-                .maybeSingle()
-              if (chan?.external_account_id) {
-                pageId = chan.external_account_id
-                pageName = pageName || chan.display_name || 'Facebook Page'
-              }
-            } catch {}
-          }
-
-          // Test if pageId is accessible directly
-          if (!isPage && pageId) {
-            try {
-              const pageDirectRes = await fetch(
-                `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
-              )
-              if (pageDirectRes.ok) {
-                const pageDirectData = await pageDirectRes.json()
-                if (pageDirectData?.id) {
-                  pageId = pageDirectData.id
-                  pageName = pageDirectData.name || pageName
-                  if (pageDirectData.access_token) pageToken = pageDirectData.access_token
-                  isPage = true
                 }
               }
             } catch {}
@@ -308,24 +237,19 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // Clean up if specifically requested or if connected page changed
-    if (pageId && actualAccountId) {
+    // Clean up if specifically requested
+    if (pageId && actualAccountId && purgeExisting) {
       try {
-        const prevPageId = accountRecord?.facebook_page_id || ''
-        const shouldPurge = Boolean(purgeExisting) || (prevPageId && pageId && prevPageId !== pageId)
+        const { data: convsToClean } = await db
+          .from('conversations')
+          .select('id')
+          .eq('account_id', actualAccountId)
 
-        if (shouldPurge) {
-          const { data: convsToClean } = await db
-            .from('conversations')
-            .select('id')
-            .eq('account_id', actualAccountId)
-
-          if (convsToClean && convsToClean.length > 0) {
-            const convIds = convsToClean.map((c: any) => c.id)
-            await db.from('messages').delete().in('conversation_id', convIds)
-            await db.from('conversations').delete().eq('account_id', actualAccountId)
-            await db.from('contacts').delete().eq('account_id', actualAccountId)
-          }
+        if (convsToClean && convsToClean.length > 0) {
+          const convIds = convsToClean.map((c: any) => c.id)
+          await db.from('messages').delete().in('conversation_id', convIds)
+          await db.from('conversations').delete().eq('account_id', actualAccountId)
+          await db.from('contacts').delete().eq('account_id', actualAccountId)
         }
       } catch (cleanErr) {
         console.warn('[Sync conversations clean error]:', cleanErr)
@@ -383,7 +307,6 @@ export async function syncFacebookMessengerConversations(
       (await resolveOwnerUserId(db, actualAccountId, explicitUserId))
 
     // 2. Fetch conversations from Meta Graph API
-    // Clamped limit: between 5 and 100, default 25
     const syncLimit = Math.min(Math.max(limit || 25, 5), 100)
 
     const candidates: string[] = []
@@ -415,7 +338,7 @@ export async function syncFacebookMessengerConversations(
             }
           }
           if (rawConversations.length > 0) {
-            break // Found conversations, stop query chain immediately!
+            break
           }
         } else if (cData?.error) {
           const errMsg = cData.error.message || `Error ${cData.error.code}`
@@ -501,7 +424,7 @@ export async function syncFacebookMessengerConversations(
         customerPsid = rawConv.id
       }
 
-      if (customerPsid && customerPsid !== pageId) {
+      if (customerPsid) {
         allCustomerPsids.add(customerPsid)
       }
 
@@ -531,30 +454,50 @@ export async function syncFacebookMessengerConversations(
       })
     }
 
-    // 4. Batch query existing contacts from Supabase
+    // 4. Batch query existing contacts from Supabase by phone AND messenger_id
     const contactsByPsid = new Map<string, any>()
     const psidList = Array.from(allCustomerPsids)
 
     if (psidList.length > 0) {
-      try {
-        // Query in chunks of 40 to avoid huge query strings
-        for (let i = 0; i < psidList.length; i += 40) {
-          const slice = psidList.slice(i, i + 40)
-          const { data: contactsData } = await db
+      for (let i = 0; i < psidList.length; i += 40) {
+        const slice = psidList.slice(i, i + 40)
+
+        // A. Primary: query by phone (phone is NOT NULL in contacts table and always indexed)
+        try {
+          const { data: phoneContacts, error: phoneErr } = await db
+            .from('contacts')
+            .select('id, name, avatar_url, company, phone')
+            .eq('account_id', actualAccountId)
+            .in('phone', slice)
+
+          if (phoneContacts) {
+            for (const c of phoneContacts) {
+              if (c.phone) contactsByPsid.set(c.phone, c)
+            }
+          }
+          if (phoneErr) {
+            console.warn('[Sync batch contacts by phone error]:', phoneErr.message)
+            dbErrors.push(`Contacts fetch (phone): ${phoneErr.message}`)
+          }
+        } catch (err: any) {
+          console.warn('[Sync contacts by phone exception]:', err?.message)
+        }
+
+        // B. Secondary: query by messenger_id if present
+        try {
+          const { data: messengerContacts } = await db
             .from('contacts')
             .select('id, name, avatar_url, company, phone, messenger_id')
             .eq('account_id', actualAccountId)
             .in('messenger_id', slice)
 
-          if (contactsData) {
-            for (const c of contactsData) {
+          if (messengerContacts) {
+            for (const c of messengerContacts) {
               if (c.messenger_id) contactsByPsid.set(c.messenger_id, c)
               if (c.phone) contactsByPsid.set(c.phone, c)
             }
           }
-        }
-      } catch (cFetchErr) {
-        console.warn('[Sync batch contacts fetch warning]:', cFetchErr)
+        } catch {}
       }
     }
 
@@ -567,7 +510,6 @@ export async function syncFacebookMessengerConversations(
       return !hasGoodName || !existing.avatar_url
     })
 
-    // Fetch Meta profiles in parallel chunks of 5
     if (psidsNeedingMetaFetch.length > 0) {
       for (let i = 0; i < psidsNeedingMetaFetch.length; i += 5) {
         const batch = psidsNeedingMetaFetch.slice(i, i + 5)
@@ -594,7 +536,7 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // 6. Resolve / Upsert Contacts
+    // 6. Resolve / Upsert Contacts (with fallback retry for schema variations & duplicate constraints)
     for (const item of processedList) {
       const psid = item.customerPsid
       const cachedProfile = profileCache.get(psid)
@@ -612,14 +554,17 @@ export async function syncFacebookMessengerConversations(
         }
 
         const updates: any = {}
-        if (resolvedName && (!existingContact.name || existingContact.name === 'Unknown' || existingContact.name.startsWith('Messenger User')) && resolvedName !== existingContact.name) {
+        if (
+          resolvedName &&
+          (!existingContact.name ||
+            existingContact.name === 'Unknown' ||
+            existingContact.name.startsWith('Messenger User')) &&
+          resolvedName !== existingContact.name
+        ) {
           updates.name = resolvedName
         }
         if (resolvedAvatar && existingContact.avatar_url !== resolvedAvatar) {
           updates.avatar_url = resolvedAvatar
-        }
-        if (!existingContact.messenger_id) {
-          updates.messenger_id = psid
         }
 
         if (Object.keys(updates).length > 0) {
@@ -632,37 +577,80 @@ export async function syncFacebookMessengerConversations(
           resolvedName = `Messenger User (${psid.slice(-4)})`
         }
 
-        const contactPayload = {
+        const contactPayload: any = {
           account_id: actualAccountId,
           user_id: ownerUserId,
           phone: psid,
-          messenger_id: psid,
           name: resolvedName,
           email: item.customerEmail,
           avatar_url: resolvedAvatar || null,
           company: 'Facebook Messenger',
         }
 
-        let { data: newContact, error: createContactErr } = await db
+        let newContact: any = null
+        let createContactErr: any = null
+
+        // Try inserting with messenger_id
+        const res1 = await db
           .from('contacts')
-          .insert(contactPayload)
-          .select('id, name, avatar_url, phone, messenger_id')
+          .insert({ ...contactPayload, messenger_id: psid })
+          .select('id, name, avatar_url, phone')
           .maybeSingle()
 
-        if ((createContactErr || !newContact) && adminClient && adminClient !== db) {
-          const adminInsertRes = await adminClient
+        if (res1.data) {
+          newContact = res1.data
+        } else {
+          createContactErr = res1.error
+          // If column messenger_id does not exist, retry without it
+          if (res1.error?.message?.includes('messenger_id')) {
+            const res2 = await db
+              .from('contacts')
+              .insert(contactPayload)
+              .select('id, name, avatar_url, phone')
+              .maybeSingle()
+            if (res2.data) {
+              newContact = res2.data
+              createContactErr = null
+            } else {
+              createContactErr = res2.error
+            }
+          }
+        }
+
+        // Fallback retry with adminClient if db failed
+        if (!newContact && adminClient && adminClient !== db) {
+          const adminInsert = await adminClient
             .from('contacts')
             .insert(contactPayload)
-            .select('id, name, avatar_url, phone, messenger_id')
+            .select('id, name, avatar_url, phone')
             .maybeSingle()
-          if (adminInsertRes.data) {
-            newContact = adminInsertRes.data
+          if (adminInsert.data) {
+            newContact = adminInsert.data
+            createContactErr = null
+          }
+        }
+
+        // If insert failed due to duplicate phone / phone_normalized, query existing contact!
+        if (!newContact) {
+          const digitsOnly = psid.replace(/\D/g, '')
+          const { data: retryContact } = await db
+            .from('contacts')
+            .select('id, name, avatar_url, phone')
+            .eq('account_id', actualAccountId)
+            .or(`phone.eq.${psid}${digitsOnly ? `,phone_normalized.eq.${digitsOnly}` : ''}`)
+            .maybeSingle()
+
+          if (retryContact) {
+            newContact = retryContact
             createContactErr = null
           }
         }
 
         if (newContact) {
           contactsByPsid.set(psid, newContact)
+        } else if (createContactErr) {
+          console.error(`[Sync contact insert error for ${psid}]:`, createContactErr.message)
+          dbErrors.push(`Contact create (${psid}): ${createContactErr.message}`)
         }
       }
     }
@@ -676,7 +664,7 @@ export async function syncFacebookMessengerConversations(
     if (allContactIds.length > 0) {
       for (let i = 0; i < allContactIds.length; i += 40) {
         const slice = allContactIds.slice(i, i + 40)
-        const { data: convData } = await db
+        const { data: convData, error: convFetchErr } = await db
           .from('conversations')
           .select('id, contact_id, last_message_text, last_message_at')
           .eq('account_id', actualAccountId)
@@ -687,13 +675,16 @@ export async function syncFacebookMessengerConversations(
             convsByContactId.set(cv.contact_id, cv)
           }
         }
+        if (convFetchErr) {
+          console.warn('[Sync batch conversations fetch error]:', convFetchErr.message)
+          dbErrors.push(`Conversations fetch: ${convFetchErr.message}`)
+        }
       }
     }
 
     // 8. Process conversations and messages in concurrent chunks (Chunk Size = 5)
     let totalConversations = 0
     let totalMessages = 0
-    const dbErrors: string[] = []
 
     const CONV_CHUNK_SIZE = 5
     for (let i = 0; i < processedList.length; i += CONV_CHUNK_SIZE) {
@@ -703,7 +694,10 @@ export async function syncFacebookMessengerConversations(
         chunk.map(async (item) => {
           try {
             const contact = contactsByPsid.get(item.customerPsid)
-            if (!contact?.id) return
+            if (!contact?.id) {
+              console.warn(`[Sync]: Missing contact for PSID ${item.customerPsid}`)
+              return
+            }
 
             const contactId = contact.id
             let conversationId = ''
@@ -745,12 +739,31 @@ export async function syncFacebookMessengerConversations(
                   .maybeSingle()
                 if (adminConvRes.data) {
                   newConv = adminConvRes.data
+                  createConvErr = null
+                }
+              }
+
+              // Fallback: check if conversation already exists for contact_id
+              if (!newConv) {
+                const { data: retryConv } = await db
+                  .from('conversations')
+                  .select('id')
+                  .eq('account_id', actualAccountId)
+                  .eq('contact_id', contactId)
+                  .maybeSingle()
+
+                if (retryConv) {
+                  newConv = retryConv
+                  createConvErr = null
                 }
               }
 
               if (newConv?.id) {
                 conversationId = newConv.id
                 convsByContactId.set(contactId, newConv)
+              } else if (createConvErr) {
+                console.error(`[Sync conversation insert error for contact ${contactId}]:`, createConvErr.message)
+                dbErrors.push(`Conv create: ${createConvErr.message}`)
               }
             }
 
@@ -888,6 +901,7 @@ export async function syncFacebookMessengerConversations(
                   }).catch(() => {})
                 }
               } else {
+                console.error('[Sync message insert error]:', insertErr.message)
                 dbErrors.push(`Message insert error: ${insertErr.message}`)
               }
             }
