@@ -465,8 +465,12 @@ function InboxPageInner() {
           } else {
             const rawCount = data.debug?.rawMetaCount ?? 0;
             if (rawCount > 0) {
+              const errDetail =
+                data.debug?.errors?.filter(Boolean).slice(0, 3).join("; ") ||
+                data.error ||
+                "Check database logs";
               toast.warning(
-                `Found ${rawCount} conversation(s) on Meta, but failed to save: ${data.debug?.errors?.join("; ") || "Check database logs"}`
+                `Found ${rawCount} conversation(s) on Meta, but failed to save: ${errDetail}`
               );
             } else {
               toast.info(

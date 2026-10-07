@@ -3,6 +3,8 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { syncFacebookMessengerConversations } from '@/lib/messenger/sync-conversations'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
 
 // In-flight mutex to prevent duplicate stacked sync runs for the same account
 const inFlightSyncs = new Map<string, Promise<any>>()

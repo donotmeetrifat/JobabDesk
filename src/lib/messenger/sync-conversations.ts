@@ -10,13 +10,15 @@ function getAdminClient() {
     })
   }
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  return createClient(url, anonKey)
+  if (anonKey && anonKey.trim().length > 0) {
+    return createClient(url, anonKey.trim())
+  }
+  return null
 }
 
 async function resolveOwnerUserId(db: any, accountId: string, explicitUserId?: string): Promise<string> {
   if (explicitUserId) return explicitUserId
 
-  // 1. Try owner_user_id from accounts
   const { data: acc } = await db
     .from('accounts')
     .select('owner_user_id')
@@ -25,7 +27,6 @@ async function resolveOwnerUserId(db: any, accountId: string, explicitUserId?: s
 
   if (acc?.owner_user_id) return acc.owner_user_id
 
-  // 2. Try profiles for this account
   const { data: prof } = await db
     .from('profiles')
     .select('user_id')
@@ -35,7 +36,6 @@ async function resolveOwnerUserId(db: any, accountId: string, explicitUserId?: s
 
   if (prof?.user_id) return prof.user_id
 
-  // 3. Fallback to any user
   const { data: anyProf } = await db
     .from('profiles')
     .select('user_id')
@@ -74,7 +74,7 @@ export async function syncFacebookMessengerConversations(
   const dbErrors: string[] = []
 
   try {
-    // 1. Resolve account record and credentials
+    // 1. Resolve guaranteed account and credentials
     let actualAccountId = accountId
     let pageId = explicitPageId?.trim() || ''
     let pageToken = explicitPageToken?.trim() || ''
@@ -99,22 +99,6 @@ export async function syncFacebookMessengerConversations(
       accountRecord = acc
     }
 
-    if (!accountRecord && accountId) {
-      const { data: prof } = await db
-        .from('profiles')
-        .select('account_id')
-        .eq('user_id', accountId)
-        .maybeSingle()
-      if (prof?.account_id) {
-        const { data: acc } = await db
-          .from('accounts')
-          .select('*')
-          .eq('id', prof.account_id)
-          .maybeSingle()
-        accountRecord = acc
-      }
-    }
-
     if (!accountRecord && explicitUserId) {
       const { data: prof } = await db
         .from('profiles')
@@ -131,22 +115,11 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    if (accountRecord) {
+    if (accountRecord?.id) {
       actualAccountId = accountRecord.id
       pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
       pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
-
-      // Backfill repair if owner_user_id was mistakenly stored as account_id
-      if (accountRecord.owner_user_id && accountRecord.owner_user_id !== accountRecord.id) {
-        try {
-          await db.from('contacts').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-          await db.from('conversations').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-          await db.from('profiles').update({ account_id: accountRecord.id }).eq('account_id', accountRecord.owner_user_id)
-        } catch (repairErr) {
-          console.warn('[Sync account_id repair warning]:', repairErr)
-        }
-      }
     }
 
     // Try channel_connections table if credentials still missing
@@ -172,7 +145,7 @@ export async function syncFacebookMessengerConversations(
       } catch {}
     }
 
-    // Verify and resolve Page ID and Page Name from token if present
+    // Resolve Page ID and Page Name from token if present
     if (pageToken) {
       try {
         const meRes = await fetch(
@@ -188,48 +161,22 @@ export async function syncFacebookMessengerConversations(
           }
         }
 
-        // If not a Page token, it is a User/System token
         if (!isPage) {
-          // Check /me/accounts
-          try {
-            const accsRes = await fetch(
-              `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
-            )
-            if (accsRes.ok) {
-              const accsData = await accsRes.json()
-              const pages: any[] = accsData.data || []
-              if (pages.length > 0) {
-                const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
-                if (matched) {
-                  pageId = matched.id
-                  pageName = matched.name || pageName
-                  if (matched.access_token) pageToken = matched.access_token
-                  isPage = true
-                }
+          const accsRes = await fetch(
+            `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+          )
+          if (accsRes.ok) {
+            const accsData = await accsRes.json()
+            const pages: any[] = accsData.data || []
+            if (pages.length > 0) {
+              const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
+              if (matched) {
+                pageId = matched.id
+                pageName = matched.name || pageName
+                if (matched.access_token) pageToken = matched.access_token
+                isPage = true
               }
             }
-          } catch {}
-
-          // Check /me/assigned_pages
-          if (!isPage) {
-            try {
-              const assignedRes = await fetch(
-                `https://graph.facebook.com/v20.0/me/assigned_pages?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
-              )
-              if (assignedRes.ok) {
-                const assignedData = await assignedRes.json()
-                const pages: any[] = assignedData.data || []
-                if (pages.length > 0) {
-                  const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
-                  if (matched) {
-                    pageId = matched.id
-                    pageName = matched.name || pageName
-                    if (matched.access_token) pageToken = matched.access_token
-                    isPage = true
-                  }
-                }
-              }
-            } catch {}
           }
         }
       } catch (tokenInspectErr) {
@@ -301,25 +248,40 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    const ownerUserId =
-      explicitUserId ||
-      accountRecord?.owner_user_id ||
-      (await resolveOwnerUserId(db, actualAccountId, explicitUserId))
+    // Resolve ownerUserId
+    let ownerUserId = explicitUserId || accountRecord?.owner_user_id || ''
+    if (!ownerUserId && actualAccountId) {
+      ownerUserId = await resolveOwnerUserId(db, actualAccountId, explicitUserId)
+    }
+    if (!ownerUserId) {
+      const { data: p } = await db.from('profiles').select('user_id').limit(1).maybeSingle()
+      ownerUserId = p?.user_id || ''
+    }
 
     // 2. Fetch conversations from Meta Graph API
     const syncLimit = Math.min(Math.max(limit || 25, 5), 100)
 
+    const nestedMsgFields = 'messages.limit(10){id,message,created_time,from,to,attachments}'
+    const fullConvFields = `id,updated_time,participants,senders,unread_count,message_count,${nestedMsgFields}`
+    const simpleConvFields = 'id,updated_time,participants,senders,unread_count,message_count'
+
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      )
+      candidates.push(
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${encodeURIComponent(simpleConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=id,updated_time,participants,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+    )
+    candidates.push(
+      `https://graph.facebook.com/v20.0/me/conversations?fields=${encodeURIComponent(simpleConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
     )
 
     let rawConversations: Array<any> = []
@@ -366,7 +328,7 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // Auto-subscribe page to webhooks in the background (fire-and-forget)
+    // Auto-subscribe page to webhooks in background
     if (pageId) {
       fetch(
         `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reactions,message_reads,messaging_optins&access_token=${encodeURIComponent(pageToken)}`,
@@ -384,532 +346,416 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    // 3. Pre-process metadata for all conversations
-    interface ProcessedConv {
-      rawConv: any
-      customerPsid: string
-      customerName: string
-      customerEmail: string | null
-      rawMessages: any[]
-      latestMsg: string
-      latestTime: string
-    }
-
-    const processedList: ProcessedConv[] = []
-    const allCustomerPsids = new Set<string>()
-
-    for (const rawConv of rawConversations) {
-      const rawMessages: any[] = rawConv.messages?.data || []
-      const participants: Array<{ id: string; name?: string; email?: string }> =
-        rawConv.participants?.data || rawConv.senders?.data || []
-
-      let customer = participants.find(
-        (p) => p.id !== pageId && (!pageName || p.name?.toLowerCase() !== pageName.toLowerCase())
-      ) || participants[0]
-
-      let customerPsid = customer?.id || ''
-      let customerName = customer?.name || ''
-
-      if ((!customerPsid || customerPsid === pageId) && rawMessages.length > 0) {
-        for (const m of rawMessages) {
-          if (m.from?.id && m.from.id !== pageId) {
-            customerPsid = m.from.id
-            customerName = m.from.name || customerName
-            break
-          }
-        }
-      }
-
-      if (!customerPsid) {
-        customerPsid = rawConv.id
-      }
-
-      if (customerPsid) {
-        allCustomerPsids.add(customerPsid)
-      }
-
-      const customerEmail =
-        customer?.email && !customer.email.toLowerCase().endsWith('@facebook.com')
-          ? customer.email
-          : null
-
-      let latestMsg = rawMessages[0]?.message || ''
-      if (!latestMsg && rawMessages[0]?.attachments?.data?.length > 0) {
-        const firstAtt = rawMessages[0].attachments.data[0]
-        if (firstAtt.image_data) latestMsg = '📷 Photo'
-        else if (firstAtt.file_url?.includes('.aac') || firstAtt.mime_type?.startsWith('audio')) latestMsg = '🎵 Voice message'
-        else latestMsg = '📎 Attachment'
-      }
-      if (!latestMsg) latestMsg = 'Messenger conversation'
-      const latestTime = rawMessages[0]?.created_time || rawConv.updated_time || new Date().toISOString()
-
-      processedList.push({
-        rawConv,
-        customerPsid,
-        customerName,
-        customerEmail,
-        rawMessages,
-        latestMsg,
-        latestTime,
-      })
-    }
-
-    // 4. Batch query existing contacts from Supabase by phone AND messenger_id
-    const contactsByPsid = new Map<string, any>()
-    const psidList = Array.from(allCustomerPsids)
-
-    if (psidList.length > 0) {
-      for (let i = 0; i < psidList.length; i += 40) {
-        const slice = psidList.slice(i, i + 40)
-
-        // A. Primary: query by phone (phone is NOT NULL in contacts table and always indexed)
-        try {
-          const { data: phoneContacts, error: phoneErr } = await db
-            .from('contacts')
-            .select('id, name, avatar_url, company, phone')
-            .eq('account_id', actualAccountId)
-            .in('phone', slice)
-
-          if (phoneContacts) {
-            for (const c of phoneContacts) {
-              if (c.phone) contactsByPsid.set(c.phone, c)
-            }
-          }
-          if (phoneErr) {
-            console.warn('[Sync batch contacts by phone error]:', phoneErr.message)
-            dbErrors.push(`Contacts fetch (phone): ${phoneErr.message}`)
-          }
-        } catch (err: any) {
-          console.warn('[Sync contacts by phone exception]:', err?.message)
-        }
-
-        // B. Secondary: query by messenger_id if present
-        try {
-          const { data: messengerContacts } = await db
-            .from('contacts')
-            .select('id, name, avatar_url, company, phone, messenger_id')
-            .eq('account_id', actualAccountId)
-            .in('messenger_id', slice)
-
-          if (messengerContacts) {
-            for (const c of messengerContacts) {
-              if (c.messenger_id) contactsByPsid.set(c.messenger_id, c)
-              if (c.phone) contactsByPsid.set(c.phone, c)
-            }
-          }
-        } catch {}
-      }
-    }
-
-    // 5. Smart Profile Resolution: ONLY fetch Meta Graph API for contacts that lack name/avatar
-    const profileCache = new Map<string, { name?: string; avatar_url?: string }>()
-    const psidsNeedingMetaFetch = psidList.filter((psid) => {
-      const existing = contactsByPsid.get(psid)
-      if (!existing) return true
-      const hasGoodName = existing.name && existing.name !== 'Unknown' && !existing.name.startsWith('Messenger User')
-      return !hasGoodName || !existing.avatar_url
-    })
-
-    if (psidsNeedingMetaFetch.length > 0) {
-      for (let i = 0; i < psidsNeedingMetaFetch.length; i += 5) {
-        const batch = psidsNeedingMetaFetch.slice(i, i + 5)
-        await Promise.allSettled(
-          batch.map(async (psid) => {
-            try {
-              const profileRes = await fetch(
-                `https://graph.facebook.com/v20.0/${psid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageToken)}`
-              )
-              if (profileRes.ok) {
-                const profileJson = await profileRes.json()
-                const resolvedName = (
-                  profileJson.name ||
-                  [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ')
-                ).trim()
-                profileCache.set(psid, {
-                  name: resolvedName || undefined,
-                  avatar_url: profileJson.profile_pic || undefined,
-                })
-              }
-            } catch {}
-          })
-        )
-      }
-    }
-
-    // 6. Resolve / Upsert Contacts (with fallback retry for schema variations & duplicate constraints)
-    for (const item of processedList) {
-      const psid = item.customerPsid
-      const cachedProfile = profileCache.get(psid)
-      let resolvedName = cachedProfile?.name || item.customerName
-      const resolvedAvatar = cachedProfile?.avatar_url || ''
-
-      const existingContact = contactsByPsid.get(psid)
-
-      if (existingContact) {
-        if (!resolvedName || resolvedName === 'Unknown') {
-          resolvedName = existingContact.name
-        }
-        if (!resolvedName || resolvedName === 'Unknown') {
-          resolvedName = `Messenger User (${psid.slice(-4)})`
-        }
-
-        const updates: any = {}
-        if (
-          resolvedName &&
-          (!existingContact.name ||
-            existingContact.name === 'Unknown' ||
-            existingContact.name.startsWith('Messenger User')) &&
-          resolvedName !== existingContact.name
-        ) {
-          updates.name = resolvedName
-        }
-        if (resolvedAvatar && existingContact.avatar_url !== resolvedAvatar) {
-          updates.avatar_url = resolvedAvatar
-        }
-
-        if (Object.keys(updates).length > 0) {
-          updates.updated_at = new Date().toISOString()
-          await db.from('contacts').update(updates).eq('id', existingContact.id).catch(() => {})
-          Object.assign(existingContact, updates)
-        }
-      } else {
-        if (!resolvedName || resolvedName === 'Unknown') {
-          resolvedName = `Messenger User (${psid.slice(-4)})`
-        }
-
-        const contactPayload: any = {
-          account_id: actualAccountId,
-          user_id: ownerUserId,
-          phone: psid,
-          name: resolvedName,
-          email: item.customerEmail,
-          avatar_url: resolvedAvatar || null,
-          company: 'Facebook Messenger',
-        }
-
-        let newContact: any = null
-        let createContactErr: any = null
-
-        // Try inserting with messenger_id
-        const res1 = await db
-          .from('contacts')
-          .insert({ ...contactPayload, messenger_id: psid })
-          .select('id, name, avatar_url, phone')
-          .maybeSingle()
-
-        if (res1.data) {
-          newContact = res1.data
-        } else {
-          createContactErr = res1.error
-          // If column messenger_id does not exist, retry without it
-          if (res1.error?.message?.includes('messenger_id')) {
-            const res2 = await db
-              .from('contacts')
-              .insert(contactPayload)
-              .select('id, name, avatar_url, phone')
-              .maybeSingle()
-            if (res2.data) {
-              newContact = res2.data
-              createContactErr = null
-            } else {
-              createContactErr = res2.error
-            }
-          }
-        }
-
-        // Fallback retry with adminClient if db failed
-        if (!newContact && adminClient && adminClient !== db) {
-          const adminInsert = await adminClient
-            .from('contacts')
-            .insert(contactPayload)
-            .select('id, name, avatar_url, phone')
-            .maybeSingle()
-          if (adminInsert.data) {
-            newContact = adminInsert.data
-            createContactErr = null
-          }
-        }
-
-        // If insert failed due to duplicate phone / phone_normalized, query existing contact!
-        if (!newContact) {
-          const digitsOnly = psid.replace(/\D/g, '')
-          const { data: retryContact } = await db
-            .from('contacts')
-            .select('id, name, avatar_url, phone')
-            .eq('account_id', actualAccountId)
-            .or(`phone.eq.${psid}${digitsOnly ? `,phone_normalized.eq.${digitsOnly}` : ''}`)
-            .maybeSingle()
-
-          if (retryContact) {
-            newContact = retryContact
-            createContactErr = null
-          }
-        }
-
-        if (newContact) {
-          contactsByPsid.set(psid, newContact)
-        } else if (createContactErr) {
-          console.error(`[Sync contact insert error for ${psid}]:`, createContactErr.message)
-          dbErrors.push(`Contact create (${psid}): ${createContactErr.message}`)
-        }
-      }
-    }
-
-    // 7. Batch Query Existing Conversations
-    const allContactIds = Array.from(contactsByPsid.values())
-      .map((c) => c.id)
-      .filter(Boolean)
-    const convsByContactId = new Map<string, any>()
-
-    if (allContactIds.length > 0) {
-      for (let i = 0; i < allContactIds.length; i += 40) {
-        const slice = allContactIds.slice(i, i + 40)
-        const { data: convData, error: convFetchErr } = await db
-          .from('conversations')
-          .select('id, contact_id, last_message_text, last_message_at')
-          .eq('account_id', actualAccountId)
-          .in('contact_id', slice)
-
-        if (convData) {
-          for (const cv of convData) {
-            convsByContactId.set(cv.contact_id, cv)
-          }
-        }
-        if (convFetchErr) {
-          console.warn('[Sync batch conversations fetch error]:', convFetchErr.message)
-          dbErrors.push(`Conversations fetch: ${convFetchErr.message}`)
-        }
-      }
-    }
-
-    // 8. Process conversations and messages in concurrent chunks (Chunk Size = 5)
+    // Shared in-memory contact cache for this sync pass to prevent redundant DB calls
+    const contactCache = new Map<string, any>()
     let totalConversations = 0
     let totalMessages = 0
 
-    const CONV_CHUNK_SIZE = 5
-    for (let i = 0; i < processedList.length; i += CONV_CHUNK_SIZE) {
-      const chunk = processedList.slice(i, i + CONV_CHUNK_SIZE)
+    // Process each conversation
+    const processConversation = async (rawConv: any) => {
+      try {
+        let rawMessages: any[] = rawConv.messages?.data || []
 
-      await Promise.all(
-        chunk.map(async (item) => {
+        // Combine BOTH senders and participants so neither is ignored
+        const allPeople: Array<{ id: string; name?: string; email?: string }> = [
+          ...(rawConv.senders?.data || []),
+          ...(rawConv.participants?.data || []),
+        ]
+
+        let customerPsid = ''
+        let customerName = ''
+        let customerEmail: string | null = null
+
+        // 1. Resolve customer from senders / participants (excluding the Page itself)
+        for (const p of allPeople) {
+          if (p?.id && p.id !== pageId && (!pageName || p.name?.toLowerCase() !== pageName.toLowerCase())) {
+            customerPsid = p.id
+            customerName = p.name || ''
+            customerEmail = p.email || null
+            break
+          }
+        }
+
+        // 2. If not found, inspect inline messages
+        if (!customerPsid && rawMessages.length > 0) {
+          for (const m of rawMessages) {
+            if (m.from?.id && m.from.id !== pageId && (!pageName || m.from?.name?.toLowerCase() !== pageName.toLowerCase())) {
+              customerPsid = m.from.id
+              if (!customerName) customerName = m.from.name || ''
+              break
+            }
+          }
+        }
+
+        // 3. Extract PSID from thread ID (e.g. t_1000847291823 or t_pageId_psid)
+        if (!customerPsid && rawConv.id) {
+          const parts = rawConv.id.replace(/^t_/, '').split('_')
+          for (const part of parts) {
+            if (part && part !== pageId && /^\d+$/.test(part)) {
+              customerPsid = part
+              break
+            }
+          }
+        }
+
+        // 4. If messages are empty, fetch thread messages from Meta Graph API
+        if (rawMessages.length === 0 && rawConv.id) {
           try {
-            const contact = contactsByPsid.get(item.customerPsid)
-            if (!contact?.id) {
-              console.warn(`[Sync]: Missing contact for PSID ${item.customerPsid}`)
-              return
-            }
-
-            const contactId = contact.id
-            let conversationId = ''
-            const existingConv = convsByContactId.get(contactId)
-
-            if (existingConv) {
-              conversationId = existingConv.id
-              await db
-                .from('conversations')
-                .update({
-                  last_message_text: item.latestMsg,
-                  last_message_at: item.latestTime,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', conversationId)
-                .catch(() => {})
-            } else {
-              const convPayload = {
-                account_id: actualAccountId,
-                contact_id: contactId,
-                user_id: ownerUserId,
-                status: 'open',
-                last_message_text: item.latestMsg,
-                last_message_at: item.latestTime,
-                unread_count: 0,
-              }
-
-              let { data: newConv, error: createConvErr } = await db
-                .from('conversations')
-                .insert(convPayload)
-                .select('id')
-                .maybeSingle()
-
-              if ((createConvErr || !newConv) && adminClient && adminClient !== db) {
-                const adminConvRes = await adminClient
-                  .from('conversations')
-                  .insert(convPayload)
-                  .select('id')
-                  .maybeSingle()
-                if (adminConvRes.data) {
-                  newConv = adminConvRes.data
-                  createConvErr = null
-                }
-              }
-
-              // Fallback: check if conversation already exists for contact_id
-              if (!newConv) {
-                const { data: retryConv } = await db
-                  .from('conversations')
-                  .select('id')
-                  .eq('account_id', actualAccountId)
-                  .eq('contact_id', contactId)
-                  .maybeSingle()
-
-                if (retryConv) {
-                  newConv = retryConv
-                  createConvErr = null
-                }
-              }
-
-              if (newConv?.id) {
-                conversationId = newConv.id
-                convsByContactId.set(contactId, newConv)
-              } else if (createConvErr) {
-                console.error(`[Sync conversation insert error for contact ${contactId}]:`, createConvErr.message)
-                dbErrors.push(`Conv create: ${createConvErr.message}`)
-              }
-            }
-
-            if (!conversationId) return
-            totalConversations++
-
-            // Fetch messages for this thread if not provided inline
-            let rawMessages = item.rawMessages
-            if (rawMessages.length === 0 && item.rawConv.id) {
-              try {
-                const msgRes = await fetch(
-                  `https://graph.facebook.com/v20.0/${item.rawConv.id}/messages?fields=id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}&limit=30&access_token=${encodeURIComponent(pageToken)}`
-                )
-                if (msgRes.ok) {
-                  const msgData = await msgRes.json()
-                  rawMessages = msgData.data || []
-                }
-              } catch {}
-            }
-
-            if (rawMessages.length === 0) return
-
-            // Batch deduplication: query all existing message IDs in one fast DB call
-            const msgIds = rawMessages.map((m: any) => m.id).filter(Boolean)
-            const existingMsgIdSet = new Set<string>()
-
-            if (msgIds.length > 0) {
-              const { data: existingMsgs } = await db
-                .from('messages')
-                .select('message_id')
-                .eq('conversation_id', conversationId)
-                .in('message_id', msgIds)
-
-              if (existingMsgs) {
-                for (const em of existingMsgs) {
-                  if (em.message_id) existingMsgIdSet.add(em.message_id)
-                }
-              }
-            }
-
-            // Build bulk insert payload
-            const newMessagesToInsert: any[] = []
-
-            for (const msg of rawMessages) {
-              if (msg.id && existingMsgIdSet.has(msg.id)) {
-                totalMessages++
-                continue
-              }
-
-              let mediaUrl: string | null = null
-              let contentType: 'text' | 'image' | 'audio' | 'video' | 'document' = 'text'
-              let contentText = msg.message || ''
-
-              const attachments = msg.attachments?.data || []
-              if (attachments.length > 0) {
-                const att = attachments[0]
-                if (att.image_data?.url) {
-                  mediaUrl = att.image_data.url
-                  contentType = 'image'
-                } else if (att.video_data?.url) {
-                  mediaUrl = att.video_data.url
-                  contentType = 'video'
-                } else if (att.file_url) {
-                  mediaUrl = att.file_url
-                  const mime = (att.mime_type || '').toLowerCase()
-                  if (
-                    mime.startsWith('audio') ||
-                    att.file_url.includes('.aac') ||
-                    att.file_url.includes('.mp3') ||
-                    att.file_url.includes('.m4a') ||
-                    att.file_url.includes('.ogg')
-                  ) {
-                    contentType = 'audio'
-                  } else if (mime.startsWith('image')) {
-                    contentType = 'image'
-                  } else if (mime.startsWith('video')) {
-                    contentType = 'video'
-                  } else {
-                    contentType = 'document'
+            const threadRes = await fetch(
+              `https://graph.facebook.com/v20.0/${rawConv.id}/messages?fields=id,message,created_time,from,to,attachments&limit=15&access_token=${encodeURIComponent(pageToken)}`
+            )
+            if (threadRes.ok) {
+              const threadData = await threadRes.json()
+              const fetched = threadData.data || []
+              if (fetched.length > 0) {
+                rawMessages = fetched
+                if (!customerPsid) {
+                  for (const m of fetched) {
+                    if (m.from?.id && m.from.id !== pageId && (!pageName || m.from?.name?.toLowerCase() !== pageName.toLowerCase())) {
+                      customerPsid = m.from.id
+                      if (!customerName) customerName = m.from.name || ''
+                      break
+                    }
                   }
                 }
-
-                if (!contentText) {
-                  if (contentType === 'image') contentText = 'Photo'
-                  else if (contentType === 'audio') contentText = 'Voice Message'
-                  else if (contentType === 'video') contentText = 'Video'
-                  else if (contentType === 'document') contentText = 'Attachment'
-                }
-              }
-
-              if (!contentText && !mediaUrl && !msg.id) continue
-
-              const isFromPage =
-                msg.from?.id === pageId ||
-                (pageName && msg.from?.name?.toLowerCase() === pageName.toLowerCase())
-              const senderType = isFromPage ? 'agent' : 'customer'
-
-              newMessagesToInsert.push({
-                conversation_id: conversationId,
-                sender_type: senderType,
-                content_type: contentType,
-                content_text: contentText,
-                media_url: mediaUrl,
-                message_id: msg.id || null,
-                status: 'delivered',
-                created_at: msg.created_time || new Date().toISOString(),
-              })
-            }
-
-            // Bulk insert new messages in ONE single roundtrip!
-            if (newMessagesToInsert.length > 0) {
-              let { error: insertErr } = await db.from('messages').insert(newMessagesToInsert)
-              if (insertErr && adminClient && adminClient !== db) {
-                const adminInsert = await adminClient.from('messages').insert(newMessagesToInsert)
-                insertErr = adminInsert.error
-              }
-
-              if (!insertErr) {
-                totalMessages += newMessagesToInsert.length
-
-                // Auto-extract customer phone, address, and name from latest customer message asynchronously
-                const latestCustomerMsg = newMessagesToInsert
-                  .filter((m) => m.sender_type === 'customer' && m.content_text)
-                  .sort(
-                    (a, b) =>
-                      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                  )[0]
-
-                if (latestCustomerMsg) {
-                  autoUpdateContactFromChatMessage({
-                    contactId,
-                    accountId: actualAccountId,
-                    messageText: latestCustomerMsg.content_text,
-                    supabase: db,
-                  }).catch(() => {})
-                }
-              } else {
-                console.error('[Sync message insert error]:', insertErr.message)
-                dbErrors.push(`Message insert error: ${insertErr.message}`)
               }
             }
-          } catch (itemErr: any) {
-            console.warn('[Sync conversation item error]:', itemErr)
+          } catch (tErr: any) {
+            console.warn('[Sync thread messages fetch warning]:', tErr?.message)
           }
-        })
-      )
+        }
+
+        // 5. Ultimate fallback for customerPsid
+        if (!customerPsid) {
+          if (rawConv.id) {
+            customerPsid = rawConv.id.replace(/^t_/, '')
+          }
+        }
+
+        if (!customerPsid) {
+          dbErrors.push(`Could not determine customer ID for thread ${rawConv.id}`)
+          return
+        }
+
+        // 6. Resolve or Create Contact
+        let contact = contactCache.get(customerPsid)
+
+        if (!contact) {
+          // A. Guaranteed query: find by phone = customerPsid (always indexed, guaranteed column)
+          const { data: existingByPhone } = await db
+            .from('contacts')
+            .select('id, name, avatar_url, phone')
+            .eq('account_id', actualAccountId)
+            .eq('phone', customerPsid)
+            .maybeSingle()
+
+          if (existingByPhone) {
+            contact = existingByPhone
+          }
+        }
+
+        if (!contact) {
+          // B. Optional query: find by messenger_id column if present in table
+          try {
+            const { data: existingByMessenger } = await db
+              .from('contacts')
+              .select('id, name, avatar_url, phone')
+              .eq('account_id', actualAccountId)
+              .eq('messenger_id', customerPsid)
+              .maybeSingle()
+
+            if (existingByMessenger) {
+              contact = existingByMessenger
+            }
+          } catch {}
+        }
+
+        if (!contact) {
+          if (!customerName || customerName.trim() === '' || customerName === 'Unknown') {
+            customerName = `Messenger User (${customerPsid.slice(-4)})`
+          }
+
+          const basePayload = {
+            account_id: actualAccountId,
+            user_id: ownerUserId,
+            phone: customerPsid,
+            name: customerName,
+            email: customerEmail && !customerEmail.endsWith('@facebook.com') ? customerEmail : null,
+            avatar_url: null,
+            company: 'Facebook Messenger',
+          }
+
+          let newContact: any = null
+          let insertErr: any = null
+
+          // Try insert with messenger_id first
+          const ins1 = await db
+            .from('contacts')
+            .insert({ ...basePayload, messenger_id: customerPsid })
+            .select('id, name, avatar_url, phone')
+            .maybeSingle()
+
+          if (ins1.data) {
+            newContact = ins1.data
+          } else {
+            insertErr = ins1.error
+            // If messenger_id column does not exist, retry without it
+            if (ins1.error?.message?.toLowerCase().includes('messenger_id')) {
+              const ins2 = await db
+                .from('contacts')
+                .insert(basePayload)
+                .select('id, name, avatar_url, phone')
+                .maybeSingle()
+              if (ins2.data) {
+                newContact = ins2.data
+                insertErr = null
+              } else {
+                insertErr = ins2.error
+              }
+            }
+          }
+
+          // If insert failed due to duplicate key or unique index constraint on phone
+          if (!newContact) {
+            const { data: retryContact } = await db
+              .from('contacts')
+              .select('id, name, avatar_url, phone')
+              .eq('account_id', actualAccountId)
+              .eq('phone', customerPsid)
+              .maybeSingle()
+
+            if (retryContact) {
+              newContact = retryContact
+              insertErr = null
+            } else {
+              const digitsOnly = customerPsid.replace(/\D/g, '')
+              if (digitsOnly) {
+                const { data: digitContact } = await db
+                  .from('contacts')
+                  .select('id, name, avatar_url, phone')
+                  .eq('account_id', actualAccountId)
+                  .eq('phone', digitsOnly)
+                  .maybeSingle()
+                if (digitContact) {
+                  newContact = digitContact
+                  insertErr = null
+                }
+              }
+            }
+          }
+
+          if (newContact) {
+            contact = newContact
+          } else if (insertErr) {
+            dbErrors.push(`Contact create (${customerPsid}): ${insertErr.message}`)
+          }
+        }
+
+        if (!contact?.id) {
+          dbErrors.push(`Failed to resolve contact for customer ${customerPsid}`)
+          return
+        }
+
+        contactCache.set(customerPsid, contact)
+        const contactId = contact.id
+
+        // 7. Resolve latest message & timestamp
+        let latestMsg = rawMessages[0]?.message || ''
+        if (!latestMsg && rawMessages[0]?.attachments?.data?.length > 0) {
+          const firstAtt = rawMessages[0].attachments.data[0]
+          if (firstAtt.image_data) latestMsg = '📷 Photo'
+          else if (firstAtt.file_url?.includes('.aac') || firstAtt.mime_type?.startsWith('audio')) latestMsg = '🎵 Voice message'
+          else latestMsg = '📎 Attachment'
+        }
+        if (!latestMsg) latestMsg = 'Messenger conversation'
+        const latestTime = rawMessages[0]?.created_time || rawConv.updated_time || new Date().toISOString()
+
+        // 8. Resolve or Create Conversation
+        let conversationId = ''
+        const { data: existingConv } = await db
+          .from('conversations')
+          .select('id')
+          .eq('account_id', actualAccountId)
+          .eq('contact_id', contactId)
+          .maybeSingle()
+
+        if (existingConv) {
+          conversationId = existingConv.id
+          await db
+            .from('conversations')
+            .update({
+              last_message_text: latestMsg,
+              last_message_at: latestTime,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', conversationId)
+            .catch(() => {})
+        } else {
+          const convPayload = {
+            account_id: actualAccountId,
+            contact_id: contactId,
+            user_id: ownerUserId,
+            status: 'open',
+            last_message_text: latestMsg,
+            last_message_at: latestTime,
+            unread_count: 0,
+          }
+
+          const { data: newConv, error: convErr } = await db
+            .from('conversations')
+            .insert(convPayload)
+            .select('id')
+            .maybeSingle()
+
+          if (newConv?.id) {
+            conversationId = newConv.id
+          } else {
+            const { data: retryConv } = await db
+              .from('conversations')
+              .select('id')
+              .eq('account_id', actualAccountId)
+              .eq('contact_id', contactId)
+              .maybeSingle()
+
+            if (retryConv?.id) {
+              conversationId = retryConv.id
+            } else if (convErr) {
+              dbErrors.push(`Conv create (${contactId}): ${convErr.message}`)
+            }
+          }
+        }
+
+        if (!conversationId) {
+          dbErrors.push(`Failed to resolve conversation for contact ${contactId}`)
+          return
+        }
+
+        totalConversations++
+
+        // 9. Ingest Messages in Bulk
+        if (rawMessages.length > 0) {
+          const msgIds = rawMessages.map((m: any) => m.id).filter(Boolean)
+          const existingMsgSet = new Set<string>()
+
+          if (msgIds.length > 0) {
+            const { data: existingMsgs } = await db
+              .from('messages')
+              .select('message_id')
+              .eq('conversation_id', conversationId)
+              .in('message_id', msgIds)
+
+            if (existingMsgs) {
+              for (const em of existingMsgs) {
+                if (em.message_id) existingMsgSet.add(em.message_id)
+              }
+            }
+          }
+
+          const toInsert: any[] = []
+
+          for (const msg of rawMessages) {
+            if (msg.id && existingMsgSet.has(msg.id)) {
+              totalMessages++
+              continue
+            }
+
+            let mediaUrl: string | null = null
+            let contentType: 'text' | 'image' | 'audio' | 'video' | 'document' = 'text'
+            let contentText = msg.message || ''
+
+            const attachments = msg.attachments?.data || []
+            if (attachments.length > 0) {
+              const att = attachments[0]
+              if (att.image_data?.url) {
+                mediaUrl = att.image_data.url
+                contentType = 'image'
+              } else if (att.video_data?.url) {
+                mediaUrl = att.video_data.url
+                contentType = 'video'
+              } else if (att.file_url) {
+                mediaUrl = att.file_url
+                const mime = (att.mime_type || '').toLowerCase()
+                if (
+                  mime.startsWith('audio') ||
+                  att.file_url.includes('.aac') ||
+                  att.file_url.includes('.mp3') ||
+                  att.file_url.includes('.m4a') ||
+                  att.file_url.includes('.ogg')
+                ) {
+                  contentType = 'audio'
+                } else if (mime.startsWith('image')) {
+                  contentType = 'image'
+                } else if (mime.startsWith('video')) {
+                  contentType = 'video'
+                } else {
+                  contentType = 'document'
+                }
+              }
+
+              if (!contentText) {
+                if (contentType === 'image') contentText = 'Photo'
+                else if (contentType === 'audio') contentText = 'Voice Message'
+                else if (contentType === 'video') contentText = 'Video'
+                else if (contentType === 'document') contentText = 'Attachment'
+              }
+            }
+
+            if (!contentText && !mediaUrl && !msg.id) continue
+
+            const isFromPage =
+              msg.from?.id === pageId ||
+              (pageName && msg.from?.name?.toLowerCase() === pageName.toLowerCase())
+            const senderType = isFromPage ? 'agent' : 'customer'
+
+            toInsert.push({
+              conversation_id: conversationId,
+              sender_type: senderType,
+              content_type: contentType,
+              content_text: contentText,
+              media_url: mediaUrl,
+              message_id: msg.id || null,
+              status: 'delivered',
+              created_at: msg.created_time || new Date().toISOString(),
+            })
+          }
+
+          if (toInsert.length > 0) {
+            const { error: msgInsertErr } = await db.from('messages').insert(toInsert)
+            if (!msgInsertErr) {
+              totalMessages += toInsert.length
+
+              // Auto-extract customer phone, address asynchronously
+              const latestCustomerMsg = toInsert
+                .filter((m) => m.sender_type === 'customer' && m.content_text)
+                .sort(
+                  (a, b) =>
+                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )[0]
+
+              if (latestCustomerMsg) {
+                autoUpdateContactFromChatMessage({
+                  contactId,
+                  accountId: actualAccountId,
+                  messageText: latestCustomerMsg.content_text,
+                  supabase: db,
+                }).catch(() => {})
+              }
+            } else {
+              dbErrors.push(`Message insert error: ${msgInsertErr.message}`)
+            }
+          }
+        }
+      } catch (convErr: any) {
+        console.error('[Sync conversation error]:', convErr)
+        dbErrors.push(`Conversation error: ${convErr?.message || 'Unknown'}`)
+      }
+    }
+
+    // Process all conversations concurrently in chunks of 8
+    const CHUNK_SIZE = 8
+    for (let i = 0; i < rawConversations.length; i += CHUNK_SIZE) {
+      const chunk = rawConversations.slice(i, i + CHUNK_SIZE)
+      await Promise.all(chunk.map((c) => processConversation(c)))
     }
 
     return {
