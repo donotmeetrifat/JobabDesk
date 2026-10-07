@@ -73,6 +73,8 @@ function InboxPageInner() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+  const isBackgroundSyncingRef = useRef(false);
+  const lastBackgroundSyncTimeRef = useRef(Date.now());
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
@@ -272,23 +274,29 @@ function InboxPageInner() {
         } catch {}
       }
 
-      // 4. If Facebook is connected, trigger background sync
-      if (isFb) {
+      // 4. If Facebook is connected, trigger initial background sync safely
+      if (isFb && !isBackgroundSyncingRef.current) {
+        isBackgroundSyncingRef.current = true;
         fetch("/api/channels/messenger/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pageId: messengerPageId || undefined,
             accessToken: cachedToken || undefined,
+            limit: 20,
           }),
         })
           .then((res) => res.json())
           .then((syncRes) => {
+            lastBackgroundSyncTimeRef.current = Date.now();
             if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
               setResyncToken((prev) => prev + 1);
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            isBackgroundSyncingRef.current = false;
+          });
       }
 
       // 5. WhatsApp status check
@@ -323,43 +331,67 @@ function InboxPageInner() {
     checkConnection();
   }, [messengerPageId]);
 
-  // Automatic background Messenger sync every 15s so users never need to click sync manually
+  // Automatic background Messenger sync (polled conservatively every 90s with visibility detection)
   useEffect(() => {
     if (!messengerConnected) return;
 
-    const interval = setInterval(() => {
-      let pageIdToSend = messengerPageId;
-      let tokenToSend = "";
+    const runBackgroundSync = async () => {
+      if (isBackgroundSyncingRef.current) return;
+      isBackgroundSyncingRef.current = true;
 
-      if (typeof window !== "undefined") {
-        try {
-          const cached = localStorage.getItem("jobabdesk_fb_session");
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            tokenToSend = parsed.accessToken || "";
-            if (!pageIdToSend) pageIdToSend = parsed.pageId || "";
-          }
-        } catch {}
+      try {
+        let pageIdToSend = messengerPageId;
+        let tokenToSend = "";
+
+        if (typeof window !== "undefined") {
+          try {
+            const cached = localStorage.getItem("jobabdesk_fb_session");
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              tokenToSend = parsed.accessToken || "";
+              if (!pageIdToSend) pageIdToSend = parsed.pageId || "";
+            }
+          } catch {}
+        }
+
+        const res = await fetch("/api/channels/messenger/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pageId: pageIdToSend || undefined,
+            accessToken: tokenToSend || undefined,
+            limit: 20, // Fast incremental check
+          }),
+        });
+        const syncRes = await res.json();
+        lastBackgroundSyncTimeRef.current = Date.now();
+        if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
+          setResyncToken((prev) => prev + 1);
+        }
+      } catch {
+      } finally {
+        isBackgroundSyncingRef.current = false;
       }
+    };
 
-      fetch("/api/channels/messenger/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pageId: pageIdToSend || undefined,
-          accessToken: tokenToSend || undefined,
-        }),
-      })
-        .then((res) => res.json())
-        .then((syncRes) => {
-          if (syncRes.success && (syncRes.conversationsCount > 0 || syncRes.messagesCount > 0)) {
-            setResyncToken((prev) => prev + 1);
-          }
-        })
-        .catch(() => {});
-    }, 15000);
+    // Conservative 90-second poll
+    const interval = setInterval(runBackgroundSync, 90000);
 
-    return () => clearInterval(interval);
+    // Sync on tab regain focus if more than 60s since last sync
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        const elapsed = Date.now() - lastBackgroundSyncTimeRef.current;
+        if (elapsed > 60000) {
+          runBackgroundSync();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [messengerConnected, messengerPageId]);
 
   const handleSyncMessenger = useCallback(
@@ -394,6 +426,7 @@ function InboxPageInner() {
           body: JSON.stringify({
             pageId: pageIdToSend || undefined,
             accessToken: tokenToSend || undefined,
+            limit: 50, // Deeper manual sync
           }),
         });
         const data = await res.json();
