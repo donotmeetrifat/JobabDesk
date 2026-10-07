@@ -273,32 +273,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: data.email,
           avatar_url: data.avatar_url,
           role: data.role,
-          // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
-          // narrow defensively in case the column hasn't been migrated yet
-          // (older deployments running 011 lazily) — `null` reads as no
-          // opt-ins, which is the safe default for any future beta gate.
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
         });
         setAccount(accountRow);
+
         if (!data.account_id || !accountRole) {
-          // Trigger server auto-healing to bootstrap personal account
-          fetch('/api/account')
-            .then((res) => res.json())
-            .then((acctRes) => {
+          // Trigger server auto-healing
+          try {
+            const res = await fetch('/api/account');
+            if (res.ok) {
+              const acctRes = await res.json();
               if (acctRes?.account?.id) {
-                // Re-fetch profile immediately now that account is provisioned
-                fetchProfile(userId);
+                const healedRole = isAccountRole(acctRes.role) ? acctRes.role : 'owner';
+                setProfile({
+                  id: data.id,
+                  full_name: data.full_name,
+                  email: data.email,
+                  avatar_url: data.avatar_url,
+                  role: data.role,
+                  beta_features: data.beta_features ?? [],
+                  account_id: acctRes.account.id,
+                  account_role: healedRole,
+                });
+                setAccount({
+                  id: acctRes.account.id,
+                  name: acctRes.account.name,
+                  default_currency: DEFAULT_CURRENCY,
+                });
+                setStatusDetail(null);
+                return;
               }
-            })
-            .catch(() => {});
+            }
+          } catch {}
 
           setStatusDetail(
             `profile ${data.id} has no ${!data.account_id ? "account_id" : "account_role"}`,
           );
         }
       } else {
+        // Data is null (e.g. profiles row was not created yet or RLS blocked read)
+        // Seamlessly recover via server endpoint /api/account
+        try {
+          const res = await fetch('/api/account');
+          if (res.ok) {
+            const acctRes = await res.json();
+            if (acctRes?.account && acctRes?.role) {
+              const healedRole = isAccountRole(acctRes.role) ? acctRes.role : 'owner';
+              const healedProfile = {
+                id: acctRes.profile?.id || userId,
+                full_name: acctRes.profile?.full_name || acctRes.account?.name || 'My Store',
+                email: acctRes.profile?.email || '',
+                avatar_url: acctRes.profile?.avatar_url || null,
+                role: acctRes.profile?.role || 'user',
+                beta_features: acctRes.profile?.beta_features ?? [],
+                account_id: acctRes.account.id,
+                account_role: healedRole,
+              };
+
+              setProfile(healedProfile);
+              setAccount({
+                id: acctRes.account.id,
+                name: acctRes.account.name,
+                default_currency: DEFAULT_CURRENCY,
+              });
+              setStatusDetail(null);
+              return;
+            }
+          }
+        } catch (apiErr) {
+          console.warn("[AuthProvider] Server profile recovery attempt failed:", apiErr);
+        }
+
         lastFetchedUserIdRef.current = null;
         setStatusDetail("no profiles row for the signed-in user");
       }

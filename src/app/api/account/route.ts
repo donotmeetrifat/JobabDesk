@@ -27,9 +27,30 @@ import {
 export async function GET() {
   try {
     const ctx = await getCurrentAccount();
+
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co';
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const { createClient: createSupabaseJsClient } = await import('@supabase/supabase-js');
+    const admin = serviceKey ? createSupabaseJsClient(url, serviceKey.trim(), { auth: { persistSession: false } }) : ctx.supabase;
+
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('id, full_name, email, avatar_url, role, beta_features, account_id, account_role')
+      .eq('user_id', ctx.userId)
+      .maybeSingle();
+
     return NextResponse.json({
       account: ctx.account,
       role: ctx.role,
+      profile: profile || {
+        id: ctx.userId,
+        full_name: ctx.account.name,
+        email: '',
+        role: 'user',
+        beta_features: [],
+        account_id: ctx.accountId,
+        account_role: ctx.role,
+      },
     });
   } catch (err) {
     return toErrorResponse(err);

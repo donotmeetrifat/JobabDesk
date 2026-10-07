@@ -167,11 +167,17 @@ export async function getCurrentAccount(): Promise<AccountContext> {
       if (targetAcctId) {
         await admin
           .from('profiles')
-          .update({
-            account_id: targetAcctId,
-            account_role: 'owner',
-          })
-          .eq('user_id', user.id);
+          .upsert(
+            {
+              user_id: user.id,
+              full_name: targetAcctName,
+              email: user.email || '',
+              account_id: targetAcctId,
+              account_role: 'owner',
+              beta_features: [],
+            },
+            { onConflict: 'user_id' }
+          );
 
         ctx = {
           account_id: targetAcctId,
