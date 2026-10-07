@@ -261,27 +261,27 @@ export async function syncFacebookMessengerConversations(
     // 2. Fetch conversations from Meta Graph API
     const syncLimit = Math.min(Math.max(limit || 25, 5), 100)
 
-    const nestedMsgFields = 'messages.limit(10){id,message,created_time,from,to,attachments}'
-    const fullConvFields = `id,updated_time,participants,senders,unread_count,message_count,${nestedMsgFields}`
-    const simpleConvFields = 'id,updated_time,participants,senders,unread_count,message_count'
+    const workingFields =
+      'id,updated_time,participants,senders,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count'
+    const simpleFields = 'id,updated_time,participants,senders,unread_count,message_count'
 
     const candidates: string[] = []
     if (pageId) {
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${encodeURIComponent(simpleConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${simpleFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
     }
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=${encodeURIComponent(fullConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=${encodeURIComponent(simpleConvFields)}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?fields=${simpleFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
     )
 
     let rawConversations: Array<any> = []
