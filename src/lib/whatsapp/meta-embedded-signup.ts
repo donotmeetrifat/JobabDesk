@@ -88,49 +88,85 @@ export function launchMetaEmbeddedSignup(
   const safeSuccess = (res: MetaSignupResult) => {
     if (handled) return
     handled = true
-    clearTimeout(timeoutId)
+    cleanup()
     onSuccess(res)
   }
 
   const safeError = (err: string) => {
     if (handled) return
     handled = true
-    clearTimeout(timeoutId)
+    cleanup()
     onError(err)
   }
 
-  // 45-second safety timeout guard
+  // 60-second safety timeout guard
   const timeoutId = setTimeout(() => {
-    safeError('Connection window timed out or popup was blocked by browser. Please allow popups for jobabdesk.vercel.app or use manual setup.')
-  }, 45000)
+    safeError('Connection window timed out. Please try again or enter credentials manually.')
+  }, 60000)
 
-  // Session message listener for Meta postMessage events
+  // 1. Session message listener for Meta postMessage events
   const sessionHandler = (event: MessageEvent) => {
-    if (
-      event.origin !== 'https://www.facebook.com' &&
-      event.origin !== 'https://web.facebook.com'
-    ) {
-      return
-    }
-
     try {
       const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
       if (data && data.type === 'WA_EMBEDDED_SIGNUP') {
         if (data.event === 'FINISH') {
-          const { phone_number_id, waba_id } = data.data || {}
-          safeSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id })
-          window.removeEventListener('message', sessionHandler)
+          const { phone_number_id, waba_id, code } = data.data || {}
+          safeSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id, code })
         } else if (data.event === 'CANCEL') {
           safeError('Embedded Signup cancelled by user')
-          window.removeEventListener('message', sessionHandler)
         }
       }
     } catch {
-      // Ignore non-JSON messages safely
+      // Ignore non-matching events safely
+    }
+  }
+
+  // 2. BroadcastChannel listener for cross-tab or popup-decoupled communication
+  let bc: BroadcastChannel | null = null
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      bc = new BroadcastChannel('jobabdesk_wa_auth')
+      bc.onmessage = (event) => {
+        if (event.data?.type === 'WA_EMBEDDED_SIGNUP') {
+          if (event.data.event === 'FINISH') {
+            const { phone_number_id, waba_id, code } = event.data.data || {}
+            safeSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id, code })
+          } else if (event.data.event === 'CANCEL') {
+            safeError('Embedded Signup cancelled by user')
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Storage event listener
+  const storageHandler = (e: StorageEvent) => {
+    if (e.key === 'jobabdesk_wa_auth_event' && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue)
+        if (parsed.type === 'WA_EMBEDDED_SIGNUP') {
+          if (parsed.event === 'FINISH') {
+            const { phone_number_id, waba_id, code } = parsed.data || {}
+            safeSuccess({ phoneNumberId: phone_number_id, wabaId: waba_id, code })
+          } else if (parsed.event === 'CANCEL') {
+            safeError('Embedded Signup cancelled by user')
+          }
+        }
+      } catch {}
+    }
+  }
+
+  const cleanup = () => {
+    clearTimeout(timeoutId)
+    window.removeEventListener('message', sessionHandler)
+    window.removeEventListener('storage', storageHandler)
+    if (bc) {
+      try { bc.close() } catch {}
     }
   }
 
   window.addEventListener('message', sessionHandler)
+  window.addEventListener('storage', storageHandler)
 
   // Attempt synchronous Facebook SDK login or direct window popup
   if ((window as any).FB) {
@@ -156,7 +192,6 @@ export function launchMetaEmbeddedSignup(
       openOAuthPopupDirectly(metaAppId, metaConfigId, safeSuccess, safeError)
     }
   } else {
-    // If FB SDK hasn't finished loading yet, open direct synchronous Meta OAuth popup so browser doesn't block it
     openOAuthPopupDirectly(metaAppId, metaConfigId, safeSuccess, safeError)
     loadFacebookSDK(metaAppId)
   }
@@ -182,9 +217,22 @@ function openOAuthPopupDirectly(
     extras
   )}`
 
-  const popup = window.open(oauthUrl, 'MetaLoginPopup', 'width=600,height=750,scrollbars=yes,resizable=yes')
+  let popup: Window | null = null
+  try {
+    popup = window.open(oauthUrl, 'MetaLoginPopup', 'width=650,height=750,scrollbars=yes,resizable=yes')
+  } catch {
+    popup = null
+  }
 
-  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-    onError('Browser popup blocked! Please click the popup icon 🚫 in your browser address bar to allow popups, or use manual credentials setup.')
+  if (!popup) {
+    try {
+      popup = window.open(oauthUrl, '_blank')
+    } catch {
+      popup = null
+    }
+  }
+
+  if (!popup) {
+    onError('Browser popup blocked. Please click to open login in a new tab or use manual setup.')
   }
 }

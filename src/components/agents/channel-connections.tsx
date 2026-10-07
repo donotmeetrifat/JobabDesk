@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Smartphone,
   MessageCircle,
@@ -19,6 +19,9 @@ import {
   Eye,
   EyeOff,
   Sliders,
+  ExternalLink,
+  ShieldAlert,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { loadFacebookSDK, launchMetaEmbeddedSignup } from '@/lib/whatsapp/meta-embedded-signup'
@@ -479,6 +482,93 @@ export function ChannelConnections() {
   const [fbPagesList, setFbPagesList] = useState<Array<{ id: string; name: string; accessToken: string; category?: string; picture?: string }>>([])
   const [fetchingFbPages, setFetchingFbPages] = useState(false)
   const [showManualFbInput, setShowManualFbInput] = useState(true)
+  const [fbDirectOauthUrl, setFbDirectOauthUrl] = useState('')
+
+  const fetchPagesWithCode = useCallback(async (code: string) => {
+    setFetchingFbPages(true)
+    setFbError('')
+    const redirectUri = typeof window !== 'undefined'
+      ? window.location.origin + '/api/channels/messenger/pages'
+      : 'https://jobabdesk.vercel.app/api/channels/messenger/pages'
+
+    try {
+      const res = await fetch('/api/channels/messenger/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirectUri }),
+      })
+      const data = await res.json()
+      if (res.ok && data.pages && data.pages.length > 0) {
+        setFbPagesList(data.pages)
+        setFbDirectOauthUrl('')
+      } else {
+        setFbError(data.error || 'No Facebook Pages found. Make sure you are an Admin of a Facebook Page.')
+      }
+    } catch (err: any) {
+      setFbError(err?.message || 'Error fetching Facebook Pages.')
+    } finally {
+      setFetchingFbPages(false)
+    }
+  }, [])
+
+  // 1. Auto-catch code returned via full-page redirect in URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('fb_code')
+    if (code) {
+      const newUrl = window.location.pathname
+      window.history.replaceState({}, document.title, newUrl)
+      setShowFbModal(true)
+      fetchPagesWithCode(code)
+    }
+  }, [fetchPagesWithCode])
+
+  // 2. Cross-tab, popup-decoupled listeners (storage event + BroadcastChannel)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'jobabdesk_fb_auth_event' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          if (parsed.type === 'FB_PAGE_CONNECT') {
+            if (parsed.event === 'FINISH' && parsed.code) {
+              fetchPagesWithCode(parsed.code)
+            } else if (parsed.event === 'CANCEL') {
+              setFbError(parsed.error || 'Facebook Login was cancelled.')
+              setFetchingFbPages(false)
+            }
+          }
+        } catch {}
+      }
+    }
+
+    let bc: BroadcastChannel | null = null
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('jobabdesk_fb_auth')
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'FB_PAGE_CONNECT') {
+            if (event.data.event === 'FINISH' && event.data.code) {
+              fetchPagesWithCode(event.data.code)
+            } else if (event.data.event === 'CANCEL') {
+              setFbError(event.data.error || 'Facebook Login was cancelled.')
+              setFetchingFbPages(false)
+            }
+          }
+        }
+      } catch {}
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      if (bc) {
+        try { bc.close() } catch {}
+      }
+    }
+  }, [fetchPagesWithCode])
 
   function handle1ClickFbConnect() {
     setFbError('')
@@ -493,59 +583,50 @@ export function ChannelConnections() {
       redirectUri
     )}&scope=pages_messaging,pages_show_list,pages_read_engagement,pages_manage_metadata&response_type=code`
 
-    let handled = false
-    const safeStopFetching = () => {
-      if (!handled) {
-        handled = true
-        setFetchingFbPages(false)
-      }
-    }
+    setFbDirectOauthUrl(oauthUrl)
 
     const timer = setTimeout(() => {
-      safeStopFetching()
-      setFbError('Login timed out or popup was closed. Please check popups or try again.')
-    }, 30000)
+      setFetchingFbPages(false)
+    }, 60000)
 
-    const messageHandler = async (event: MessageEvent) => {
+    const messageHandler = (event: MessageEvent) => {
       if (event.data?.type === 'FB_PAGE_CONNECT') {
         clearTimeout(timer)
         window.removeEventListener('message', messageHandler)
 
         if (event.data.event === 'FINISH' && event.data.code) {
-          try {
-            const res = await fetch('/api/channels/messenger/pages', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ code: event.data.code, redirectUri }),
-            })
-            const data = await res.json()
-            if (res.ok && data.pages && data.pages.length > 0) {
-              setFbPagesList(data.pages)
-            } else {
-              setFbError(data.error || 'No Facebook Pages found. Make sure you are an Admin of a Facebook Page.')
-            }
-          } catch (err: any) {
-            setFbError(err?.message || 'Error fetching Facebook Pages.')
-          } finally {
-            safeStopFetching()
-          }
+          fetchPagesWithCode(event.data.code)
         } else {
           setFbError(event.data.error || 'Facebook Login was cancelled.')
-          safeStopFetching()
+          setFetchingFbPages(false)
         }
       }
     }
 
     window.addEventListener('message', messageHandler)
 
-    // Synchronous popup execution to bypass browser popup blockers
-    const popup = window.open(oauthUrl, 'FBPagesPopup', 'width=600,height=750,scrollbars=yes,resizable=yes')
+    // Attempt popup window
+    let popup: Window | null = null
+    try {
+      popup = window.open(oauthUrl, 'FBPagesPopup', 'width=650,height=750,scrollbars=yes,resizable=yes')
+    } catch {
+      popup = null
+    }
 
-    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    // If popup was blocked by browser, seamlessly open in a new tab (almost never blocked)
+    if (!popup) {
+      try {
+        popup = window.open(oauthUrl, '_blank')
+      } catch {
+        popup = null
+      }
+    }
+
+    // If both programmatic opens were prevented, prompt with a direct 1-click button
+    if (!popup) {
       clearTimeout(timer)
-      window.removeEventListener('message', messageHandler)
-      safeStopFetching()
-      setFbError('Browser blocked the popup window! Please click the popup icon 🚫 in your browser address bar to allow popups.')
+      setFetchingFbPages(false)
+      setFbError('popup_blocked')
     }
   }
 
@@ -571,9 +652,6 @@ export function ChannelConnections() {
           accessToken: page.accessToken,
         }
         setFbSession(newSession)
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('jobabdesk_fb_session', JSON.stringify(newSession))
-        }
         setShowFbModal(false)
 
         // Dual-sync to AI settings for guaranteed persistence
@@ -1312,11 +1390,48 @@ export function ChannelConnections() {
               </p>
             </div>
 
-            {fbError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 font-medium">
-                {fbError}
+            {fbError === 'popup_blocked' ? (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-3">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>Browser restricted automatic popup</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Your browser blocked the popup window. Click below to open Facebook login directly in a new tab:
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <a
+                    href={fbDirectOauthUrl || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      setFetchingFbPages(true)
+                      setFbError('')
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open Facebook Login in New Tab
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (fbDirectOauthUrl) window.location.href = fbDirectOauthUrl
+                    }}
+                    className="text-xs rounded-xl"
+                  >
+                    Redirect Here
+                  </Button>
+                </div>
               </div>
-            )}
+            ) : fbError ? (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 font-medium flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{fbError}</span>
+              </div>
+            ) : null}
 
             {/* 1-Click Facebook Login Banner */}
             <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 space-y-3">
@@ -1339,6 +1454,23 @@ export function ChannelConnections() {
                 )}
                 Log in & Select Facebook Page
               </Button>
+
+              {fetchingFbPages && fbDirectOauthUrl && (
+                <div className="pt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <RefreshCw className="h-3 w-3 animate-spin text-blue-600" />
+                    Waiting for Facebook login...
+                  </span>
+                  <a
+                    href={fbDirectOauthUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
+                  >
+                    Open in new tab <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* Facebook Pages Picker List */}
