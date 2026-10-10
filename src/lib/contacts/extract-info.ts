@@ -150,7 +150,8 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   }
 
   // 4. NAME EXTRACTION
-  const namePrefixRegex = /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|(?:full\s*name|delivery\s*name|customer\s*name|name|naam|na+m|নাম|কাস্টমার\s*নাম)\s*(?:is|holo|hoche|hobe|:|=|-)?)\s*)([a-zA-Z.\s\u0980-\u09FF]{2,35})/i
+  const namePrefixRegex =
+    /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|(?:ami|আমি)\s+|(?:full\s*name|delivery\s*name|customer\s*name|recipient(?:\s*name)?|receiver(?:\s*name)?|name|naam|na+m|নাম|কাস্টমার\s*নাম|প্রাপক(?:\s*নাম)?)\s*(?:is|holo|hoche|hobe|:|=|-)?)\s*)([a-zA-Z.\s\u0980-\u09FF]{2,35})/i
   const nameSuffixRegex = /^([a-zA-Z.\s\u0980-\u09FF]{2,35})\s+(?:is\s*(?:the|my)?\s*(?:full\s*)?name|amar\s*na+m|hoche\s*amar\s*na+m|holo\s*amar\s*na+m)/i
 
   const prefixMatch = cleanText.match(namePrefixRegex)
@@ -167,7 +168,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
       !INVALID_NAME_WORDS.test(candidateName) &&
       !isTemplateInstruction(candidateName) &&
       !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(candidateName) &&
-      !/\b(?:delivery\s*package|package|parcel|share|please|address|phone|email|method|product|item)\b/i.test(candidateName)
+      !/\b(?:delivery\s*package|package|parcel|share|please|address|phone|email|method|product|item|korte|chai|lagbe|kinbo)\b/i.test(candidateName)
     ) {
       result.name = candidateName
     }
@@ -248,3 +249,112 @@ export function isDetailedDeliveryAddress(address?: string | null): boolean {
 
   return hasStructuralKeyword || (wordCount >= 4 && trimmed.length >= 22)
 }
+
+/**
+ * Checks whether an address is inside Dhaka metropolitan / city area.
+ */
+export function isInsideDhakaAddress(address?: string | null): boolean {
+  if (!address || typeof address !== 'string') return true // Default inside Dhaka if not specified
+  const lower = address.toLowerCase()
+
+  // Strong outside Dhaka districts
+  const outsideDistricts = [
+    'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barisal', 'barishal',
+    'rangpur', 'mymensingh', 'cumilla', 'comilla', 'bogra', 'bogura', "cox's bazar",
+    'coxs bazar', 'jessore', 'jashore', 'kushtia', 'dinajpur', 'tangail', 'pabna',
+    'jamalpur', 'feni', 'noakhali', 'brahmanbaria', 'faridpur', 'gazipur', 'narayanganj',
+    'narsingdi', 'manikganj', 'munshiganj', 'sirajganj', 'natore', 'naogaon', 'chapainawabganj',
+    'satkhira', 'bagerhat', 'chuadanga', 'meherpur', 'jhenaidah', 'magura', 'narail',
+    'patuakhali', 'bhola', 'pirojpur', 'barguna', 'jhalokati', 'sunamganj', 'habiganj',
+    'moulvibazar', 'netrokona', 'sherpur', 'kishoreganj', 'kurigram', 'lalmonirhat',
+    'gaibandha', 'nilphamari', 'panchagarh', 'thakurgaon', 'lakshmipur', 'chandpur',
+    'rangamati', 'bandarban', 'khagrachhari',
+    'চট্টগ্রাম', 'সিলেট', 'রাজশাহী', 'খুলনা', 'বরিশাল', 'রংপুর', 'ময়মনসিংহ', 'কুমিল্লা',
+    'বগুড়া', 'কক্সবাজার', 'যশোর', 'কুষ্টিয়া', 'দিনাজপুর', 'টাঙ্গাইল', 'পাবনা', 'জামালপুর',
+    'ফেনী', 'নোয়াখালী', 'ব্রাহ্মণবাড়িয়া', 'ফরিদপুর', 'গাজীপুর', 'নারায়ণগঞ্জ', 'নরসিংদী',
+    'মানিকগঞ্জ', 'মুন্সীগঞ্জ', 'সিরাজগঞ্জ', 'নাটোর', 'নওগাঁ', 'চাঁপাইনবাবগঞ্জ', 'সাতক্ষীরা',
+    'বাগেরহাট', 'চুয়াডাঙ্গা', 'মেহেরপুর', 'ঝিনাইদহ', 'মাগুরা', 'নড়াইল', 'পটুয়াখালী',
+    'ভোলা', 'পিরোজপুর', 'বরগুনা', 'ঝালকাঠি', 'সুনামগঞ্জ', 'হবিগঞ্জ', 'মৌলভীবাজার',
+    'নেত্রকোণা', 'শেরপুর', 'কিশোরগঞ্জ', 'কুড়িগ্রাম', 'লালমনিরহাট', 'গাইবান্ধা', 'নীলফামারী',
+    'পঞ্চগড়', 'ঠাকুরগাঁও', 'লক্ষ্মীপুর', 'চাঁদপুর', 'রাঙ্গামাটি', 'বান্দরবান', 'খাগড়াছড়ি'
+  ]
+
+  const hasOutsideDistrict = outsideDistricts.some((d) => lower.includes(d))
+  const mentionsDhakaExplicitly = /\b(?:dhaka|ঢাকা)\b/i.test(lower)
+
+  if (hasOutsideDistrict && !mentionsDhakaExplicitly) {
+    return false
+  }
+
+  const dhakaCityKeywords = [
+    'dhaka', 'mirpur', 'uttara', 'dhanmondi', 'gulshan', 'banani', 'mohammadpur',
+    'badda', 'rampura', 'malibagh', 'motijheel', 'jatrabari', 'khilgaon', 'farmgate',
+    'bashundhara', 'cantonment', 'wari', 'lalbagh', 'tejgaon', 'shahbagh',
+    'mohakhali', 'nikunja', 'baridhara', 'keraniganj', 'savar', 'dhamrai', 'pallabi',
+    'kafrul', 'bimanbandar', 'khilkhet', 'adabor', 'shyamoli', 'kolabagan', 'new market',
+    'hazaribagh', 'kamrangirchar', 'chawkbazar', 'sutrapur', 'kotwali', 'gandaria',
+    'demra', 'kadamtali', 'mugda', 'sabujbagh', 'ramna', 'paltan', 'hatirjheel',
+    'ঢাকা', 'মিরপুর', 'উত্তরা', 'ধানমন্ডি', 'গুলশান', 'বনানী', 'মোহাম্মদপুর',
+    'বাড্ডা', 'রামপুরা', 'মালিবাগ', 'মতিঝিল', 'যাত্রাবাড়ী', 'যাত্রাবাড়ী', 'খিলগাঁও',
+    'ফার্মগেট', 'বসুন্ধরা', 'ওয়ারী', 'ওয়ারী', 'লালবাগ', 'তেজগাঁও', 'শাহবাগ', 'মহাখালী',
+    'নিকুঞ্জ', 'বারিধারা', 'কেরানীগঞ্জ', 'পল্লবী', 'কাফরুল', 'খিলক্ষেত', 'আদাবর',
+    'শ্যামলী', 'কলাবাগান', 'নিউ মার্কেট', 'হাজারীবাগ', 'কামরাঙ্গীরচর', 'চকবাজার',
+    'সূত্রাপুর', 'কোতোয়ালি', 'গেন্ডারিয়া', 'ডেমরা', 'কদমতলী', 'মুগদা', 'সবুজবাগ',
+    'রমনা', 'পল্টন', 'হাতিরঝিল'
+  ]
+
+  if (dhakaCityKeywords.some((kw) => lower.includes(kw))) {
+    return true
+  }
+
+  // If outside district was mentioned, return false
+  if (hasOutsideDistrict) {
+    return false
+  }
+
+  // Default fallback for ambiguous local addresses
+  return true
+}
+
+/**
+ * Calculates delivery fee based on customer address and account delivery policy.
+ */
+export function resolveDeliveryCharge({
+  address,
+  policyString,
+  isDigital = false,
+  isFree = false,
+  explicitDeliveryCharge,
+}: {
+  address?: string | null
+  policyString?: string | null
+  isDigital?: boolean
+  isFree?: boolean
+  explicitDeliveryCharge?: number | null
+}): {
+  deliveryCharge: number
+  isInsideDhaka: boolean
+} {
+  if (isDigital || isFree) {
+    return { deliveryCharge: 0, isInsideDhaka: true }
+  }
+
+  const isInside = isInsideDhakaAddress(address)
+
+  if (explicitDeliveryCharge != null && explicitDeliveryCharge > 0) {
+    return { deliveryCharge: explicitDeliveryCharge, isInsideDhaka: isInside }
+  }
+
+  const policy = (policyString || '').toLowerCase()
+
+  if (isInside) {
+    const match = policy.match(/(?:inside\s*dhaka|ঢাকার\s*ভিতরে)[\s\w:৳tk]*?([0-9]{2,3})/i)
+    const charge = match ? parseInt(match[1], 10) : 70
+    return { deliveryCharge: charge, isInsideDhaka: true }
+  } else {
+    const match = policy.match(/(?:outside\s*dhaka|ঢাকার\s*বাইরে)[\s\w:৳tk]*?([0-9]{2,3})/i)
+    const charge = match ? parseInt(match[1], 10) : 130
+    return { deliveryCharge: charge, isInsideDhaka: false }
+  }
+}
+

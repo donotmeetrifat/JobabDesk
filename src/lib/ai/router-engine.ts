@@ -7,6 +7,8 @@ import {
   extractCustomerInfoFromMessage,
   isFacebookPsid,
   isDetailedDeliveryAddress,
+  isInsideDhakaAddress,
+  resolveDeliveryCharge,
 } from '@/lib/contacts/extract-info'
 import {
   resolveCustomerAddressing,
@@ -312,6 +314,208 @@ export function formatRelativeMessageTime(createdAt?: string | null): string {
   }
 }
 
+export function buildOrderConfirmationMessage({
+  detectedLang,
+  customerName,
+  customerGender,
+  targetProductName,
+  items,
+  unitPrice,
+  quantity,
+  productTotal,
+  deliveryCharge,
+  isInsideDhaka,
+  totalAmount,
+  paymentMethod,
+  customerPhone,
+  customerAddress,
+  customerEmail,
+  isOrderDigital,
+  isFreeOrder,
+}: {
+  detectedLang: 'bn' | 'banglish' | 'en'
+  customerName?: string | null
+  customerGender: CustomerGender
+  targetProductName: string
+  items?: Array<{ product_name: string; unit_price: number; quantity: number }>
+  unitPrice: number
+  quantity: number
+  productTotal: number
+  deliveryCharge: number
+  isInsideDhaka: boolean
+  totalAmount: number
+  paymentMethod?: string | null
+  customerPhone?: string | null
+  customerAddress?: string | null
+  customerEmail?: string | null
+  isOrderDigital: boolean
+  isFreeOrder: boolean
+}): string {
+  const cleanName = cleanCustomerName(customerName)
+
+  // 1. Digital Orders
+  if (isOrderDigital) {
+    if (detectedLang === 'bn') {
+      const honorificBn = customerGender === 'female' ? 'আপু' : customerGender === 'male' ? 'ভাইয়া' : ''
+      const nameGreetingBn = cleanName ? `${cleanName} ${honorificBn}`.trim() : (honorificBn || '')
+      const greetingBn = nameGreetingBn ? `ধন্যবাদ, ${nameGreetingBn}! 🎉` : `ধন্যবাদ! 🎉`
+      const pmLabelBn = isFreeOrder
+        ? 'ফ্রি অফার (৳০)'
+        : (paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
+
+      return `${greetingBn}
+আপনার ডিজিটাল অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে।
+
+📋 সাবস্ক্রিপশন বিবরণী:
+• সেবা / পণ্য: ${targetProductName}
+• মূল্য: ${isFreeOrder ? 'সম্পূর্ণ ফ্রি (৳০)' : `৳${productTotal}`}
+• পেমেন্ট মেথড: ${pmLabelBn}
+• ডেলিভারি ইমেইল: ${customerEmail || 'N/A'}
+• যোগাযোগ নম্বর: ${customerPhone || 'N/A'}
+
+আমাদের টিম দ্রুত তথ্যগুলো যাচাই করে আপনার ইমেইলে সাবস্ক্রিপশন অ্যাক্সেস পাঠিয়ে দেবে। ধন্যবাদ আমাদের সাথে থাকার জন্য! ❤️`
+    } else if (detectedLang === 'banglish') {
+      const honorificBanglish = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
+      const nameGreetingBanglish = cleanName ? `${cleanName} ${honorificBanglish}`.trim() : (honorificBanglish || '')
+      const greetingBanglish = nameGreetingBanglish ? `Dhonnobad, ${nameGreetingBanglish}! 🎉` : `Dhonnobad! 🎉`
+      const pmLabelBanglish = isFreeOrder
+        ? 'Free Offer (৳0)'
+        : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+      return `${greetingBanglish}
+Apnar digital order er shob details successfully receive kora hoyeche.
+
+📋 Subscription Summary:
+• Service / Product: ${targetProductName}
+• Price: ${isFreeOrder ? 'Free (৳0)' : `৳${productTotal}`}
+• Payment Method: ${pmLabelBanglish}
+• Delivery Email: ${customerEmail || 'N/A'}
+• Contact Number: ${customerPhone || 'N/A'}
+
+Amader team details verify kore druto apnar email e subscription access pathiye debe. Dhonnobad amader shathe thakar jonno! ❤️`
+    } else {
+      const greetingEn = cleanName ? `Thank you, ${cleanName}! 🎉` : `Thank you! 🎉`
+      const pmLabelEn = isFreeOrder ? 'Free ($0)' : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+      return `${greetingEn}
+All details for your digital order have been successfully received.
+
+📋 Subscription Summary:
+• Product / Service: ${targetProductName}
+• Price: ${isFreeOrder ? 'Free (৳0)' : `৳${productTotal}`}
+• Payment Method: ${pmLabelEn}
+• Delivery Email: ${customerEmail || 'N/A'}
+• Contact Number: ${customerPhone || 'N/A'}
+
+Our team will verify the details and grant access to your email shortly. Thank you for choosing us! ❤️`
+    }
+  }
+
+  // 2. Physical Orders
+  const locationLabelBn = isInsideDhaka ? 'ঢাকার ভিতরে' : 'ঢাকার বাইরে'
+  const locationLabelBanglish = isInsideDhaka ? 'Inside Dhaka' : 'Outside Dhaka'
+  const locationLabelEn = isInsideDhaka ? 'Inside Dhaka' : 'Outside Dhaka'
+
+  if (detectedLang === 'bn') {
+    const honorificBn = customerGender === 'female' ? 'আপু' : customerGender === 'male' ? 'ভাইয়া' : ''
+    const nameGreetingBn = cleanName ? `${cleanName} ${honorificBn}`.trim() : (honorificBn || '')
+    const greetingBn = nameGreetingBn ? `ধন্যবাদ, ${nameGreetingBn}! 🎉` : `ধন্যবাদ! 🎉`
+
+    const pmLabelBn = paymentMethod === 'cod'
+      ? 'ক্যাশ অন ডেলিভারি (Cash on Delivery)'
+      : (paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
+
+    let itemsSectionBn = ''
+    if (items && items.length > 1) {
+      itemsSectionBn = `• পণ্যসমূহ:\n` + items.map(i => `  - ${i.product_name} (${i.quantity} টি) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• পণ্যের মোট মূল্য: ৳${productTotal}`
+    } else {
+      itemsSectionBn = `• পণ্য: ${targetProductName}
+• পরিমাণ: ${quantity} টি
+• পণ্যের মূল্য: ৳${productTotal}`
+    }
+
+    return `${greetingBn}
+আপনার অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে।
+
+📦 অর্ডার বিবরণী:
+${itemsSectionBn}
+• ডেলিভারি চার্জ: ৳${deliveryCharge} (${locationLabelBn})
+• সর্বমোট প্রদেয়: ৳${totalAmount}
+• পেমেন্ট মেথড: ${pmLabelBn}
+
+📍 ডেলিভারি তথ্য:
+• প্রাপকের নাম: ${cleanName || 'N/A'}
+• মোবাইল নম্বর: ${customerPhone || 'N/A'}
+• ডেলিভারি ঠিকানা: ${customerAddress || 'N/A'}
+
+আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত পার্সেলটি পাঠিয়ে দেবে। যেকোনো প্রয়োজনে আমাদের জানাতে পারেন! ❤️`
+  } else if (detectedLang === 'banglish') {
+    const honorificBanglish = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
+    const nameGreetingBanglish = cleanName ? `${cleanName} ${honorificBanglish}`.trim() : (honorificBanglish || '')
+    const greetingBanglish = nameGreetingBanglish ? `Dhonnobad, ${nameGreetingBanglish}! 🎉` : `Dhonnobad! 🎉`
+
+    const pmLabelBanglish = paymentMethod === 'cod'
+      ? 'Cash on Delivery (COD)'
+      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+    let itemsSectionBanglish = ''
+    if (items && items.length > 1) {
+      itemsSectionBanglish = `• Products:\n` + items.map(i => `  - ${i.product_name} (${i.quantity} pcs) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• Product Total: ৳${productTotal}`
+    } else {
+      itemsSectionBanglish = `• Product: ${targetProductName}
+• Quantity: ${quantity} pcs
+• Product Price: ৳${productTotal}`
+    }
+
+    return `${greetingBanglish}
+Apnar order er shob details successfully receive kora hoyeche.
+
+📦 Order Summary:
+${itemsSectionBanglish}
+• Delivery Charge: ৳${deliveryCharge} (${locationLabelBanglish})
+• Total Amount: ৳${totalAmount}
+• Payment Method: ${pmLabelBanglish}
+
+📍 Delivery Information:
+• Name: ${cleanName || 'N/A'}
+• Phone Number: ${customerPhone || 'N/A'}
+• Address: ${customerAddress || 'N/A'}
+
+Amader shop team details verify kore druto order dispatch kore debe. Dhonnobad amader shathe thakar jonno! ❤️`
+  } else {
+    const greetingEn = cleanName ? `Thank you, ${cleanName}! 🎉` : `Thank you! 🎉`
+
+    const pmLabelEn = paymentMethod === 'cod'
+      ? 'Cash on Delivery (COD)'
+      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+    let itemsSectionEn = ''
+    if (items && items.length > 1) {
+      itemsSectionEn = `• Items:\n` + items.map(i => `  - ${i.product_name} (${i.quantity}x) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• Product Total: ৳${productTotal}`
+    } else {
+      itemsSectionEn = `• Product: ${targetProductName}
+• Quantity: ${quantity}
+• Product Price: ৳${productTotal}`
+    }
+
+    return `${greetingEn}
+All details for your order have been successfully received.
+
+📦 Order Summary:
+${itemsSectionEn}
+• Delivery Fee: ৳${deliveryCharge} (${locationLabelEn})
+• Total Payable: ৳${totalAmount}
+• Payment Method: ${pmLabelEn}
+
+📍 Delivery Information:
+• Recipient Name: ${cleanName || 'N/A'}
+• Phone Number: ${customerPhone || 'N/A'}
+• Delivery Address: ${customerAddress || 'N/A'}
+
+Our shop team will review the information and dispatch your package shortly. Thank you for shopping with us! ❤️`
+  }
+}
+
 export function buildOfflineReply({
   detectedLang,
   messageText,
@@ -379,16 +583,31 @@ export function buildOfflineReply({
         reply = `Thank you${nameCandidate ? `, ${nameCandidate}` : ''}! The address provided (${addrCandidate}) is not detailed enough for delivery. Please provide your complete delivery address (house/holding number, road number, area, thana, district) to process your order.`
       }
     } else {
-      const pmLabelBn = isCod ? 'ক্যাশ অন ডেলিভারি' : 'অনলাইন পেমেন্ট'
-      const pmLabelBanglish = isCod ? 'Cash on Delivery (COD)' : 'Online Payment'
-      const pmLabelEn = isCod ? 'Cash on Delivery (COD)' : 'Online Payment'
-      if (detectedLang === 'banglish') {
-        reply = `Dhonnobad${nameCandidate ? `, ${nameCandidate}` : ''}! Apnar order er shob details successfully receive kora hoyeche (${pmLabelBanglish})। Amader shop team details verify kore druto order confirm kore debe!`
-      } else if (detectedLang === 'bn') {
-        reply = `ধন্যবাদ${nameCandidate ? `, ${nameCandidate}` : ''}! আপনার অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে (${pmLabelBn})। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!`
-      } else {
-        reply = `Thank you${nameCandidate ? `, ${nameCandidate}` : ''}! All details for your order have been successfully received (${pmLabelEn}). Our shop team will review the information and confirm your order shortly!`
-      }
+      const targetProd = matchedProducts[0] || products[0]
+      const prodName = targetProd?.name || 'Product'
+      const uPrice = Number(targetProd?.price) || 0
+      const dFee = resolveDeliveryCharge({
+        address: addrCandidate,
+        policyString: account?.delivery_policy || account?.ai_delivery_policy,
+      })
+      const tot = uPrice + dFee.deliveryCharge
+      reply = buildOrderConfirmationMessage({
+        detectedLang,
+        customerName: nameCandidate,
+        customerGender: customerGender || 'unknown',
+        targetProductName: prodName,
+        unitPrice: uPrice,
+        quantity: 1,
+        productTotal: uPrice,
+        deliveryCharge: dFee.deliveryCharge,
+        isInsideDhaka: dFee.isInsideDhaka,
+        totalAmount: tot,
+        paymentMethod: isCod ? 'cod' : 'online',
+        customerPhone: messageText.match(/(?:\+?880|0)1[3-9]\d{8}/)?.[0] || '',
+        customerAddress: addrCandidate,
+        isOrderDigital: false,
+        isFreeOrder: false,
+      })
     }
   }
   // 1. Matched Product(s) Inquiry or Order Request
@@ -1384,12 +1603,20 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * UNTIL ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN (INCLUDING DETAILED ADDRESS):
        - DO NOT confirm that the order is placed!
        - Politely ask for whatever is missing among: Delivery Name, Full Detailed Delivery Address, Phone Number, and Payment Method.
-     * AFTER ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN:
-       - The automation system ONLY receives and logs the details to the orders page. The shop owner manually confirms the order from the dashboard. The AI MUST NOT claim it confirmed the order or that the parcel is being dispatched!
-       - Inform the customer that all order details have been received and are pending shop team review & confirmation:
-         * English: "Thank you, [Name]! All details for your [Product] order have been successfully received ([Cash on Delivery / bKash payment]). Our shop team will review the information and confirm your order shortly!"
-         * Bengali: "ধন্যবাদ, [Name]! আপনার [Product]-এর অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে ([ক্যাশ অন ডেলিভারি / বিকাশ পেমেন্ট])। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!"
-         * Banglish: "Dhonnobad, [Name]! Apnar [Product] er order details successfully receive kora hoyeche ([Cash on Delivery / bKash payment])। Amader shop team details verify kore druto order confirm kore debe!"
+     * AFTER ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN (ORDER CONFIRMATION SUMMARY MANDATE):
+       - When all order details (Name, Address, Phone, Payment Method) are received, provide a complete, clear, and transparent order confirmation summary:
+         1. Greet them with verified gender addressing ("Bhaiya" for male, "Apu" for female, neutral if unknown).
+         2. Order Summary:
+            • Product Name & Quantity
+            • Product Price (৳[Price])
+            • Delivery Fee (Inside Dhaka ৳70-80 / Outside Dhaka ৳130-150 based on address)
+            • Total Payable Amount (Product Price + Delivery Fee)
+            • Payment Method (Cash on Delivery / bKash / Nagad)
+         3. Delivery Information:
+            • Recipient Name
+            • Phone Number
+            • Delivery Address
+         4. Friendly note that our shop team will review the order details and dispatch your package shortly!
 
    - B. FOR ANY DIGITAL PRODUCT (subscriptions, software, Canva Pro, licenses, digital accounts):
      To take and confirm any digital order for ANY customer (including repeated customers):
@@ -1412,7 +1639,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * UNTIL ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
        - DO NOT confirm the order. Ask politely for whatever is missing among the 3 items.
      * AFTER ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
-       - Warmly confirm that their digital order is received and access will be delivered to their email address shortly!
+       - Warmly confirm the digital subscription with complete details (Product name, Price / Free ৳0, Payment method, Delivery Email, Phone number) and note that access will be delivered to their email address shortly!
 
 6. ORDER CANCELLATION & PRODUCT SWITCH/CHANGE RULES (CRITICAL MANDATE):
    - A. CANCELLATION REQUESTS:
@@ -2272,27 +2499,76 @@ Set "order": null if the customer is merely asking a question without ordering o
       }
     }
   } else if (isOrderFullyComplete && isCustomerAttemptingOrder && !isCancelRequest) {
-    const targetProductName = activeProduct?.name || llmOrderData?.items?.[0]?.product_name || (isOrderDigital ? 'Digital Product' : 'Product')
-    if (!isOrderDigital) {
-      const pmLabel = explicitPaymentMethod === 'cod' ? (detectedLang === 'bn' ? 'ক্যাশ অন ডেলিভারি' : 'Cash on Delivery') : (detectedLang === 'bn' ? 'অনলাইন পেমেন্ট' : 'Online Payment')
-      const honorificBn = addressedCustomer.gender === 'female' ? 'ম্যাম' : 'স্যার'
-      const honorificEn = addressedCustomer.gender === 'female' ? 'Madam' : 'Sir'
-      if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ, ${currentOrderName || honorificBn}! আপনার ${targetProductName}-এর অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে (${pmLabel})। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!`
-      } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad, ${currentOrderName || honorificEn}! Apnar ${targetProductName} er order er shob details successfully receive kora hoyeche (${pmLabel})। Amader shop team details verify kore druto order confirm kore debe!`
-      } else {
-        aiReply = `Thank you, ${currentOrderName || honorificEn}! All details for your ${targetProductName} order have been successfully received (${pmLabel}). Our shop team will review the information and confirm your order shortly!`
-      }
-    } else {
-      if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ! আপনার ${targetProductName}-এর ডিজিটাল অর্ডার তথ্য সফলভাবে গ্রহণ করা হয়েছে। আমাদের টিম যাচাই করে আপনার ইমেইলে (${currentOrderEmail}) সাবস্ক্রিপশন অ্যাক্সেস পাঠিয়ে দেবে!`
-      } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad! Apnar ${targetProductName} er digital order details successfully receive kora hoyeche. Amader team verify kore apnar email e (${currentOrderEmail}) access pathiye debe!`
-      } else {
-        aiReply = `Thank you! All details for your ${targetProductName} digital order have been successfully received. Our team will verify the details and grant access to ${currentOrderEmail} shortly!`
+    // 1. Resolve strict gender consistency target
+    let targetConsistencyGender = addressedCustomer.gender
+    if (targetConsistencyGender === 'unknown' && currentOrderName) {
+      const updatedGenderFromName = detectGenderFromName(currentOrderName)
+      if (updatedGenderFromName !== 'unknown') {
+        targetConsistencyGender = updatedGenderFromName
       }
     }
+    if (targetConsistencyGender === 'unknown' && candidateCustomerName) {
+      const updatedGenderFromCand = detectGenderFromName(candidateCustomerName)
+      if (updatedGenderFromCand !== 'unknown') {
+        targetConsistencyGender = updatedGenderFromCand
+      }
+    }
+
+    const targetProductName = activeProduct?.name || llmOrderData?.items?.[0]?.product_name || (isOrderDigital ? 'Digital Product' : 'Product')
+
+    // 2. Resolve unit price & quantity
+    let resolvedUnitPrice = 0
+    if (isFreeOrder) {
+      resolvedUnitPrice = 0
+    } else if (activeProduct?.price != null && Number(activeProduct.price) >= 0) {
+      resolvedUnitPrice = Number(activeProduct.price)
+    } else if (llmOrderData?.items?.[0]?.unit_price != null && Number(llmOrderData.items[0].unit_price) > 0) {
+      resolvedUnitPrice = Number(llmOrderData.items[0].unit_price)
+    } else if (llmOrderData?.subtotal != null && Number(llmOrderData.subtotal) > 0) {
+      resolvedUnitPrice = Number(llmOrderData.subtotal)
+    } else if (products && products.length > 0) {
+      const pMatch = products.find((p) => p.name && targetProductName.toLowerCase().includes(p.name.toLowerCase()))
+      if (pMatch?.price != null) resolvedUnitPrice = Number(pMatch.price)
+    }
+
+    const resolvedQty = Math.max(1, Number(llmOrderData?.items?.[0]?.quantity) || 1)
+    const finalSubtotal = (llmOrderData?.items && llmOrderData.items.length > 1)
+      ? llmOrderData.items.reduce((s: number, it: { unit_price?: number; quantity?: number }) => s + (Number(it.unit_price) || 0) * (Number(it.quantity) || 1), 0)
+      : (resolvedUnitPrice * resolvedQty)
+
+    // 3. Resolve delivery charge based on address
+    const dRes = resolveDeliveryCharge({
+      address: currentOrderAddress,
+      policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
+      isDigital: isOrderDigital,
+      isFree: isFreeOrder,
+      explicitDeliveryCharge: llmOrderData?.delivery_charge,
+    })
+    const finalDeliveryCharge = dRes.deliveryCharge
+    const isInsideDhaka = dRes.isInsideDhaka
+    const finalTotal = isFreeOrder ? 0 : (finalSubtotal + finalDeliveryCharge)
+
+    const resolvedCustomerName = currentOrderName || effectiveName || addressedCustomer.customerName || null
+
+    aiReply = buildOrderConfirmationMessage({
+      detectedLang,
+      customerName: resolvedCustomerName,
+      customerGender: targetConsistencyGender,
+      targetProductName,
+      items: llmOrderData?.items,
+      unitPrice: resolvedUnitPrice,
+      quantity: resolvedQty,
+      productTotal: finalSubtotal,
+      deliveryCharge: finalDeliveryCharge,
+      isInsideDhaka,
+      totalAmount: finalTotal,
+      paymentMethod: explicitPaymentMethod || (isOrderDigital ? 'online' : 'cod'),
+      customerPhone: currentOrderPhone || effectivePhone,
+      customerAddress: currentOrderAddress || effectiveAddress,
+      customerEmail: currentOrderEmail || effectiveEmail,
+      isOrderDigital,
+      isFreeOrder,
+    })
   }
 
   // Enforce 100% strict gender addressing consistency (zero flip-flopping)
@@ -2313,6 +2589,16 @@ Set "order": null if the customer is merely asking a question without ordering o
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
   try {
+    const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
+      ? resolveDeliveryCharge({
+          address: currentOrderAddress,
+          policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
+          isDigital: isOrderDigital,
+          isFree: isFreeOrder,
+          explicitDeliveryCharge: llmOrderData?.delivery_charge,
+        }).deliveryCharge
+      : 0
+
     await detectAndCreateOrderFromChat({
       accountId: account?.id || accountId,
       contactId: contactId || null,
@@ -2324,7 +2610,10 @@ Set "order": null if the customer is merely asking a question without ordering o
       customerEmail: currentOrderEmail || null,
       messageText,
       conversationHistoryText,
-      llmOrderData,
+      llmOrderData: {
+        ...llmOrderData,
+        delivery_charge: finalOrderDeliveryCharge,
+      },
       storeProducts: products,
       supabase: client,
     })
