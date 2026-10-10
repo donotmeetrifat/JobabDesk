@@ -179,23 +179,30 @@ export async function POST(req: Request) {
 
     // 3. Upsert Contact & Log Message in DB (Safe async try/catch)
     let contactId: string | undefined
+    const waProfileName = value?.contacts?.[0]?.profile?.name?.trim() || null
     try {
       const { data: existingContact } = await db
         .from('contacts')
-        .select('id')
+        .select('id, name')
         .eq('account_id', accountId)
         .eq('phone', customerPhone)
         .maybeSingle()
 
       if (existingContact) {
         contactId = existingContact.id
+        if (waProfileName && (!existingContact.name || existingContact.name.startsWith('WhatsApp '))) {
+          await db
+            .from('contacts')
+            .update({ name: waProfileName, updated_at: new Date().toISOString() })
+            .eq('id', existingContact.id)
+        }
       } else {
         const { data: newContact } = await db
           .from('contacts')
           .insert({
             account_id: accountId,
             phone: customerPhone,
-            name: `WhatsApp ${customerPhone.slice(-4)}`,
+            name: waProfileName || `WhatsApp ${customerPhone.slice(-4)}`,
             channel: 'whatsapp',
           })
           .select('id')

@@ -4,6 +4,12 @@ import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 import { isDigitalProduct, checkIsDigitalOrder, isDigitalText } from '@/lib/products/product-type'
 import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
+import {
+  resolveCustomerAddressing,
+  enforceGenderAddressingConsistency,
+  detectGenderFromName,
+  type CustomerGender,
+} from '@/lib/ai/gender-detector'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -250,6 +256,7 @@ export function buildOfflineReply({
   account = {},
   conversationHistoryText = '',
   activeMediaUrl = null,
+  customerGender = 'unknown',
 }: {
   detectedLang: DetectedLanguage
   messageText: string
@@ -258,6 +265,7 @@ export function buildOfflineReply({
   account?: any
   conversationHistoryText?: string
   activeMediaUrl?: string | null
+  customerGender?: CustomerGender
 }): { intent: DetectedIntent; reply: string } {
   let intent: DetectedIntent = 'general_faq'
   let reply = ''
@@ -398,10 +406,13 @@ export function buildOfflineReply({
   ) {
     intent = 'general_faq'
     const paymentInfo = account?.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
+    const honorificBanglish =
+      customerGender === 'female' ? ', Apu' : customerGender === 'male' ? ', Bhaiya' : ''
     if (detectedLang === 'banglish') {
-      reply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan, Bhaiya?`
+      reply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan${honorificBanglish}?`
     } else if (detectedLang === 'bn') {
-      reply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান?`
+      const honorificBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+      reply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান${honorificBn}?`
     } else {
       reply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
     }
@@ -488,9 +499,13 @@ export function buildOfflineReply({
       }
     } else {
       if (detectedLang === 'banglish') {
-        reply = `Ji Bhaiya, ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
+        const greetingPrefix =
+          customerGender === 'female' ? 'Ji Apu,' : customerGender === 'male' ? 'Ji Bhaiya,' : 'Ji,'
+        reply = `${greetingPrefix} ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
       } else if (detectedLang === 'bn') {
-        reply = `জি, আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনি কোন পণ্য বা সেবা সম্পর্কে জানতে চান বলুন, আমি বিস্তারিত জানাচ্ছি!`
+        const greetingPrefixBn =
+          customerGender === 'female' ? 'জি আপু,' : customerGender === 'male' ? 'জি ভাইয়া,' : 'জি,'
+        reply = `${greetingPrefixBn} আমি আপনার বিষয়টি বুঝতে পেরেছি। আপনি কোন পণ্য বা সেবা সম্পর্কে জানতে চান বলুন, আমি বিস্তারিত জানাচ্ছি!`
       } else {
         reply = `Understood! Please tell me which product or details you would like to know about, and I will assist you right away.`
       }
@@ -714,10 +729,17 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
-  // 2. Check Per-Contact AI Mute Status
+  // 2. Check Per-Contact AI Mute Status & Fetch Contact Profile Details
+  let customerContactName: string | null = null
+  let contactDbAddress: string | null = null
+  let contactDbPhone: string | null = null
+  let contactDbEmail: string | null = null
+
   if ((contactId || customerPhone) && channel !== 'sandbox') {
     try {
-      let query = client.from('contacts').select('id, ai_auto_reply_muted')
+      let query = client
+        .from('contacts')
+        .select('id, name, first_name, last_name, phone, address, email, ai_auto_reply_muted')
       if (contactId) {
         query = query.eq('id', contactId)
       } else if (customerPhone) {
@@ -729,7 +751,36 @@ export async function handleIncomingCustomerMessage({
         console.log(`[AI Router Engine] Customer AI is muted for contact ${contactData.id} — skipping auto-reply`)
         return null
       }
+      if (contactData) {
+        if (!contactId && contactData.id) contactId = contactData.id
+        customerContactName =
+          contactData.name ||
+          [contactData.first_name, contactData.last_name].filter(Boolean).join(' ') ||
+          null
+        contactDbAddress = contactData.address || null
+        contactDbPhone = contactData.phone || null
+        contactDbEmail = contactData.email || null
+      }
     } catch (_cErr) {
+      // safe fallback
+    }
+  }
+
+  if (!customerContactName && contactId) {
+    try {
+      const { data: cRow } = await client
+        .from('contacts')
+        .select('name, first_name, last_name, phone, address, email')
+        .eq('id', contactId)
+        .maybeSingle()
+      if (cRow) {
+        customerContactName =
+          cRow.name || [cRow.first_name, cRow.last_name].filter(Boolean).join(' ') || null
+        if (!contactDbAddress) contactDbAddress = cRow.address || null
+        if (!contactDbPhone) contactDbPhone = cRow.phone || null
+        if (!contactDbEmail) contactDbEmail = cRow.email || null
+      }
+    } catch {
       // safe fallback
     }
   }
@@ -844,6 +895,21 @@ export async function handleIncomingCustomerMessage({
       console.warn('[AI Router Engine] Failed to fetch contact message history:', fallbackHistErr)
     }
   }
+
+  // 2b. Extract candidate customer name and resolve strict gender addressing (1st verify person name, then history lock)
+  const initMsgInfo = extractCustomerInfoFromMessage(messageText)
+  const initHistInfo = extractCustomerInfoFromMessage(conversationHistoryText)
+  const candidateCustomerName =
+    customerContactName ||
+    initMsgInfo.name ||
+    initHistInfo.name ||
+    null
+
+  const addressedCustomer = resolveCustomerAddressing({
+    rawCustomerName: candidateCustomerName,
+    historyText: conversationHistoryText,
+    customerRelationStyle: account.customer_relation_style || 'bhaiya_apu',
+  })
 
   // Resolve active image from current message or recent conversation history
   let activeMediaUrl = mediaUrl || null
@@ -1039,12 +1105,8 @@ export async function handleIncomingCustomerMessage({
   if (effectivePersona === 'professional_en') toneGuidance = 'Professional, formal, and precise.'
   else if (effectivePersona === 'conversational_banglish') toneGuidance = 'Conversational, warm, and concise.'
 
-  // Build Communication & Greeting Guidance
-  const communicationGuidance = account.customer_relation_style === 'bhaiya_apu'
-    ? 'Address the customer respectfully as "Bhaiya" or "Apu" (ভাইয়া/আপু) when appropriate in Bengali/Banglish.'
-    : account.customer_relation_style === 'sir_madam'
-    ? 'Address the customer formally as "Sir" or "Madam".'
-    : 'Maintain a warm, casual, and polite conversation.'
+  // Build Communication & Greeting Guidance (Locked by verified name & history)
+  const communicationGuidance = addressedCustomer.promptInstruction
 
   const resolvedStoreName =
     (account.name && account.name.trim().toLowerCase() !== 'rifat' && account.name.trim() !== 'User' ? account.name.trim() : null) ||
@@ -1209,7 +1271,8 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
 8. STRICT LANGUAGE & SCRIPT RULES (ZERO TOLERANCE):
    - ${langGuidance}
    - Persona: ${toneGuidance}
-   - Addressing: ${communicationGuidance}
+   - CUSTOMER ADDRESSING & GENDER CONSISTENCY RULES:
+${communicationGuidance}
    - ABSOLUTE PROHIBITION: NEVER generate Arabic script (عربى / اردو), Urdu, or Devanagari script.
    - Strictly match customer language:
      * English customer -> 100% English reply in Latin alphabet.
@@ -1505,6 +1568,7 @@ Set "order": null if the customer is merely asking a question without ordering o
       account,
       conversationHistoryText,
       activeMediaUrl,
+      customerGender: addressedCustomer.gender,
     })
     intent = offline.intent
     aiReply = offline.reply
@@ -1527,6 +1591,7 @@ Set "order": null if the customer is merely asking a question without ordering o
         account,
         conversationHistoryText,
         activeMediaUrl,
+        customerGender: addressedCustomer.gender,
       })
       intent = fallbackOffline.intent
       aiReply = fallbackOffline.reply
@@ -1549,6 +1614,7 @@ Set "order": null if the customer is merely asking a question without ordering o
       account,
       conversationHistoryText,
       activeMediaUrl,
+      customerGender: addressedCustomer.gender,
     })
     intent = fallbackOffline.intent
     aiReply = fallbackOffline.reply
@@ -1670,12 +1736,9 @@ Set "order": null if the customer is merely asking a question without ordering o
   const sessionExtractedInfo = extractCustomerInfoFromMessage(currentSessionText)
   const histExtractedInfo = extractCustomerInfoFromMessage(conversationHistoryText)
 
-  let contactDbName: string | null = null
-  let contactDbAddress: string | null = null
-  let contactDbPhone: string | null = null
-  let contactDbEmail: string | null = null
+  let contactDbName: string | null = customerContactName || null
 
-  if (contactId) {
+  if (contactId && (!contactDbName || !contactDbAddress || !contactDbPhone)) {
     try {
       const { data: cRow } = await client
         .from('contacts')
@@ -1683,10 +1746,10 @@ Set "order": null if the customer is merely asking a question without ordering o
         .eq('id', contactId)
         .maybeSingle()
       if (cRow) {
-        contactDbName = cRow.name || null
-        contactDbPhone = cRow.phone || null
-        contactDbAddress = cRow.address || null
-        contactDbEmail = cRow.email || null
+        if (!contactDbName) contactDbName = cRow.name || null
+        if (!contactDbPhone) contactDbPhone = cRow.phone || null
+        if (!contactDbAddress) contactDbAddress = cRow.address || null
+        if (!contactDbEmail) contactDbEmail = cRow.email || null
       }
     } catch {
       // safe fallback
@@ -2038,12 +2101,14 @@ Set "order": null if the customer is merely asking a question without ordering o
     const targetProductName = activeProduct?.name || llmOrderData?.items?.[0]?.product_name || (isOrderDigital ? 'Digital Product' : 'Product')
     if (!isOrderDigital) {
       const pmLabel = explicitPaymentMethod === 'cod' ? (detectedLang === 'bn' ? 'ক্যাশ অন ডেলিভারি' : 'Cash on Delivery') : (detectedLang === 'bn' ? 'অনলাইন পেমেন্ট' : 'Online Payment')
+      const honorificBn = addressedCustomer.gender === 'female' ? 'ম্যাম' : 'স্যার'
+      const honorificEn = addressedCustomer.gender === 'female' ? 'Madam' : 'Sir'
       if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ, ${currentOrderName || 'স্যার'}! আপনার ${targetProductName}-এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে (${pmLabel})। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!`
+        aiReply = `ধন্যবাদ, ${currentOrderName || honorificBn}! আপনার ${targetProductName}-এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে (${pmLabel})। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad, ${currentOrderName || 'Sir'}! Apnar ${targetProductName} er order ti successfully confirm kora hoyeche (${pmLabel})। Amader team delivery ready korche!`
+        aiReply = `Dhonnobad, ${currentOrderName || honorificEn}! Apnar ${targetProductName} er order ti successfully confirm kora hoyeche (${pmLabel})। Amader team delivery ready korche!`
       } else {
-        aiReply = `Thank you, ${currentOrderName || 'Sir'}! Your order for ${targetProductName} has been successfully confirmed (${pmLabel}). Our delivery team is preparing your package!`
+        aiReply = `Thank you, ${currentOrderName || honorificEn}! Your order for ${targetProductName} has been successfully confirmed (${pmLabel}). Our delivery team is preparing your package!`
       }
     } else {
       if (detectedLang === 'bn') {
@@ -2055,6 +2120,16 @@ Set "order": null if the customer is merely asking a question without ordering o
       }
     }
   }
+
+  // Enforce 100% strict gender addressing consistency (zero flip-flopping)
+  let targetConsistencyGender = addressedCustomer.gender
+  if (targetConsistencyGender === 'unknown' && currentOrderName) {
+    const updatedGenderFromName = detectGenderFromName(currentOrderName)
+    if (updatedGenderFromName !== 'unknown') {
+      targetConsistencyGender = updatedGenderFromName
+    }
+  }
+  aiReply = enforceGenderAddressingConsistency(aiReply, targetConsistencyGender)
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
   try {
