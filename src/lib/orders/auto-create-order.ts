@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
+import { extractCustomerInfoFromMessage, isFacebookPsid, isDetailedDeliveryAddress } from '@/lib/contacts/extract-info'
 import { checkIsDigitalOrder, isDigitalProduct } from '@/lib/products/product-type'
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
@@ -504,12 +504,7 @@ export async function detectAndCreateOrderFromChat({
 
   const hasName = isValidHumanName(resolvedName)
   const hasPhone = Boolean(phone && !isFacebookPsid(phone) && phone.length >= 10)
-  const hasAddress = Boolean(
-    address &&
-    address.trim().length >= 5 &&
-    !address.endsWith('?') &&
-    !/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস)\b/i.test(address)
-  )
+  const hasAddress = Boolean(address && isDetailedDeliveryAddress(address))
   const hasEmail = Boolean(email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()))
 
   let isOrderComplete = false

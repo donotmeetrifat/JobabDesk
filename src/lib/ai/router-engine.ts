@@ -3,7 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 import { isDigitalProduct, checkIsDigitalOrder, isDigitalText } from '@/lib/products/product-type'
-import { extractCustomerInfoFromMessage, isFacebookPsid } from '@/lib/contacts/extract-info'
+import {
+  extractCustomerInfoFromMessage,
+  isFacebookPsid,
+  isDetailedDeliveryAddress,
+} from '@/lib/contacts/extract-info'
 import {
   resolveCustomerAddressing,
   enforceGenderAddressingConsistency,
@@ -59,16 +63,19 @@ export const BANGLISH_KEYWORDS = new Set([
   // Verbs & Copulas
   'ache', 'ase', 'nai', 'nei', 'hobe',
   'hoyeche', 'hoise', 'korbo', 'koren', 'korben', 'dibo', 'debo',
-  'diben', 'deben', 'den', 'nibo', 'nebo', 'niben', 'neben',
-  'chai', 'pabo', 'lagbe', 'dekhun', 'bolen', 'bolbo', 'janan',
-  'parben', 'pathan', 'pathaben', 'naki', 'pari', 'jante', 'bolte',
+  'diben', 'deben', 'den', 'daw', 'dao', 'deya', 'dei', 'dite', 'din',
+  'nibo', 'nebo', 'niben', 'neben', 'nite', 'kinbo', 'kinte',
+  'chai', 'pabo', 'lagbe', 'dekhun', 'bolen', 'bolbo', 'janan', 'janaben',
+  'parben', 'pathan', 'pathaben', 'pathaisi', 'pathiyechi', 'naki', 'pari', 'jante', 'bolte', 'bolo',
   // Vocabulary
   'dam', 'daam', 'shob', 'sob', 'khub', 'valo', 'bhalo',
   'taka', 'tk', 'ekhon', 'ajke', 'aj', 'dorkar', 'thik', 'thikana',
   'dhaka', 'shathe', 'sathe', 'eta', 'eita', 'oita', 'ei', 'oi',
-  'er', 'te', 're', 'ke', 'theke', 'moto', 'motamoti', 'ekta', 'duto',
+  'er', 'ar', 'aar', 'te', 're', 'ke', 'theke', 'moto', 'motamoti', 'ekta', 'duto',
   'order', 'korlam', 'dilen', 'dilam', 'pelam', 'paici', 'paichi',
-  'ekhane', 'shekhane', 'ojotha', 'dekhi', 'dekhlam', 'ashbe', 'ashbo'
+  'ekhane', 'shekhane', 'ojotha', 'dekhi', 'dekhlam', 'ashbe', 'ashbo',
+  'bujhi', 'bujhlam', 'kintu', 'jodi', 'tai', 'pore', 'age', 'ebar', 'kokhon',
+  'kichu', 'onek', 'kom', 'beshi', 'aro', 'chara', 'shobcheye', 'sobcheye'
 ])
 
 export const ENGLISH_KEYWORDS = new Set([
@@ -83,10 +90,60 @@ export const ENGLISH_KEYWORDS = new Set([
   'how', 'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want', 'because',
   'any', 'these', 'give', 'day', 'most', 'us', 'best', 'skin', 'dry', 'price',
   'product', 'available', 'order', 'please', 'thanks', 'thank', 'help', 'details',
-  'deliver', 'delivery', 'address', 'shipping', 'cash', 'payment', 'send'
+  'deliver', 'delivery', 'address', 'shipping', 'cash', 'payment', 'send',
+  'hi', 'hello', 'hey', 'yes', 'yeah', 'yep', 'ok', 'okay', 'sure', 'cream',
+  'creams', 'are', 'is', 'am', 'was', 'were', 'need', 'buy', 'cod', 'cost',
+  'much', 'tell', 'show', 'item', 'items', 'face', 'body', 'shop'
 ])
 
 export const BENGALI_LETTER_REGEX = /[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/
+
+export const STRONG_BANGLISH_REGEX = /\b(?:ami|amar|amake|amader|tumi|tomar|tomake|apni|apnar|apnake|apnader|koto|konta|kivabe|kibhabe|keno|kothay|kothai|ache|ase|nai|nei|hobe|hoise|hoyeche|korbo|koren|korben|dibo|debo|diben|deben|den|daw|dao|deya|dei|dite|din|nibo|nebo|niben|neben|nite|kinbo|kinte|lagbe|chai|pabo|dekhun|bolen|bolbo|janan|janaben|pathan|pathaben|pathaisi|pathiyechi|naki|bhalo|valo|daam|dam|taka|tk|thik|thikana|sathe|eta|eita|oita|ei|oi|er|ar|aar|ekta|duto|korlam|pelam|paici|paichi|bhai|bhaiya|vaia|apu)\b/i
+
+function getCustomerHistoryLanguage(historyText?: string): DetectedLanguage | null {
+  if (!historyText) return null
+  const lines = historyText.split('\n')
+  // Collect customer messages from newest to oldest
+  const customerLines = lines
+    .filter((l) => /Customer:/i.test(l))
+    .map((l) => l.replace(/^.*?Customer:\s*/i, '').trim())
+    .filter(Boolean)
+
+  if (customerLines.length > 0) {
+    for (let i = customerLines.length - 1; i >= 0; i--) {
+      const line = customerLines[i]
+      const bnMatch = line.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/g)
+      const latinMatch = line.match(/[a-zA-Z]/g)
+      const bnCount = bnMatch ? bnMatch.length : 0
+      const latinCount = latinMatch ? latinMatch.length : 0
+      if (bnCount >= 2 && bnCount >= latinCount) return 'bn'
+      if (STRONG_BANGLISH_REGEX.test(line)) return 'banglish'
+      const words = line.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+      const enCount = words.filter((w) => ENGLISH_KEYWORDS.has(w)).length
+      if (enCount >= 2) return 'en'
+    }
+  }
+
+  // Fallback: If no explicit Customer: line, check non-bot lines
+  const nonBotLines = lines
+    .filter((l) => !/^(?:Salesman|Bot|Assistant):/i.test(l))
+    .map((l) => l.trim())
+    .filter(Boolean)
+  for (let i = nonBotLines.length - 1; i >= 0; i--) {
+    const line = nonBotLines[i]
+    const bnMatch = line.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/g)
+    const latinMatch = line.match(/[a-zA-Z]/g)
+    const bnCount = bnMatch ? bnMatch.length : 0
+    const latinCount = latinMatch ? latinMatch.length : 0
+    if (bnCount >= 2 && bnCount >= latinCount) return 'bn'
+    if (STRONG_BANGLISH_REGEX.test(line)) return 'banglish'
+    const words = line.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+    const enCount = words.filter((w) => ENGLISH_KEYWORDS.has(w)).length
+    if (enCount >= 2) return 'en'
+  }
+
+  return null
+}
 
 // Robust language detector matching English, Bengali (বাংলা script), and Banglish
 export function detectLanguage(
@@ -129,23 +186,43 @@ export function detectLanguage(
   }
 
   // 1. Check for actual Bengali script letters (excluding currency ৳ \u09F3 and digits \u09E6-\u09EF)
-  // Bengali Unicode letters: \u0985-\u09B9, \u09CE, \u09DC-\u09DF and vowel signs \u09BE-\u09CC
   const bengaliLettersMatch = clean.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF\u09BE-\u09CC]/g)
   const bengaliLetterCount = bengaliLettersMatch ? bengaliLettersMatch.length : 0
 
-  // Latin letters match
   const latinLettersMatch = clean.match(/[a-zA-Z]/g)
   const latinLetterCount = latinLettersMatch ? latinLettersMatch.length : 0
 
-  // If there are actual Bengali letters and they outnumber Latin letters, it's definitely Bengali
+  // If there are actual Bengali letters and they outnumber Latin letters, it's strictly Bengali
   if (bengaliLetterCount >= 2 && bengaliLetterCount >= latinLetterCount) {
     return 'bn'
   }
 
-  // 2. If it's mostly Latin letters, distinguish between Banglish and English
+  // 2. If written in Latin letters, distinguish between Banglish and English
   if (latinLetterCount > 0) {
-    const words = clean.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+    // A. Check for strong Banglish words (e.g. "amar dry skin", "amake simple cream ar details daw", "Canva nite chai")
+    if (STRONG_BANGLISH_REGEX.test(clean)) {
+      return 'banglish'
+    }
 
+    // B. If this is a checkout block, contact info, or short reply, resolve with conversation context
+    const isCheckoutOrShortReply =
+      /\b(?:address|adreess|phone|phn|mobile|cod|cash|delivery|bkash|nagad|name|naam|trx|trxid|road|basha|thana|goli|sarok|dhaka|mirpur)\b/i.test(clean) ||
+      /\d{5,}/.test(clean) ||
+      clean.length < 20
+
+    if (isCheckoutOrShortReply) {
+      const customerHistLang = getCustomerHistoryLanguage(recentHistory)
+      if (customerHistLang) {
+        return customerHistLang
+      }
+      const historyBnMatch = recentHistory?.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
+      const isHistoryBengali = Boolean(historyBnMatch && historyBnMatch.length > 5)
+      if (isHistoryBengali) {
+        return 'bn'
+      }
+    }
+
+    const words = clean.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
     let banglishScore = 0
     let englishScore = 0
 
@@ -158,37 +235,20 @@ export function detectLanguage(
       return 'banglish'
     }
 
-    const historyBnMatch = recentHistory?.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
-    const isHistoryBengali = Boolean(historyBnMatch && historyBnMatch.length > 5)
-
-    // In Bangladesh, customers often send addresses, names, COD, and short replies in English characters
-    // even during an active Bengali conversation. Maintain Bengali unless customer explicitly requested English.
-    const isCheckoutOrShortReply =
-      clean.length < 80 ||
-      /\b(?:address|adreess|phone|phn|mobile|cod|cash|delivery|bkash|nagad|name|naam|trx|trxid|road|basha|thana|goli|sarok|dhaka|mirpur)\b/i.test(clean) ||
-      /\d{5,}/.test(clean)
-
-    if (isHistoryBengali && !englishRequestRegex.test(clean) && isCheckoutOrShortReply) {
-      return 'bn'
-    }
-
-    if (englishScore > 0 && englishScore >= banglishScore) {
+    if (englishScore > banglishScore && englishScore > 0) {
       return 'en'
     }
 
-    // If ambiguous (e.g. only product name or numbers), check conversation history
-    if (recentHistory) {
-      if (isHistoryBengali) return 'bn'
+    // C. If still ambiguous, check conversation history
+    const customerHistLang = getCustomerHistoryLanguage(recentHistory)
+    if (customerHistLang) {
+      return customerHistLang
+    }
 
-      const histWords = recentHistory.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
-      let histBanglish = 0
-      let histEnglish = 0
-      for (const w of histWords) {
-        if (BANGLISH_KEYWORDS.has(w)) histBanglish++
-        if (ENGLISH_KEYWORDS.has(w)) histEnglish++
-      }
-      if (histBanglish > histEnglish && histBanglish > 0) return 'banglish'
-      if (histEnglish > histBanglish && histEnglish > 0) return 'en'
+    const historyBnMatch = recentHistory?.match(/[\u0985-\u09B9\u09CE\u09DC-\u09DF]/g)
+    const isHistoryBengali = Boolean(historyBnMatch && historyBnMatch.length > 5)
+    if (isHistoryBengali) {
+      return 'bn'
     }
 
     // Default to English if written in Latin alphabet
@@ -197,6 +257,8 @@ export function detectLanguage(
 
   // 3. If no Latin and no Bengali letters (e.g. "+88017...", "৳1,000", "500"), check history
   if (recentHistory) {
+    const customerHistLang = getCustomerHistoryLanguage(recentHistory)
+    if (customerHistLang) return customerHistLang
     return detectLanguage(recentHistory, preferredSetting)
   }
 
@@ -255,6 +317,7 @@ export function buildOfflineReply({
   recentOrders = [],
   account = {},
   conversationHistoryText = '',
+  recentHistory = '',
   activeMediaUrl = null,
   customerGender = 'unknown',
 }: {
@@ -264,6 +327,7 @@ export function buildOfflineReply({
   recentOrders?: any[]
   account?: any
   conversationHistoryText?: string
+  recentHistory?: string
   activeMediaUrl?: string | null
   customerGender?: CustomerGender
 }): { intent: DetectedIntent; reply: string } {
@@ -271,6 +335,7 @@ export function buildOfflineReply({
   let reply = ''
 
   const textLower = messageText.toLowerCase().trim()
+  const convHistory = conversationHistoryText || recentHistory || ''
   const matchedProducts = products.filter((p) => {
     if (!p?.name) return false
     const pName = p.name.toLowerCase().trim()
@@ -290,6 +355,38 @@ export function buildOfflineReply({
       reply = 'আপনার পাঠানো ছবিটি আমি পেয়েছি! আমাদের টিম ছবিটি দেখে পণ্যের স্টক ও মূল্য জানিয়ে দিচ্ছেন, একটু অপেক্ষা করুন।'
     } else {
       reply = 'I have received your product photo! Our team is reviewing the image right now to check availability and price for you.'
+    }
+  }
+  // 0b. Delivery / Checkout details submission in offline mode
+  else if (
+    /(?:\+?880|0)1[3-9]\d{8}/.test(messageText) &&
+    (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(messageText) || messageText.split('\n').length >= 3)
+  ) {
+    intent = 'product_inquiry'
+    const lines = messageText.split('\n').map((l) => l.trim()).filter(Boolean)
+    const nameCandidate = lines.find((l) => /^[a-zA-Z\u0980-\u09FF\s.]{2,30}$/.test(l) && !/(?:cod|cash|delivery|bkash|nagad|phone|mobile)/i.test(l)) || ''
+    const addrCandidate = lines.find((l) => l !== nameCandidate && !/(?:\+?880|0)1[3-9]\d{8}/.test(l) && !/^(?:cod|cash\s*on\s*delivery)$/i.test(l)) || ''
+    const isCod = /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(messageText)
+
+    if (addrCandidate && !isDetailedDeliveryAddress(addrCandidate)) {
+      if (detectedLang === 'banglish') {
+        reply = `Dhonnobad${nameCandidate ? `, ${nameCandidate}` : ''}! Apnar deya address (${addrCandidate}) parcel delivery er jonno complete noy. Parcel delivery er jonno kindly apnar full delivery address (basha/holding number, road number, area, thana, district) detail e janaben please.`
+      } else if (detectedLang === 'bn') {
+        reply = `ধন্যবাদ${nameCandidate ? `, ${nameCandidate}` : ''}! আপনার দেওয়া ঠিকানাটি (${addrCandidate}) পার্সেল ডেলিভারির জন্য পর্যাপ্ত নয়। পার্সেল নিরাপদে পৌঁছে দেওয়ার জন্য অনুগ্রহ করে পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/হোল্ডিং নম্বর, রোড নম্বর, এলাকা, থানা, জেলা) বিস্তারিতভাবে জানিয়ে দিন।`
+      } else {
+        reply = `Thank you${nameCandidate ? `, ${nameCandidate}` : ''}! The address provided (${addrCandidate}) is not detailed enough for delivery. Please provide your complete delivery address (house/holding number, road number, area, thana, district) to process your order.`
+      }
+    } else {
+      const pmLabelBn = isCod ? 'ক্যাশ অন ডেলিভারি' : 'অনলাইন পেমেন্ট'
+      const pmLabelBanglish = isCod ? 'Cash on Delivery (COD)' : 'Online Payment'
+      const pmLabelEn = isCod ? 'Cash on Delivery (COD)' : 'Online Payment'
+      if (detectedLang === 'banglish') {
+        reply = `Dhonnobad${nameCandidate ? `, ${nameCandidate}` : ''}! Apnar order er shob details successfully receive kora hoyeche (${pmLabelBanglish})। Amader shop team details verify kore druto order confirm kore debe!`
+      } else if (detectedLang === 'bn') {
+        reply = `ধন্যবাদ${nameCandidate ? `, ${nameCandidate}` : ''}! আপনার অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে (${pmLabelBn})। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!`
+      } else {
+        reply = `Thank you${nameCandidate ? `, ${nameCandidate}` : ''}! All details for your order have been successfully received (${pmLabelEn}). Our shop team will review the information and confirm your order shortly!`
+      }
     }
   }
   // 1. Matched Product(s) Inquiry or Order Request
@@ -388,6 +485,32 @@ export function buildOfflineReply({
           reply = `Canva Pro is available. Please let us know what specific details or access duration you need so our team can assist you!`
         }
       }
+    }
+  }
+  // 1c. Product category / recommendation inquiry (e.g. "which is best cream for my skin", "dry skin", "skincare")
+  else if (
+    textLower.includes('cream') ||
+    textLower.includes('skin') ||
+    textLower.includes('skincare') ||
+    textLower.includes('dry skin') ||
+    textLower.includes('best') ||
+    textLower.includes('ক্রিম') ||
+    textLower.includes('স্কিন')
+  ) {
+    intent = 'product_inquiry'
+    const creamProducts = products.filter((p) =>
+      /cream|lotion|serum|skin|moisturizer|face|body|ক্রিম|লোশন/i.test(`${p.name || ''} ${p.category || ''} ${p.description || ''}`)
+    )
+    const recList = creamProducts.length > 0 ? creamProducts.slice(0, 3) : products.slice(0, 3)
+    const recNames = recList.map((p) => `${p.name} (৳${p.price})`).join(', ')
+    const honorificBanglish = customerGender === 'female' ? ', Apu' : customerGender === 'male' ? ', Bhaiya' : ''
+    const honorificBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+    if (detectedLang === 'banglish') {
+      reply = `Apnar skin er jonno amader ${recNames || 'skincare products'} darun kaaj korbe${honorificBanglish}! Apni ki er moddhe konoti nite chan?`
+    } else if (detectedLang === 'bn') {
+      reply = `আপনার স্কিনের জন্য আমাদের ${recNames || 'স্কিনকেয়ার পণ্যগুলো'} দারুণ কাজ করবে${honorificBn}! আপনি কি এর মধ্যে কোনটি নিতে চান?`
+    } else {
+      reply = `For your skin, our ${recNames || 'skincare products'} work wonderfully! Which one would you like to explore or order?`
     }
   }
   // 2. Payment Methods Inquiry
@@ -1188,12 +1311,12 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
    You MUST determine whether the CURRENT product being ordered is PHYSICAL or DIGITAL:
 
    - A. FOR ANY PHYSICAL PRODUCT (skincare, creams, lotions, cosmetics, clothing, shoes, tangible items):
-     To take and confirm ANY physical order for ANY customer (including repeated customers who placed orders in the past):
+     To take ANY physical order for ANY customer (including repeated customers who placed orders in the past):
      You MUST ask the customer for and know ALL FOUR (4) of these items:
      (1) Delivery Name (Customer full name for delivery parcel)
-     (2) Delivery Address (house/road, area, thana, district)
+     (2) Full Detailed Delivery Address (house/holding number, road number, area, thana, district). NOTE: A bare area or city name like "Mirpur 14" or "Dhanmondi" is NOT sufficient for courier delivery in Bangladesh! You MUST strictly require the complete house/road number and detailed delivery location!
      (3) Delivery Phone Number (valid contact number)
-     (4) Payment Method: Cash on Delivery (COD) OR Online Payment (bKash/Nagad)
+     (4) Payment Method: Cash on Delivery (COD) OR Online Payment (bKash/Nagad). NOTE: If the customer mentions COD or Cash on Delivery, it is strictly Cash on Delivery! NEVER confuse COD with Online Payment!
 
      * REPEATED CUSTOMER MANDATE:
        - Every time ANY customer (even a repeated customer) wants to place a new order, you MUST ask for these four questions!
@@ -1203,25 +1326,26 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
        - If customer initiates an order without providing details (e.g. "I want to order Simple Cream", "order korte chai", "Simple cream nibo"):
          Politely ask all 4 questions in a clear, numbered list:
          1. Delivery Name (আপনার পুরো নাম)
-         2. Full Delivery Address (পূর্ণাঙ্গ ডেলিভারি ঠিকানা - বাসা/রোড, থানা, জেলা)
+         2. Full Detailed Delivery Address (পূর্ণাঙ্গ বিস্তারিত ডেলিভারি ঠিকানা - বাসা/রোড নম্বর, এলাকা, থানা, জেলা)
          3. Phone Number (ফোন নম্বর)
          4. Preferred Payment Method (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ)
-       - If customer provides partial details (e.g. gives address and phone only):
-         Acknowledge the details received and ask specifically for the remaining missing items (e.g. Delivery Name and Payment Method)!
+       - If customer provides partial details or an incomplete address (e.g. gives area only like "Mirpur 14"):
+         Acknowledge what was received and ask specifically for the remaining missing items (e.g. exact house/road number, full address, or payment method)!
 
      * PAYMENT METHOD RULES FOR PHYSICAL:
-       - When the customer wants Cash on Delivery (COD): That is completely acceptable and confirmed immediately!
+       - When the customer wants Cash on Delivery (COD): That is strictly Cash on Delivery (COD)! NEVER call it online payment!
        - When the customer selects Online Payment: Provide our bKash/Nagad account number (01326596251) and ask them to send the payment and share their TrxID or confirmation.
        - If payment method is not specified: Ask whether they prefer Cash on Delivery (COD) or Online Payment (bKash/Nagad).
 
-     * UNTIL ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN:
+     * UNTIL ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN (INCLUDING DETAILED ADDRESS):
        - DO NOT confirm that the order is placed!
-       - Politely ask for whatever is missing among: Delivery Name, Delivery Address, Phone Number, and Payment Method.
+       - Politely ask for whatever is missing among: Delivery Name, Full Detailed Delivery Address, Phone Number, and Payment Method.
      * AFTER ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN:
-       - Warmly confirm the product order to the customer:
-         * English: "Thank you, [Name]! Your order for [Product] ([qty] pcs) has been successfully confirmed ([Cash on Delivery / bKash payment]). Our delivery team is preparing your package!"
-         * Bengali: "ধন্যবাদ, [Name]! আপনার [Product] ([qty]টি) এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে ([ক্যাশ অন ডেলিভারি / বিকাশ পেমেন্ট])। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!"
-         * Banglish: "Dhonnobad, [Name]! Apnar [Product] ([qty] pcs) er order ti successfully confirm kora hoyeche ([Cash on Delivery / Online Payment])। Amader delivery team parcel ready korche!"
+       - The automation system ONLY receives and logs the details to the orders page. The shop owner manually confirms the order from the dashboard. The AI MUST NOT claim it confirmed the order or that the parcel is being dispatched!
+       - Inform the customer that all order details have been received and are pending shop team review & confirmation:
+         * English: "Thank you, [Name]! All details for your [Product] order have been successfully received ([Cash on Delivery / bKash payment]). Our shop team will review the information and confirm your order shortly!"
+         * Bengali: "ধন্যবাদ, [Name]! আপনার [Product]-এর অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে ([ক্যাশ অন ডেলিভারি / বিকাশ পেমেন্ট])। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!"
+         * Banglish: "Dhonnobad, [Name]! Apnar [Product] er order details successfully receive kora hoyeche ([Cash on Delivery / bKash payment])। Amader shop team details verify kore druto order confirm kore debe!"
 
    - B. FOR ANY DIGITAL PRODUCT (subscriptions, software, Canva Pro, licenses, digital accounts):
      To take and confirm any digital order for ANY customer (including repeated customers):
@@ -1598,10 +1722,11 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
 
-  // Safety & Script Guardrail: If parsed aiReply contains Arabic/Urdu or violates English requirement, fall back to buildOfflineReply
+  // Safety & Script Guardrail: If parsed aiReply contains Arabic/Urdu or violates English/Banglish requirement, fall back to buildOfflineReply
   if (
     ARABIC_URDU_REGEX.test(aiReply) ||
-    (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(aiReply))
+    (detectedLang === 'en' && BENGALI_LETTER_REGEX.test(aiReply)) ||
+    (detectedLang === 'banglish' && BENGALI_LETTER_REGEX.test(aiReply))
   ) {
     console.warn('[AI Router Engine] AI output violated language/script guardrail. Falling back to offline reply. Raw:', aiReply)
     providerUsed = 'offline_dictionary'
@@ -1678,26 +1803,31 @@ Set "order": null if the customer is merely asking a question without ordering o
   const isMessageExplicitlyPhysical = physicalKeywords.test(messageText)
 
   // D. If still not matched, check recent history backwards (newest turn first) to find the most recent product intent
-  if (!activeProduct && !isMessageExplicitlyPhysical && historyMsgs && historyMsgs.length > 0) {
+  if (!activeProduct && historyMsgs && historyMsgs.length > 0) {
     for (let i = historyMsgs.length - 1; i >= 0; i--) {
-      const hText = historyMsgs[i]?.content || ''
+      const hText = historyMsgs[i]?.content_text || historyMsgs[i]?.content || ''
       const matched = sortedProducts.find((p) => p.name && new RegExp(`(?:\\b|\\s|^)${p.name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}(?:\\b|\\s|$)`, 'i').test(hText))
       if (matched) {
         activeProduct = matched
         break
       }
-      if (physicalKeywords.test(hText)) {
-        break
-      }
+    }
+  }
+
+  // E. Fallback: check conversationHistoryText directly
+  if (!activeProduct && conversationHistoryText) {
+    const matched = sortedProducts.find((p) => p.name && new RegExp(`(?:\\b|\\s|^)${p.name.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}(?:\\b|\\s|$)`, 'i').test(conversationHistoryText))
+    if (matched) {
+      activeProduct = matched
     }
   }
 
   // Determine whether CURRENT order is digital:
   let isOrderDigital = false
-  if (activeProduct) {
-    isOrderDigital = isDigitalProduct(activeProduct)
-  } else if (isMessageExplicitlyPhysical) {
+  if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে)\b/i.test(msgLower) || /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(histLower) || isMessageExplicitlyPhysical) {
     isOrderDigital = false
+  } else if (activeProduct) {
+    isOrderDigital = isDigitalProduct(activeProduct)
   } else if (Boolean(llmOrderData?.is_digital) || checkIsDigitalOrder(llmOrderData?.items)) {
     isOrderDigital = true
   } else if (isDigitalText(messageText)) {
@@ -1882,12 +2012,11 @@ Set "order": null if the customer is merely asking a question without ordering o
       llmOrderData.delivery_charge = 0
     }
   } else {
-    // Check for explicit COD (ONLY for Physical products in the current session)
-    if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে|delivery\s*te\s*taka|হাতে\s*পেয়ে|হাতে\s*টাকা)\b/i.test(msgLower)) {
-      if (!isOrderDigital) {
-        explicitPaymentMethod = 'cod'
-        isPaymentConfirmed = true // Cash on delivery confirmed immediately
-      }
+    // Check for explicit COD
+    if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে|delivery\s*te\s*taka|হাতে\s*পেয়ে|হাতে\s*টাকা)\b/i.test(msgLower) || /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(currentSessionLower)) {
+      explicitPaymentMethod = 'cod'
+      isPaymentConfirmed = true
+      isOrderDigital = false
     } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'bkash'
     } else if (/\b(?:nagad|নগদ)\b/i.test(msgLower)) {
@@ -1896,17 +2025,15 @@ Set "order": null if the customer is merely asking a question without ordering o
       explicitPaymentMethod = 'rocket'
     } else if (/\b(?:online\s*payment|online\s*e|অনলাইন\s*পেমেন্ট|অনলাইনে)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'online'
-    } else if (!isOrderDigital && /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(currentSessionLower)) {
-      explicitPaymentMethod = 'cod'
-      isPaymentConfirmed = true
     } else if (/\b(?:bkash|nagad|rocket)\b/i.test(currentSessionLower)) {
       explicitPaymentMethod = currentSessionLower.match(/\b(bkash|nagad|rocket)\b/i)?.[0].toLowerCase() || 'bkash'
     } else if (llmOrderData?.payment_method) {
       const pm = String(llmOrderData.payment_method).toLowerCase()
       if (['bkash', 'nagad', 'rocket', 'online'].includes(pm)) explicitPaymentMethod = pm
-      else if (pm === 'cod' && !isOrderDigital) {
+      else if (pm === 'cod') {
         explicitPaymentMethod = 'cod'
         isPaymentConfirmed = true
+        isOrderDigital = false
       }
     }
 
@@ -1932,7 +2059,7 @@ Set "order": null if the customer is merely asking a question without ordering o
 
   if (!isOrderDigital) {
     if (!currentOrderName) missingRequirements.push('name')
-    if (!currentOrderAddress || currentOrderAddress.length < 5) missingRequirements.push('address')
+    if (!currentOrderAddress || !isDetailedDeliveryAddress(currentOrderAddress)) missingRequirements.push('address')
     if (!currentOrderPhone) missingRequirements.push('phone')
     if (!isFreeOrder) {
       if (!explicitPaymentMethod) missingRequirements.push('payment_method')
@@ -2072,12 +2199,15 @@ Set "order": null if the customer is merely asking a question without ordering o
           aiReply = `Thank you! We have received your delivery details. To complete your order, please specify your preferred payment method: Cash on Delivery (COD) or bKash/Nagad?`
         }
       } else if (missingRequirements.includes('address')) {
+        const shortAddrNotice = currentOrderAddress ? `আপনার দেওয়া ঠিকানাটি (${currentOrderAddress}) পার্সেল ডেলিভারির জন্য পর্যাপ্ত নয়। ` : ''
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! পার্সেল পাঠানোর জন্য অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা) জানিয়ে দিন।`
+          aiReply = `ধন্যবাদ! ${shortAddrNotice}পার্সেল নিরাপদে পৌঁছে দেওয়ার জন্য অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/হোল্ডিং নম্বর, রোড নম্বর, এলাকা, থানা, জেলা) বিস্তারিতভাবে জানিয়ে দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Parcel pathanor jonno kindly apnar full delivery address (basha/road, thana, district) janaben please.`
+          const shortNoticeBanglish = currentOrderAddress ? `Apnar deya address (${currentOrderAddress}) delivery er jonno complete noy. ` : ''
+          aiReply = `Dhonnobad! ${shortNoticeBanglish}Parcel delivery er jonno kindly apnar full delivery address (basha/holding number, road number, area, thana, district) detail e janaben please.`
         } else {
-          aiReply = `Thank you! Please share your full delivery address (house/road, area, city) to complete your order!`
+          const shortNoticeEn = currentOrderAddress ? `The address provided (${currentOrderAddress}) is not detailed enough for courier delivery. ` : ''
+          aiReply = `Thank you! ${shortNoticeEn}Please share your complete delivery address (house/holding number, road number, area, thana, district) so our team can process your delivery.`
         }
       } else if (missingRequirements.includes('phone')) {
         if (detectedLang === 'bn') {
@@ -2104,19 +2234,19 @@ Set "order": null if the customer is merely asking a question without ordering o
       const honorificBn = addressedCustomer.gender === 'female' ? 'ম্যাম' : 'স্যার'
       const honorificEn = addressedCustomer.gender === 'female' ? 'Madam' : 'Sir'
       if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ, ${currentOrderName || honorificBn}! আপনার ${targetProductName}-এর অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে (${pmLabel})। আমাদের ডেলিভারি টিম দ্রুত পার্সেল প্রস্তুত করে পাঠিয়ে দিচ্ছে!`
+        aiReply = `ধন্যবাদ, ${currentOrderName || honorificBn}! আপনার ${targetProductName}-এর অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে (${pmLabel})। আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত অর্ডারটি কনফার্ম করে দেবে!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad, ${currentOrderName || honorificEn}! Apnar ${targetProductName} er order ti successfully confirm kora hoyeche (${pmLabel})। Amader team delivery ready korche!`
+        aiReply = `Dhonnobad, ${currentOrderName || honorificEn}! Apnar ${targetProductName} er order er shob details successfully receive kora hoyeche (${pmLabel})। Amader shop team details verify kore druto order confirm kore debe!`
       } else {
-        aiReply = `Thank you, ${currentOrderName || honorificEn}! Your order for ${targetProductName} has been successfully confirmed (${pmLabel}). Our delivery team is preparing your package!`
+        aiReply = `Thank you, ${currentOrderName || honorificEn}! All details for your ${targetProductName} order have been successfully received (${pmLabel}). Our shop team will review the information and confirm your order shortly!`
       }
     } else {
       if (detectedLang === 'bn') {
-        aiReply = `ধন্যবাদ! আপনার ${targetProductName}-এর ডিজিটাল অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে। দ্রুত আপনার ইমেইলে (${currentOrderEmail}) সাবস্ক্রিপশন অ্যাক্সেস বিস্তারিত পাঠিয়ে দেওয়া হবে!`
+        aiReply = `ধন্যবাদ! আপনার ${targetProductName}-এর ডিজিটাল অর্ডার তথ্য সফলভাবে গ্রহণ করা হয়েছে। আমাদের টিম যাচাই করে আপনার ইমেইলে (${currentOrderEmail}) সাবস্ক্রিপশন অ্যাক্সেস পাঠিয়ে দেবে!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Dhonnobad! Apnar ${targetProductName} er digital order ti successfully confirm kora hoyeche. Quick apnar email e (${currentOrderEmail}) access details pathiye deya hobe!`
+        aiReply = `Dhonnobad! Apnar ${targetProductName} er digital order details successfully receive kora hoyeche. Amader team verify kore apnar email e (${currentOrderEmail}) access pathiye debe!`
       } else {
-        aiReply = `Thank you! Your digital order for ${targetProductName} has been successfully received. Your access details will be sent directly to ${currentOrderEmail} shortly!`
+        aiReply = `Thank you! All details for your ${targetProductName} digital order have been successfully received. Our team will verify the details and grant access to ${currentOrderEmail} shortly!`
       }
     }
   }

@@ -209,3 +209,42 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
 
   return result
 }
+
+/**
+ * Strict validator for delivery addresses in Bangladesh.
+ * Courier companies (Steadfast, Pathao, RedX, eCourier) strictly require detailed delivery addresses
+ * including house/road/holding/block/sector/flat/village details, not just bare area/city names like "Mirpur 14".
+ */
+export function isDetailedDeliveryAddress(address?: string | null): boolean {
+  if (!address || typeof address !== 'string') return false
+  const trimmed = address.trim()
+  if (trimmed.length < 14) return false
+
+  // Reject bot instructions / questions
+  if (trimmed.endsWith('?')) return false
+  if (/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please)\b/i.test(trimmed)) return false
+
+  // Check for structural location markers (House, Road, Holding, Flat, Block, Sector, Lane, Village, etc.)
+  const hasStructuralKeyword =
+    /\b(?:house|home|basha|bari|holding|road|rd|flat|floor|block|sector|sec|lane|goli|para|colony|moholla|bazar|market|gram|village|mor|more|mosque|masjid|school|college|plaza|tower|building)\b/i.test(trimmed) ||
+    /(?:বাসা|বাড়ি|বাড়ি|রোড|রাস্তা|হোল্ডিং|ফ্ল্যাট|ব্লক|সেক্টর|লেন|গলি|পাড়া|পাড়া|গ্রাম|মহল্লা|বাজার|মোড়|মোড়|মসজিদ|স্কুল|কলেজ|প্লাজা|টাওয়ার|টাওয়ার|ভবন)/.test(trimmed) ||
+    /\b(?:h|rd|sec|house|road|flat|holding|basha|bari|block|sector|lane)\s*#?\s*\d+/i.test(trimmed) ||
+    /\d+\s*[\/,-]\s*\d+/.test(trimmed) // e.g. 12/A, 4-B, 15/2
+
+  // Standalone area or city names without house/road (e.g. "Mirpur 14", "Dhanmondi, Dhaka")
+  const isBareAreaOrCity =
+    /^(?:(?:mirpur|dhanmondi|uttara|gulshan|banani|mohammadpur|badda|rampura|malibagh|motijheel|farmgate|jatrabari|bashundhara|khilgaon|chittagong|chattogram|sylhet|rajshahi|khulna|barisal|rangpur|comilla|cumilla|gazipur|narayanganj|savar)(?:\s*(?:-\s*)?\d{1,2})?(?:[,\s]+(?:dhaka|bd|bangladesh|city|জেলা|ঢাকা))?)$/i.test(trimmed) ||
+    /^(?:(?:মিরপুর|ধানমন্ডি|উত্তরা|গুলশান|বনানী|মোহাম্মদপুর|বাড্ডা|রামপুরা|মালিবাগ|মতিঝিল|ফার্মগেট|যাত্রাবাড়ী|যাত্রাবাড়ী|বসুন্ধরা|খিলগাঁও|চট্টগ্রাম|সিলেট|রাজশাহী|খুলনা|বরিশাল|রংপুর|কুমিল্লা|গাজীপুর|নারায়ণগঞ্জ|সাভার)(?:\s*(?:-\s*)?[০-৯\d]{1,2})?(?:[,\s]+(?:ঢাকা|বাংলাদেশ))?)$/i.test(trimmed)
+
+  if (isBareAreaOrCity && !hasStructuralKeyword) {
+    return false
+  }
+
+  // Must have at least 3 words unless structural indicators are present
+  const wordCount = trimmed.split(/\s+/).length
+  if (wordCount < 3 && !hasStructuralKeyword) {
+    return false
+  }
+
+  return hasStructuralKeyword || (wordCount >= 4 && trimmed.length >= 22)
+}
