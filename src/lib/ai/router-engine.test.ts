@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectLanguage, buildOfflineReply, formatRelativeMessageTime } from './router-engine'
+import { detectLanguage, buildOfflineReply, formatRelativeMessageTime, buildOrderConfirmationMessage } from './router-engine'
 import { isDetailedDeliveryAddress } from '../contacts/extract-info'
 
 describe('router-engine language detection', () => {
@@ -322,3 +322,111 @@ describe('router-engine multi-tenant business isolation', () => {
   })
 })
 
+
+describe('buildOrderConfirmationMessage multi-language order confirmation summary', () => {
+  it('gives order confirmation details in English when customer conversation is in English', () => {
+    const summaryEn = buildOrderConfirmationMessage({
+      detectedLang: 'en',
+      customerName: 'Rifat',
+      customerGender: 'male',
+      targetProductName: 'Simple Moisturizing Facial Wash',
+      unitPrice: 650,
+      quantity: 1,
+      productTotal: 650,
+      deliveryCharge: 80,
+      isInsideDhaka: true,
+      totalAmount: 730,
+      paymentMethod: 'cod',
+      customerPhone: '01711223344',
+      customerAddress: 'House 12, Road 4, Sector 10, Uttara, Dhaka',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    });
+
+    expect(summaryEn).toContain('Thank you, Rifat Bhaiya!');
+    expect(summaryEn).toContain('Order Summary:');
+    expect(summaryEn).toContain('Delivery Fee: ৳80 (Inside Dhaka)');
+    expect(summaryEn).toContain('Total Payable: ৳730');
+    expect(summaryEn).toContain('Payment Method: Cash on Delivery (COD)');
+    expect(summaryEn).toContain('Recipient Name: Rifat');
+  });
+
+  it('gives order confirmation details in Bangla when customer conversation is in Bengali', () => {
+    const summaryBn = buildOrderConfirmationMessage({
+      detectedLang: 'bn',
+      customerName: 'তানিয়া',
+      customerGender: 'female',
+      targetProductName: 'CeraVe Hydrating Cleanser',
+      unitPrice: 1450,
+      quantity: 2,
+      productTotal: 2900,
+      deliveryCharge: 130,
+      isInsideDhaka: false,
+      totalAmount: 3030,
+      paymentMethod: 'cod',
+      customerPhone: '01811223344',
+      customerAddress: 'জিইসি মোড়, নাসিরাবাদ, চট্টগ্রাম',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    });
+
+    expect(summaryBn).toContain('ধন্যবাদ, তানিয়া আপু!');
+    expect(summaryBn).toContain('অর্ডার বিবরণী:');
+    expect(summaryBn).toContain('ডেলিভারি চার্জ: ৳130 (ঢাকার বাইরে)');
+    expect(summaryBn).toContain('সর্বমোট প্রদেয়: ৳3030');
+    expect(summaryBn).toContain('ক্যাশ অন ডেলিভারি');
+    expect(summaryBn).toContain('প্রাপকের নাম: তানিয়া');
+  });
+
+  it('gives order confirmation details in Bangla when customer conversation is in Banglish', () => {
+    const summaryBanglish = buildOrderConfirmationMessage({
+      detectedLang: 'banglish',
+      customerName: 'Tanvir',
+      customerGender: 'male',
+      targetProductName: 'Garnier Face Wash',
+      unitPrice: 450,
+      quantity: 1,
+      productTotal: 450,
+      deliveryCharge: 70,
+      isInsideDhaka: true,
+      totalAmount: 520,
+      paymentMethod: 'cod',
+      customerPhone: '01911223344',
+      customerAddress: 'Road 5, Block B, Mirpur 2, Dhaka',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    });
+
+    // Banglish conversation must receive the complete details in Bangla script
+    expect(summaryBanglish).toContain('ধন্যবাদ, Tanvir ভাইয়া!');
+    expect(summaryBanglish).toContain('অর্ডার বিবরণী:');
+    expect(summaryBanglish).toContain('ডেলিভারি চার্জ: ৳70 (ঢাকার ভিতরে)');
+    expect(summaryBanglish).toContain('সর্বমোট প্রদেয়: ৳520');
+    expect(summaryBanglish).toContain('ক্যাশ অন ডেলিভারি');
+    expect(summaryBanglish).toContain('প্রাপকের নাম: Tanvir');
+  });
+
+  it('handles neutral addressing for unknown gender without guessing Apu or Bhaiya', () => {
+    const summaryUnknown = buildOrderConfirmationMessage({
+      detectedLang: 'bn',
+      customerName: 'Samir / Alex',
+      customerGender: 'unknown',
+      targetProductName: 'Cosrx Snail Mucin',
+      unitPrice: 1250,
+      quantity: 1,
+      productTotal: 1250,
+      deliveryCharge: 70,
+      isInsideDhaka: true,
+      totalAmount: 1320,
+      paymentMethod: 'bkash',
+      customerPhone: '01611223344',
+      customerAddress: 'Dhanmondi 27, Dhaka',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    });
+
+    expect(summaryUnknown).toContain('ধন্যবাদ, Samir / Alex!');
+    expect(summaryUnknown).not.toContain('আপু');
+    expect(summaryUnknown).not.toContain('ভাইয়া');
+  });
+});

@@ -355,7 +355,25 @@ export function buildOrderConfirmationMessage({
 
   // 1. Digital Orders
   if (isOrderDigital) {
-    if (detectedLang === 'bn') {
+    if (detectedLang === 'en') {
+      const honorificEn = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
+      const nameGreetingEn = cleanName ? `${cleanName} ${honorificEn}`.trim() : (honorificEn || '')
+      const greetingEn = nameGreetingEn ? `Thank you, ${nameGreetingEn}! 🎉` : `Thank you! 🎉`
+      const pmLabelEn = isFreeOrder ? 'Free (৳0)' : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+      return `${greetingEn}
+All details for your digital order have been successfully received.
+
+📋 Subscription Summary:
+• Product / Service: ${targetProductName}
+• Price: ${isFreeOrder ? 'Free (৳0)' : `৳${productTotal}`}
+• Payment Method: ${pmLabelEn}
+• Delivery Email: ${customerEmail || 'N/A'}
+• Contact Number: ${customerPhone || 'N/A'}
+
+Our team will verify the details and grant access to your email shortly. Thank you for choosing us! ❤️`
+    } else {
+      // Bengali or Banglish -> provide details in Bangla
       const honorificBn = customerGender === 'female' ? 'আপু' : customerGender === 'male' ? 'ভাইয়া' : ''
       const nameGreetingBn = cleanName ? `${cleanName} ${honorificBn}`.trim() : (honorificBn || '')
       const greetingBn = nameGreetingBn ? `ধন্যবাদ, ${nameGreetingBn}! 🎉` : `ধন্যবাদ! 🎉`
@@ -374,49 +392,48 @@ export function buildOrderConfirmationMessage({
 • যোগাযোগ নম্বর: ${customerPhone || 'N/A'}
 
 আমাদের টিম দ্রুত তথ্যগুলো যাচাই করে আপনার ইমেইলে সাবস্ক্রিপশন অ্যাক্সেস পাঠিয়ে দেবে। ধন্যবাদ আমাদের সাথে থাকার জন্য! ❤️`
-    } else if (detectedLang === 'banglish') {
-      const honorificBanglish = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
-      const nameGreetingBanglish = cleanName ? `${cleanName} ${honorificBanglish}`.trim() : (honorificBanglish || '')
-      const greetingBanglish = nameGreetingBanglish ? `Dhonnobad, ${nameGreetingBanglish}! 🎉` : `Dhonnobad! 🎉`
-      const pmLabelBanglish = isFreeOrder
-        ? 'Free Offer (৳0)'
-        : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
-
-      return `${greetingBanglish}
-Apnar digital order er shob details successfully receive kora hoyeche.
-
-📋 Subscription Summary:
-• Service / Product: ${targetProductName}
-• Price: ${isFreeOrder ? 'Free (৳0)' : `৳${productTotal}`}
-• Payment Method: ${pmLabelBanglish}
-• Delivery Email: ${customerEmail || 'N/A'}
-• Contact Number: ${customerPhone || 'N/A'}
-
-Amader team details verify kore druto apnar email e subscription access pathiye debe. Dhonnobad amader shathe thakar jonno! ❤️`
-    } else {
-      const greetingEn = cleanName ? `Thank you, ${cleanName}! 🎉` : `Thank you! 🎉`
-      const pmLabelEn = isFreeOrder ? 'Free ($0)' : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
-
-      return `${greetingEn}
-All details for your digital order have been successfully received.
-
-📋 Subscription Summary:
-• Product / Service: ${targetProductName}
-• Price: ${isFreeOrder ? 'Free (৳0)' : `৳${productTotal}`}
-• Payment Method: ${pmLabelEn}
-• Delivery Email: ${customerEmail || 'N/A'}
-• Contact Number: ${customerPhone || 'N/A'}
-
-Our team will verify the details and grant access to your email shortly. Thank you for choosing us! ❤️`
     }
   }
 
   // 2. Physical Orders
   const locationLabelBn = isInsideDhaka ? 'ঢাকার ভিতরে' : 'ঢাকার বাইরে'
-  const locationLabelBanglish = isInsideDhaka ? 'Inside Dhaka' : 'Outside Dhaka'
   const locationLabelEn = isInsideDhaka ? 'Inside Dhaka' : 'Outside Dhaka'
 
-  if (detectedLang === 'bn') {
+  if (detectedLang === 'en') {
+    const honorificEn = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
+    const nameGreetingEn = cleanName ? `${cleanName} ${honorificEn}`.trim() : (honorificEn || '')
+    const greetingEn = nameGreetingEn ? `Thank you, ${nameGreetingEn}! 🎉` : `Thank you! 🎉`
+
+    const pmLabelEn = paymentMethod === 'cod'
+      ? 'Cash on Delivery (COD)'
+      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+
+    let itemsSectionEn = ''
+    if (items && items.length > 1) {
+      itemsSectionEn = `• Items:\n` + items.map(i => `  - ${i.product_name} (${i.quantity}x) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• Product Total: ৳${productTotal}`
+    } else {
+      itemsSectionEn = `• Product: ${targetProductName}
+• Quantity: ${quantity}
+• Product Price: ৳${productTotal}`
+    }
+
+    return `${greetingEn}
+All details for your order have been successfully received.
+
+📦 Order Summary:
+${itemsSectionEn}
+• Delivery Fee: ৳${deliveryCharge} (${locationLabelEn})
+• Total Payable: ৳${totalAmount}
+• Payment Method: ${pmLabelEn}
+
+📍 Delivery Information:
+• Recipient Name: ${cleanName || 'N/A'}
+• Phone Number: ${customerPhone || 'N/A'}
+• Delivery Address: ${customerAddress || 'N/A'}
+
+Our shop team will review the information and dispatch your package shortly. Thank you for shopping with us! ❤️`
+  } else {
+    // Bengali or Banglish -> provide details in Bangla
     const honorificBn = customerGender === 'female' ? 'আপু' : customerGender === 'male' ? 'ভাইয়া' : ''
     const nameGreetingBn = cleanName ? `${cleanName} ${honorificBn}`.trim() : (honorificBn || '')
     const greetingBn = nameGreetingBn ? `ধন্যবাদ, ${nameGreetingBn}! 🎉` : `ধন্যবাদ! 🎉`
@@ -449,70 +466,6 @@ ${itemsSectionBn}
 • ডেলিভারি ঠিকানা: ${customerAddress || 'N/A'}
 
 আমাদের শপ টিম তথ্যগুলো যাচাই করে দ্রুত পার্সেলটি পাঠিয়ে দেবে। যেকোনো প্রয়োজনে আমাদের জানাতে পারেন! ❤️`
-  } else if (detectedLang === 'banglish') {
-    const honorificBanglish = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
-    const nameGreetingBanglish = cleanName ? `${cleanName} ${honorificBanglish}`.trim() : (honorificBanglish || '')
-    const greetingBanglish = nameGreetingBanglish ? `Dhonnobad, ${nameGreetingBanglish}! 🎉` : `Dhonnobad! 🎉`
-
-    const pmLabelBanglish = paymentMethod === 'cod'
-      ? 'Cash on Delivery (COD)'
-      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
-
-    let itemsSectionBanglish = ''
-    if (items && items.length > 1) {
-      itemsSectionBanglish = `• Products:\n` + items.map(i => `  - ${i.product_name} (${i.quantity} pcs) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• Product Total: ৳${productTotal}`
-    } else {
-      itemsSectionBanglish = `• Product: ${targetProductName}
-• Quantity: ${quantity} pcs
-• Product Price: ৳${productTotal}`
-    }
-
-    return `${greetingBanglish}
-Apnar order er shob details successfully receive kora hoyeche.
-
-📦 Order Summary:
-${itemsSectionBanglish}
-• Delivery Charge: ৳${deliveryCharge} (${locationLabelBanglish})
-• Total Amount: ৳${totalAmount}
-• Payment Method: ${pmLabelBanglish}
-
-📍 Delivery Information:
-• Name: ${cleanName || 'N/A'}
-• Phone Number: ${customerPhone || 'N/A'}
-• Address: ${customerAddress || 'N/A'}
-
-Amader shop team details verify kore druto order dispatch kore debe. Dhonnobad amader shathe thakar jonno! ❤️`
-  } else {
-    const greetingEn = cleanName ? `Thank you, ${cleanName}! 🎉` : `Thank you! 🎉`
-
-    const pmLabelEn = paymentMethod === 'cod'
-      ? 'Cash on Delivery (COD)'
-      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
-
-    let itemsSectionEn = ''
-    if (items && items.length > 1) {
-      itemsSectionEn = `• Items:\n` + items.map(i => `  - ${i.product_name} (${i.quantity}x) — ৳${i.unit_price * i.quantity}`).join('\n') + `\n• Product Total: ৳${productTotal}`
-    } else {
-      itemsSectionEn = `• Product: ${targetProductName}
-• Quantity: ${quantity}
-• Product Price: ৳${productTotal}`
-    }
-
-    return `${greetingEn}
-All details for your order have been successfully received.
-
-📦 Order Summary:
-${itemsSectionEn}
-• Delivery Fee: ৳${deliveryCharge} (${locationLabelEn})
-• Total Payable: ৳${totalAmount}
-• Payment Method: ${pmLabelEn}
-
-📍 Delivery Information:
-• Recipient Name: ${cleanName || 'N/A'}
-• Phone Number: ${customerPhone || 'N/A'}
-• Delivery Address: ${customerAddress || 'N/A'}
-
-Our shop team will review the information and dispatch your package shortly. Thank you for shopping with us! ❤️`
   }
 }
 
@@ -1605,6 +1558,9 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
        - Politely ask for whatever is missing among: Delivery Name, Full Detailed Delivery Address, Phone Number, and Payment Method.
      * AFTER ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN (ORDER CONFIRMATION SUMMARY MANDATE):
        - When all order details (Name, Address, Phone, Payment Method) are received, provide a complete, clear, and transparent order confirmation summary:
+         * LANGUAGE RULE FOR ORDER SUMMARY (CRITICAL):
+           - If customer conversation is in English -> Provide the complete order confirmation summary in English!
+           - If customer conversation is in Bengali or Banglish -> Provide the complete order confirmation summary in Bangla (বাংলা লিপি)!
          1. Greet them with verified gender addressing ("Bhaiya" for male, "Apu" for female, neutral if unknown).
          2. Order Summary:
             • Product Name & Quantity
@@ -1639,6 +1595,9 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * UNTIL ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
        - DO NOT confirm the order. Ask politely for whatever is missing among the 3 items.
      * AFTER ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
+       - When confirming a digital product:
+         * If customer conversation is in English -> Provide digital subscription confirmation in English!
+         * If customer conversation is in Bengali or Banglish -> Provide digital subscription confirmation in Bangla (বাংলা লিপি)!
        - Warmly confirm the digital subscription with complete details (Product name, Price / Free ৳0, Payment method, Delivery Email, Phone number) and note that access will be delivered to their email address shortly!
 
 6. ORDER CANCELLATION & PRODUCT SWITCH/CHANGE RULES (CRITICAL MANDATE):
@@ -1672,7 +1631,7 @@ ${communicationGuidance}
    - Strictly match customer language:
      * English customer -> 100% English reply in Latin alphabet.
      * Bengali customer (বাংলা) -> Bengali reply using Bengali script (বাংলা বর্ণমালা).
-     * Banglish customer -> Banglish reply using Latin alphabet.
+     * Banglish customer -> Banglish reply using Latin alphabet (EXCEPTION: When providing the final complete order details and order confirmation summary, always provide the formal order invoice in Bangla script, as customers in Bengali or Banglish expect their official order invoice in Bangla).
    - Currency symbol: Always use the Bangladeshi Taka symbol '৳' or 'Tk' with product prices (e.g. ৳1,000). The symbol '৳' does NOT mean the customer is writing in Bengali.
 
 === RECENT BROADCAST CAMPAIGNS & PROMOTIONAL OFFERS (OFFICIAL GROUND TRUTH) ===
