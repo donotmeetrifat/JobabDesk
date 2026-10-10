@@ -276,3 +276,49 @@ describe('router-engine address validation and COD payment handling in buildOffl
   })
 })
 
+describe('router-engine multi-tenant business isolation', () => {
+  it('strictly isolates business catalogs and does not leak products across accounts', () => {
+    const businessAProducts = [
+      { name: 'Canva Pro Subscription', price: 499, stock_qty: 100, is_in_stock: true, category: 'digital' },
+    ]
+    const businessBProducts = [
+      { name: 'Cerave Moisturizing Cream', price: 1850, stock_qty: 15, is_in_stock: true, category: 'skincare' },
+    ]
+
+    const accountA = {
+      name: 'Digital Tools Hub',
+      ai_store_instructions: 'We sell digital subscriptions only.',
+    }
+    const accountB = {
+      name: 'Glow Cosmetics BD',
+      ai_store_instructions: 'Authentic imported cosmetics & skincare only.',
+    }
+
+    // Customer messages Business B asking for Canva
+    const replyB = buildOfflineReply({
+      detectedLang: 'en',
+      messageText: 'Do you sell Canva Pro?',
+      products: businessBProducts,
+      recentOrders: [],
+      account: accountB,
+    })
+
+    // Business B must NOT recommend or know about Business A's Canva Pro
+    expect(replyB.reply).not.toContain('499')
+    expect(replyB.reply).not.toContain('Canva Pro is available')
+
+    // Customer messages Business A asking for Cerave Cream
+    const replyA = buildOfflineReply({
+      detectedLang: 'en',
+      messageText: 'Do you have Cerave Cream?',
+      products: businessAProducts,
+      recentOrders: [],
+      account: accountA,
+    })
+
+    // Business A must NOT recommend Business B's Cerave
+    expect(replyA.reply).not.toContain('1850')
+    expect(replyA.reply).not.toContain('Cerave')
+  })
+})
+

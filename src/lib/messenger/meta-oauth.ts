@@ -108,7 +108,7 @@ export async function connectFacebookPage(
         const meData = await meRes.json()
         if (meData?.id) {
           pageId = meData.id
-          pageName = meData.name || pageName || 'Digiplus'
+          pageName = meData.name || pageName || 'Facebook Page'
         }
       }
     } catch {}

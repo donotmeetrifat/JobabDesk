@@ -451,8 +451,13 @@ export function buildOfflineReply({
       }
     }
   }
-  // 1b. Canva Pro Inquiry (even if not listed in product catalog table)
-  else if (/\bcanva(?:\s*pro)?\b/i.test(textLower)) {
+  // 1b. Canva Pro Inquiry (only if this business offers Canva or digital subscriptions in catalog or instructions)
+  else if (
+    /\bcanva(?:\s*pro)?\b/i.test(textLower) &&
+    (products.some((p) => /\bcanva\b/i.test(p.name || '')) ||
+      /\b(?:canva|digital\s*subscriptions?)\b/i.test(account?.ai_store_instructions || '') ||
+      /\b(?:canva|digital\s*subscriptions?)\b/i.test(account?.ai_business_description || ''))
+  ) {
     intent = 'product_inquiry'
     const isFree =
       /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)\b/i.test(account?.ai_store_instructions || '') ||
@@ -489,28 +494,31 @@ export function buildOfflineReply({
   }
   // 1c. Product category / recommendation inquiry (e.g. "which is best cream for my skin", "dry skin", "skincare")
   else if (
-    textLower.includes('cream') ||
-    textLower.includes('skin') ||
-    textLower.includes('skincare') ||
-    textLower.includes('dry skin') ||
-    textLower.includes('best') ||
-    textLower.includes('ক্রিম') ||
-    textLower.includes('স্কিন')
+    (textLower.includes('cream') ||
+      textLower.includes('skin') ||
+      textLower.includes('skincare') ||
+      textLower.includes('dry skin') ||
+      textLower.includes('best') ||
+      textLower.includes('ক্রিম') ||
+      textLower.includes('স্কিন')) &&
+    products.some((p) =>
+      /cream|lotion|serum|skin|moisturizer|face|body|ক্রিম|লোশন/i.test(`${p.name || ''} ${p.category || ''} ${p.description || ''}`)
+    )
   ) {
     intent = 'product_inquiry'
     const creamProducts = products.filter((p) =>
       /cream|lotion|serum|skin|moisturizer|face|body|ক্রিম|লোশন/i.test(`${p.name || ''} ${p.category || ''} ${p.description || ''}`)
     )
-    const recList = creamProducts.length > 0 ? creamProducts.slice(0, 3) : products.slice(0, 3)
+    const recList = creamProducts.slice(0, 3)
     const recNames = recList.map((p) => `${p.name} (৳${p.price})`).join(', ')
     const honorificBanglish = customerGender === 'female' ? ', Apu' : customerGender === 'male' ? ', Bhaiya' : ''
     const honorificBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
     if (detectedLang === 'banglish') {
-      reply = `Apnar skin er jonno amader ${recNames || 'skincare products'} darun kaaj korbe${honorificBanglish}! Apni ki er moddhe konoti nite chan?`
+      reply = `Apnar skin er jonno amader ${recNames} darun kaaj korbe${honorificBanglish}! Apni ki er moddhe konoti nite chan?`
     } else if (detectedLang === 'bn') {
-      reply = `আপনার স্কিনের জন্য আমাদের ${recNames || 'স্কিনকেয়ার পণ্যগুলো'} দারুণ কাজ করবে${honorificBn}! আপনি কি এর মধ্যে কোনটি নিতে চান?`
+      reply = `আপনার স্কিনের জন্য আমাদের ${recNames} দারুণ কাজ করবে${honorificBn}! আপনি কি এর মধ্যে কোনটি নিতে চান?`
     } else {
-      reply = `For your skin, our ${recNames || 'skincare products'} work wonderfully! Which one would you like to explore or order?`
+      reply = `For your skin, our ${recNames} work wonderfully! Which one would you like to explore or order?`
     }
   }
   // 2. Payment Methods Inquiry
@@ -1082,28 +1090,26 @@ export async function handleIncomingCustomerMessage({
 
     const { data: pData } = await pQuery
     products = pData ?? []
-
-    // If 0 products found by account_id, query all active products in tenant as fallback
-    if (products.length === 0) {
-      const { data: fallbackPData } = await client
-        .from('products')
-        .select('name, price, brand, category, stock_qty, is_in_stock, description')
-        .eq('is_active', true)
-        .limit(100)
-      if (fallbackPData && fallbackPData.length > 0) {
-        products = fallbackPData
-      }
-    }
   } catch (_pErr) {
     // products query fallback
   }
 
   if (contactId || customerPhone) {
     try {
-      const { data: oData } = await client
+      const targetAccountId = account?.id || accountId
+      let oQuery = client
         .from('orders')
         .select('order_number, status, payment_status, total, created_at')
-        .eq('account_id', accountId)
+        .eq('account_id', targetAccountId)
+
+      if (contactId) {
+        oQuery = oQuery.eq('contact_id', contactId)
+      } else if (customerPhone) {
+        oQuery = oQuery.eq('customer_phone', customerPhone)
+      }
+
+      const { data: oData } = await oQuery
+        .order('created_at', { ascending: false })
         .limit(5)
       recentOrders = oData ?? []
     } catch (_oErr) {
@@ -1232,10 +1238,11 @@ export async function handleIncomingCustomerMessage({
   const communicationGuidance = addressedCustomer.promptInstruction
 
   const resolvedStoreName =
-    (account.name && account.name.trim().toLowerCase() !== 'rifat' && account.name.trim() !== 'User' ? account.name.trim() : null) ||
     account.facebook_page_name ||
+    account.business_name ||
+    account.store_name ||
     account.name ||
-    'Digiplus'
+    'Our Store'
 
   const businessContext = `
 Store Name: ${resolvedStoreName}

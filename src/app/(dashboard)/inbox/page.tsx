@@ -505,7 +505,7 @@ function InboxPageInner() {
   const handleCleanInbox = useCallback(async () => {
     if (
       !window.confirm(
-        "Are you sure you want to clean foreign/stale conversations from your inbox? This will remove UK Brand Lover / old messages and reload fresh Digiplus chats."
+        "Are you sure you want to clear conversations from your inbox? This will purge current messages and reload fresh chats for your connected page."
       )
     ) {
       return;
@@ -1181,10 +1181,10 @@ function InboxPageInner() {
             onClick={handleCleanInbox}
             disabled={isSyncingMessenger || isCleaningInbox}
             className="flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 text-[11px] font-semibold text-red-500 transition-colors disabled:opacity-50 shadow-2xs"
-            title="Clean foreign chats (like UK Brand Lover) from Digiplus inbox"
+            title="Clear and refresh conversations for this page"
           >
             <Trash2 className={cn("h-3 w-3", isCleaningInbox && "animate-spin")} />
-            {isCleaningInbox ? "Cleaning..." : "Clean Foreign Chats"}
+            {isCleaningInbox ? "Clearing..." : "Clear Inbox"}
           </button>
         </div>
 
@@ -1316,7 +1316,7 @@ function InboxPageInner() {
             </div>
 
             <p className="text-xs text-muted-foreground leading-relaxed">
-              To fetch and sync customer conversations for <span className="font-semibold text-foreground">{messengerPageName || "Digiplus"}</span>, enter your Facebook Page Access Token below.
+              To fetch and sync customer conversations for <span className="font-semibold text-foreground">{messengerPageName || "your Facebook Page"}</span>, enter your Facebook Page Access Token below.
             </p>
 
             {tokenModalError && (
@@ -1351,13 +1351,13 @@ function InboxPageInner() {
                   ⚡ Method 2 (Recommended — Never Expires):
                 </span>
                 <p>1. Open <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className="underline font-semibold text-emerald-700 dark:text-emerald-300">Meta Business Settings → System Users</a>.</p>
-                <p>2. Select your System User → click <strong>Assign Assets</strong> → select <strong>Pages</strong> → select <strong>{messengerPageName || "Digiplus"}</strong> → turn ON <strong>Manage Page (Full Control)</strong> → Save Changes.</p>
+                <p>2. Select your System User → click <strong>Assign Assets</strong> → select <strong>Pages</strong> → select <strong>{messengerPageName || "your Facebook Page"}</strong> → turn ON <strong>Manage Page (Full Control)</strong> → Save Changes.</p>
                 <p>3. Click <strong>Generate New Token</strong> (Expiration: <strong>Never</strong>) with permissions: <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_messaging</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_manage_metadata</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_show_list</code>, <code className="rounded bg-background/50 px-1 font-mono text-[10px]">pages_read_engagement</code>.</p>
                 <p>4. Paste the token below and click <strong>Save &amp; Sync</strong>.</p>
               </div>
               <div className="rounded-lg bg-muted/70 border p-2 text-[10px] space-y-1">
                 <span className="font-bold text-foreground">Method 1 (Testing — 1-Hour Expiration):</span>
-                <p>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a> → under <em>User or Page</em> select <strong>Page: {messengerPageName || "Digiplus"}</strong> → click <strong>Generate Access Token</strong>.</p>
+                <p>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline font-medium">Meta Graph API Explorer</a> → under <em>User or Page</em> select <strong>Page: {messengerPageName || "your Facebook Page"}</strong> → click <strong>Generate Access Token</strong>.</p>
               </div>
             </div>
 
