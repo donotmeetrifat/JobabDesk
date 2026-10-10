@@ -129,10 +129,13 @@ export function ConversationList({
       // If direct Supabase query returned empty or had RLS issues, fetch from our authenticated API endpoint
       if (convs.length === 0 && !cancelled) {
         try {
-          const res = await fetch("/api/inbox/conversations");
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6000);
+          const res = await fetch("/api/inbox/conversations", { signal: controller.signal });
+          clearTimeout(timer);
           if (res.ok) {
             const json = await res.json();
-            if (Array.isArray(json.conversations) && json.conversations.length > 0) {
+            if (Array.isArray(json.conversations)) {
               convs = json.conversations;
             }
           }
@@ -144,7 +147,9 @@ export function ConversationList({
       if (cancelled) return;
       onConversationsLoadedRef.current(convs);
       setLoading(false);
-    })();
+    })().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
 
     return () => {
       cancelled = true;

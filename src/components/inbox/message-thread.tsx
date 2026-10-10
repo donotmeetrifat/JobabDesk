@@ -347,10 +347,15 @@ export function MessageThread({
       // If direct Supabase fetch returned 0 messages or had an RLS issue, fallback to API
       if (msgs.length === 0 && !cancelled) {
         try {
-          const res = await fetch(`/api/inbox/conversations/${conversationId}/messages`);
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6000);
+          const res = await fetch(`/api/inbox/conversations/${conversationId}/messages`, {
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
           if (res.ok) {
             const json = await res.json();
-            if (Array.isArray(json.messages) && json.messages.length > 0) {
+            if (Array.isArray(json.messages)) {
               msgs = json.messages;
             }
             if (Array.isArray(json.reactions) && json.reactions.length > 0) {
@@ -365,7 +370,9 @@ export function MessageThread({
       if (cancelled) return;
       onMessagesLoadedRef.current(msgs);
       setLoading(false);
-    })();
+    })().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
 
     return () => {
       cancelled = true;

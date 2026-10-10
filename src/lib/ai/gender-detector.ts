@@ -75,6 +75,7 @@ const MALE_TOKENS = new Set([
   // Common Given Names
   'ahmed', 'ahmad', 'hossain', 'hussain', 'hasan', 'hassan', 'ali', 'rahman',
   'islam', 'uddin', 'amin', 'rahim', 'karim', 'shakil', 'tanvir', 'rifat',
+  'refat', 'riffat', 'rifath', 'rephat', 'riphat',
   'arif', 'faisal', 'fahim', 'ashik', 'sohel', 'imran', 'rakib', 'rana',
   'shuvo', 'sabbir', 'mehedi', 'mahfuz', 'mahbub', 'masud', 'momin', 'monir',
   'nahid', 'nayeem', 'nazmul', 'parvez', 'polash', 'rashed', 'rayhan',
@@ -106,7 +107,7 @@ const MALE_TOKENS = new Set([
 const MALE_TOKENS_BN = new Set([
   'মোহাম্মদ', 'মুহাম্মদ', 'মোঃ', 'শেখ', 'কাজী', 'সৈয়দ', 'খান', 'চৌধুরী',
   'আহমেদ', 'হোসেন', 'হাসান', 'আলী', 'রহমান', 'ইসলাম', 'উদ্দিন', 'আমিন',
-  'রহিম', 'করিম', 'শাকিল', 'তানভীর', 'তানভির', 'রিফাত', 'আরিফ', 'ফয়সাল',
+  'রহিম', 'করিম', 'শাকিল', 'তানভীর', 'তানভির', 'রিফাত', 'রেফাত', 'আরিফ', 'ফয়সাল',
   'ফাহিম', 'আশিক', 'সোহেল', 'ইমরান', 'রাকিব', 'মেহেদী', 'মেহেদি', 'মাহফুজ',
   'মাহবুব', 'মাসুদ', 'সাইফুল', 'সুমন', 'রুবেল', 'নাহিদ', 'নাঈম', 'রাসেল',
   'তুহিন', 'সাগর', 'আকাশ', 'হৃদয়', 'হৃদয়', 'জয়', 'জয়', 'শুভ', 'মারুফ',
@@ -179,8 +180,8 @@ export function detectGenderFromName(rawName?: string | null): CustomerGender {
 }
 
 /**
- * Scans previous conversation messages to see if the customer was already addressed
- * as "Bhaiya" or "Apu" earlier in the conversation, or if customer identified their gender.
+ * Scans previous conversation messages to see if customer identified their gender
+ * or if customer provided their name in past conversation history.
  */
 export function detectGenderFromHistory(historyText?: string | null): CustomerGender {
   if (!historyText || typeof historyText !== 'string') return 'unknown'
@@ -195,8 +196,17 @@ export function detectGenderFromHistory(historyText?: string | null): CustomerGe
     return 'female'
   }
 
-  // 2. Count prior assistant addressings
-  // Match "Bhaiya" / "ভাইয়া" / "ভাইয়া" vs "Apu" / "আপু"
+  // 2. Check if a male or female name token is present in the customer's text in history
+  // e.g. Customer stated: "Rifat\n017..." or "Name: Rifat" or "amar naam rifat"
+  const nameMatch = lower.match(/(?:(?:name|naam|na+m|নাম)\s*[:=-]?\s*|^)([a-zA-Z\u0980-\u09FF]{2,30})/im)
+  if (nameMatch && nameMatch[1]) {
+    const candidateGender = detectGenderFromName(nameMatch[1])
+    if (candidateGender !== 'unknown') {
+      return candidateGender
+    }
+  }
+
+  // 3. Prior addressings (only as secondary hint, NEVER override verified name)
   const bhaiyaMatches = (lower.match(/\b(?:bhaiya|bhaia|vaiya|vaia)\b/g) || []).length +
     (lower.match(/(?:ভাইয়া|ভাইয়া)/g) || []).length
   const apuMatches = (lower.match(/\b(?:apu|apuu|appu)\b/g) || []).length +
@@ -232,7 +242,7 @@ export function resolveCustomerAddressing({
 }): ResolvedAddressing {
   const cleanName = cleanCustomerName(rawCustomerName)
 
-  // 1. Check customer's verified name
+  // 1. Check customer's verified name (Absolute priority)
   let gender: CustomerGender = detectGenderFromName(cleanName)
 
   // 2. If name is unknown/unisex/missing, check prior conversation history
@@ -271,7 +281,7 @@ export function resolveCustomerAddressing({
 Customer Name: ${cleanName ? `"${cleanName}"` : 'Male Customer'}
 MANDATORY ADDRESSING RULE:
 1. You MUST address this customer strictly as "Bhaiya" (ভাইয়া in Bengali, "Bhaiya" in Banglish/English).
-2. ZERO TOLERANCE: NEVER call this customer "Apu" (আপু) under ANY circumstances!
+2. ZERO TOLERANCE: NEVER call this customer "Apu" / "Appu" (আপু) under ANY circumstances!
 3. Do NOT assume the customer is female just because they inquire about creams, makeup, or skincare products. Men in Bangladesh also buy skincare!`,
     }
   }
@@ -296,53 +306,82 @@ MANDATORY ADDRESSING RULE:
     addressingTitle: 'neutral',
     promptInstruction: `CUSTOMER GENDER STATUS: UNCONFIRMED / UNKNOWN.
 Customer Name: ${cleanName ? `"${cleanName}"` : 'Customer'}
-CRITICAL ZERO-FLIP-FLOPPING RULE:
-1. DO NOT GUESS OR ALTERNATE between "Bhaiya" and "Apu"!
-2. If you do not know whether the customer is male or female, prefer respectful neutral addressing:
+CRITICAL MANDATORY GENDER NEUTRALITY RULE:
+1. Since the customer's gender is NOT verified, you are STRICTLY FORBIDDEN from guessing or addressing them as "Apu", "Appu", "আপু", or "Bhaiya", "ভাইয়া"!
+2. You MUST use respectful gender-neutral language:
    - Bengali: Use polite "আপনি", "ধন্যবাদ", or "প্রিয় গ্রাহক" without brother/sister labels.
    - Banglish: Use "Hello!", "Apni", "Dhonnobad".
    - English: Use "Hello!", "Thank you".
-3. STRICT PROHIBITION: Switching between "Bhaiya" and "Apu" within the same chat is a severe bug! If you choose an addressing title for this chat, you MUST STAY 100% CONSISTENT with it across all messages.`,
+3. NEVER assume a customer is female just because the shop sells skincare, cosmetics, or clothing.`,
   }
 }
 
 /**
  * Post-processes the generated AI reply text to guarantee gender consistency.
  * Prevents accidental hallucinations where the model says "Apu" to a male customer
- * or "Bhaiya" to a female customer.
+ * or "Bhaiya" to a female customer, or uses gendered greetings when gender is unknown.
  */
 export function enforceGenderAddressingConsistency(
   replyText: string,
   targetGender: CustomerGender
 ): string {
   if (!replyText || typeof replyText !== 'string') return replyText
-  if (targetGender === 'unknown') return replyText
 
   let result = replyText
 
   if (targetGender === 'male') {
-    // Replace any accidental "আপু" with "ভাইয়া" (Bengali script)
-    result = result.replace(/([,\s।\u0964]|^)আপু([!?.,।\s\u0964]|$)/g, '$1ভাইয়া$2')
-    result = result.replace(/([,\s।\u0964]|^)আপুর([!?.,।\s\u0964]|$)/g, '$1ভাইয়ার$2')
-    result = result.replace(/([,\s।\u0964]|^)আপুকে([!?.,।\s\u0964]|$)/g, '$1ভাইয়াকে$2')
+    // Replace any accidental "আপু" / "আফু" with "ভাইয়া" (Bengali script)
+    result = result.replace(/([,\s।\u0964]|^)(?:আপু|আফু)([!?.,।\s\u0964]|$)/g, '$1ভাইয়া$2')
+    result = result.replace(/([,\s।\u0964]|^)(?:আপুর|আফুর)([!?.,।\s\u0964]|$)/g, '$1ভাইয়ার$2')
+    result = result.replace(/([,\s।\u0964]|^)(?:আপুকে|আফুকে)([!?.,।\s\u0964]|$)/g, '$1ভাইয়াকে$2')
+    result = result.replace(/([,\s।\u0964]|^)(?:আপুরা|আফুরা)([!?.,।\s\u0964]|$)/g, '$1ভাইয়ারা$2')
 
-    // Replace any accidental "Apu" with "Bhaiya" (Latin script / Banglish)
-    result = result.replace(/\bApu\b/g, 'Bhaiya')
-    result = result.replace(/\bapu\b/g, 'bhaiya')
-    result = result.replace(/\bApura\b/g, 'Bhaiyara')
-    result = result.replace(/\bapuke\b/g, 'bhaiyake')
-    result = result.replace(/\bapur\b/g, 'bhaiyar')
+    // Replace any accidental "Apu" / "Appu" with "Bhaiya" (Latin script / Banglish)
+    result = result.replace(/\b(?:Apu|Appu|Apuu)\b/g, 'Bhaiya')
+    result = result.replace(/\b(?:apu|appu|apuu)\b/g, 'bhaiya')
+    result = result.replace(/\b(?:Apura|Appura)\b/g, 'Bhaiyara')
+    result = result.replace(/\b(?:apura|appura)\b/g, 'bhaiyara')
+    result = result.replace(/\b(?:apuke|appuke)\b/g, 'bhaiyake')
+    result = result.replace(/\b(?:Apuke|Appuke)\b/g, 'Bhaiyake')
+    result = result.replace(/\b(?:apur|appur)\b/g, 'bhaiyar')
+    result = result.replace(/\b(?:Apur|Appur)\b/g, 'Bhaiyar')
   } else if (targetGender === 'female') {
     // Replace any accidental "ভাইয়া" / "ভাইয়া" with "আপু" (Bengali script)
     result = result.replace(/([,\s।\u0964]|^)(?:ভাইয়া|ভাইয়া)([!?.,।\s\u0964]|$)/g, '$1আপু$2')
     result = result.replace(/([,\s।\u0964]|^)(?:ভাইয়ার|ভাইয়ার)([!?.,।\s\u0964]|$)/g, '$1আপুর$2')
     result = result.replace(/([,\s।\u0964]|^)(?:ভাইয়াকে|ভাইয়াকে)([!?.,\s\u0964]|$)/g, '$1আপুকে$2')
+    result = result.replace(/([,\s।\u0964]|^)(?:ভাইয়ারা|ভাইয়ারা)([!?.,\s\u0964]|$)/g, '$1আপুরা$2')
 
     // Replace any accidental "Bhaiya" with "Apu" (Latin script / Banglish)
     result = result.replace(/\b(?:Bhaiya|Bhaia|Vaiya|Vaia)\b/g, 'Apu')
     result = result.replace(/\b(?:bhaiya|bhaia|vaiya|vaia)\b/g, 'apu')
     result = result.replace(/\b(?:bhaiyake|vaiyake)\b/g, 'apuke')
+    result = result.replace(/\b(?:Bhaiyake|Vaiyake)\b/g, 'Apuke')
     result = result.replace(/\b(?:bhaiyar|vaiyar)\b/g, 'apur')
+    result = result.replace(/\b(?:Bhaiyar|Vaiyar)\b/g, 'Apur')
+  } else if (targetGender === 'unknown') {
+    // Gender is unconfirmed: Strip out all hallucinated "Apu" / "Bhaiya" greetings
+    // Latin / Banglish greetings: "Hello Apu!", "Hello Appu!", "Hello Bhaiya!" -> "Hello!"
+    result = result.replace(/\b(?:Hello|Hi|Hey)\s+(?:Apu|Appu|Apuu|Bhaiya|Bhaia|Vaiya|Vaia)[!.,]?/gi, (match) => {
+      const firstWord = match.split(/\s+/)[0]
+      return `${firstWord}!`
+    })
+    // "Ji Apu,", "Ji Bhaiya," -> "Ji,"
+    result = result.replace(/\b(?:Ji|Ji\s+na)\s+(?:Apu|Appu|Apuu|Bhaiya|Bhaia|Vaiya|Vaia)[,.]?/gi, (match) => {
+      const firstWord = match.split(/\s+/)[0]
+      return `${firstWord},`
+    })
+    // Bengali script greetings: "হ্যালো আপু!", "হ্যালো ভাইয়া!" -> "হ্যালো!"
+    result = result.replace(/(?:হ্যালো|হাই)\s*(?:আপু|আফু|ভাইয়া|ভাইয়া)[!।]?/g, 'হ্যালো!')
+    result = result.replace(/(?:জি)\s*(?:আপু|আফু|ভাইয়া|ভাইয়া)[,।]?/g, 'জি,')
+    result = result.replace(/(?:ধন্যবাদ)\s*(?:আপু|আফু|ভাইয়া|ভাইয়া)[!।]?/g, 'ধন্যবাদ!')
+
+    // Strip standalone occurrences: e.g. "kemon achen, apu?" -> "kemon achen?"
+    result = result.replace(/([,\s।\u0964]|^)(?:আপু|আফু|ভাইয়া|ভাইয়া)([!?.,।\s\u0964]|$)/g, '$1$2')
+    result = result.replace(/\b(?:Apu|Appu|Apuu|Bhaiya|Bhaia|Vaiya|Vaia)\b[,\s]*/gi, '')
+
+    // Clean up residual double spaces and hanging punctuation
+    result = result.replace(/\s{2,}/g, ' ').replace(/\s+([!?,.।])/g, '$1').trim()
   }
 
   return result

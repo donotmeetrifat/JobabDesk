@@ -12,8 +12,10 @@ import {
   resolveCustomerAddressing,
   enforceGenderAddressingConsistency,
   detectGenderFromName,
+  cleanCustomerName,
   type CustomerGender,
 } from '@/lib/ai/gender-detector'
+import { fetchMetaUserProfile } from '@/lib/messenger/profile'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -916,6 +918,32 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
+  // If customer name is empty or a placeholder on Messenger, try resolving their real Meta profile
+  const cleanedInitialContactName = cleanCustomerName(customerContactName)
+  if (!cleanedInitialContactName && channel === 'messenger' && customerPhone) {
+    const token = pageAccessToken || account?.facebook_page_access_token
+    if (token) {
+      try {
+        const metaProfile = await fetchMetaUserProfile(customerPhone, token)
+        if (metaProfile?.name) {
+          customerContactName = metaProfile.name
+          if (contactId) {
+            client
+              .from('contacts')
+              .update({
+                name: metaProfile.name,
+                avatar_url: metaProfile.avatarUrl || null,
+                company: 'Facebook Messenger',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', contactId)
+              .catch(() => {})
+          }
+        }
+      } catch {}
+    }
+  }
+
   // Auto extract contact info (phone/address/email) from customer's chat message into their own contact
   if (contactId && messageText) {
     autoUpdateContactFromChatMessage({
@@ -1030,11 +1058,20 @@ export async function handleIncomingCustomerMessage({
   // 2b. Extract candidate customer name and resolve strict gender addressing (1st verify person name, then history lock)
   const initMsgInfo = extractCustomerInfoFromMessage(messageText)
   const initHistInfo = extractCustomerInfoFromMessage(conversationHistoryText)
+  const cleanedContactName = cleanCustomerName(customerContactName)
   const candidateCustomerName =
-    customerContactName ||
-    initMsgInfo.name ||
-    initHistInfo.name ||
+    cleanedContactName ||
+    cleanCustomerName(initMsgInfo.name) ||
+    cleanCustomerName(initHistInfo.name) ||
     null
+
+  if (candidateCustomerName && contactId && (!customerContactName || !cleanedContactName)) {
+    client
+      .from('contacts')
+      .update({ name: candidateCustomerName, updated_at: new Date().toISOString() })
+      .eq('id', contactId)
+      .catch(() => {})
+  }
 
   const addressedCustomer = resolveCustomerAddressing({
     rawCustomerName: candidateCustomerName,
@@ -2264,6 +2301,12 @@ Set "order": null if the customer is merely asking a question without ordering o
     const updatedGenderFromName = detectGenderFromName(currentOrderName)
     if (updatedGenderFromName !== 'unknown') {
       targetConsistencyGender = updatedGenderFromName
+    }
+  }
+  if (targetConsistencyGender === 'unknown' && candidateCustomerName) {
+    const updatedGenderFromCand = detectGenderFromName(candidateCustomerName)
+    if (updatedGenderFromCand !== 'unknown') {
+      targetConsistencyGender = updatedGenderFromCand
     }
   }
   aiReply = enforceGenderAddressingConsistency(aiReply, targetConsistencyGender)

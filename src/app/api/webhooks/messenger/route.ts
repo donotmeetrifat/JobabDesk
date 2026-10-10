@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
+import { fetchMetaUserProfile } from '@/lib/messenger/profile'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -545,19 +546,23 @@ export async function POST(req: Request) {
       contactId = existingContact.id
       if (pageAccessToken && (!existingContact.name || existingContact.name === 'Unknown' || existingContact.name.startsWith('Messenger User') || !existingContact.avatar_url)) {
         try {
-          const profileRes = await fetch(
-            `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
-          )
-          const profileJson = await profileRes.json()
-          const updates: any = {
-            updated_at: new Date().toISOString(),
-            company: 'Facebook Messenger',
-            messenger_id: customerPsid,
+          const profile = await fetchMetaUserProfile(customerPsid, pageAccessToken)
+          if (profile?.name || profile?.avatarUrl) {
+            const updates: any = {
+              updated_at: new Date().toISOString(),
+              company: 'Facebook Messenger',
+              messenger_id: customerPsid,
+            }
+            if (profile.name) {
+              updates.name = profile.name
+              existingContact.name = profile.name
+            }
+            if (profile.avatarUrl) {
+              updates.avatar_url = profile.avatarUrl
+              existingContact.avatar_url = profile.avatarUrl
+            }
+            await db.from('contacts').update(updates).eq('id', existingContact.id)
           }
-          const resolved = profileJson.name || [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
-          if (resolved) updates.name = resolved
-          if (profileJson.profile_pic) updates.avatar_url = profileJson.profile_pic
-          await db.from('contacts').update(updates).eq('id', existingContact.id)
         } catch {}
       }
     } else {
@@ -565,17 +570,9 @@ export async function POST(req: Request) {
       let customerAvatarUrl = ''
       if (pageAccessToken) {
         try {
-          const profileRes = await fetch(
-            `https://graph.facebook.com/v20.0/${customerPsid}?fields=name,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageAccessToken)}`
-          )
-          const profileJson = await profileRes.json()
-          const resolved = profileJson.name || [profileJson.first_name, profileJson.last_name].filter(Boolean).join(' ').trim()
-          if (resolved) {
-            customerName = resolved
-          }
-          if (profileJson.profile_pic) {
-            customerAvatarUrl = profileJson.profile_pic
-          }
+          const profile = await fetchMetaUserProfile(customerPsid, pageAccessToken)
+          if (profile?.name) customerName = profile.name
+          if (profile?.avatarUrl) customerAvatarUrl = profile.avatarUrl
         } catch {
           // ignore profile fetch failure
         }

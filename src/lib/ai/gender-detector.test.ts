@@ -19,6 +19,8 @@ describe('gender-detector name classification', () => {
   it('identifies male names in English and Bengali script', () => {
     expect(detectGenderFromName('Md. Tanvir Hasan')).toBe('male')
     expect(detectGenderFromName('Mohammad Rifat')).toBe('male')
+    expect(detectGenderFromName('Rifat')).toBe('male')
+    expect(detectGenderFromName('রিফাত')).toBe('male')
     expect(detectGenderFromName('Rakib Ahmed')).toBe('male')
     expect(detectGenderFromName('Shakil Hossain')).toBe('male')
     expect(detectGenderFromName('Sheikh Fahim')).toBe('male')
@@ -87,6 +89,19 @@ describe('gender-detector resolveCustomerAddressing', () => {
     expect(result.promptInstruction).toContain('Bhaiya')
   })
 
+  it('locks to male for customer named Rifat even if prior bot history mistakenly had Apu (screenshot bug)', () => {
+    const historyWithBotMistake = 'Customer: hi\nSalesman: Hello Apu! Welcome to our store.'
+    const result = resolveCustomerAddressing({
+      rawCustomerName: 'Rifat',
+      historyText: historyWithBotMistake,
+      customerRelationStyle: 'bhaiya_apu',
+    })
+    expect(result.gender).toBe('male')
+    expect(result.addressingTitle).toBe('bhaiya')
+    expect(result.promptInstruction).toContain('MALE')
+    expect(result.promptInstruction).toContain('Bhaiya')
+  })
+
   it('locks to female when customer name is female', () => {
     const result = resolveCustomerAddressing({
       rawCustomerName: 'Sanjida Akter',
@@ -112,7 +127,15 @@ describe('gender-detector resolveCustomerAddressing', () => {
 })
 
 describe('gender-detector enforceGenderAddressingConsistency sanitizer', () => {
-  it('replaces accidental apu with bhaiya for male customers (exact screenshot bug fix)', () => {
+  it('replaces accidental apu/appu with bhaiya for male customers (exact screenshot bug fix)', () => {
+    const screenshotReply = 'Hello Apu! Kemon achen? Apni ki ar kono product ba skin care item somporke jante chan?'
+    const fixedScreenshot = enforceGenderAddressingConsistency(screenshotReply, 'male')
+    expect(fixedScreenshot).toBe('Hello Bhaiya! Kemon achen? Apni ki ar kono product ba skin care item somporke jante chan?')
+
+    const screenshotReplyAppu = 'Hello Appu! Kemon achen?'
+    const fixedAppu = enforceGenderAddressingConsistency(screenshotReplyAppu, 'male')
+    expect(fixedAppu).toBe('Hello Bhaiya! Kemon achen?')
+
     const buggyReply1 = 'আপনার স্কিনের ধরন কেমন, আপু? আমাদের কাছে দারুণ ক্রিম রয়েছে।'
     const fixed1 = enforceGenderAddressingConsistency(buggyReply1, 'male')
     expect(fixed1).toBe('আপনার স্কিনের ধরন কেমন, ভাইয়া? আমাদের কাছে দারুণ ক্রিম রয়েছে।')
@@ -134,5 +157,23 @@ describe('gender-detector enforceGenderAddressingConsistency sanitizer', () => {
     const buggyBanglish = 'Ji Bhaiya, apnar order confirm hoyeche.'
     const fixedBanglish = enforceGenderAddressingConsistency(buggyBanglish, 'female')
     expect(fixedBanglish).toBe('Ji Apu, apnar order confirm hoyeche.')
+  })
+
+  it('neutralizes gendered greetings when customer gender is unknown (never guesses Apu)', () => {
+    const unknownHelloApu = 'Hello Apu! Kemon achen? Apni ki ar kono product ba skin care item somporke jante chan?'
+    const fixedHelloApu = enforceGenderAddressingConsistency(unknownHelloApu, 'unknown')
+    expect(fixedHelloApu).toBe('Hello! Kemon achen? Apni ki ar kono product ba skin care item somporke jante chan?')
+
+    const unknownHelloAppu = 'Hello Appu! Kemon achen?'
+    const fixedHelloAppu = enforceGenderAddressingConsistency(unknownHelloAppu, 'unknown')
+    expect(fixedHelloAppu).toBe('Hello! Kemon achen?')
+
+    const unknownJiApu = 'Ji Apu, order confirm hoyeche.'
+    const fixedJiApu = enforceGenderAddressingConsistency(unknownJiApu, 'unknown')
+    expect(fixedJiApu).toBe('Ji, order confirm hoyeche.')
+
+    const unknownBn = 'হ্যালো আপু! কেমন আছেন?'
+    const fixedBn = enforceGenderAddressingConsistency(unknownBn, 'unknown')
+    expect(fixedBn).toBe('হ্যালো! কেমন আছেন?')
   })
 })
