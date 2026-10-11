@@ -145,39 +145,64 @@ export async function syncFacebookMessengerConversations(
       } catch {}
     }
 
-    // Resolve Page ID and Page Name from token if present
+    // Resolve Page ID, Page Name, and Page Access Token from token if present
     if (pageToken) {
       try {
+        // Step 1: Check token directly via /me
         const meRes = await fetch(
-          `https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/me?fields=id,name,category,tasks&access_token=${encodeURIComponent(pageToken)}`
         )
         let isPage = false
+        let meData: any = null
         if (meRes.ok) {
-          const meData = await meRes.json()
-          if (meData?.category) {
-            isPage = true
-            pageId = meData.id
-            pageName = meData.name || pageName || 'Facebook Page'
-          }
+          meData = await meRes.json()
         }
 
-        if (!isPage) {
+        // Test if /me/accounts exists (User token) or fails with #100 (Page token)
+        try {
           const accsRes = await fetch(
             `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
           )
-          if (accsRes.ok) {
-            const accsData = await accsRes.json()
-            const pages: any[] = accsData.data || []
-            if (pages.length > 0) {
-              const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
-              if (matched) {
-                pageId = matched.id
-                pageName = matched.name || pageName
-                if (matched.access_token) pageToken = matched.access_token
-                isPage = true
-              }
+          const accsData = await accsRes.json().catch(() => ({}))
+          const pages: any[] = accsData?.data || []
+          if (pages.length > 0) {
+            // User Access Token that has managed Pages
+            const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
+            if (matched) {
+              pageId = matched.id
+              pageName = matched.name || pageName || 'Facebook Page'
+              if (matched.access_token) pageToken = matched.access_token
+              isPage = true
+            }
+          } else if (accsData?.error?.code === 100 || meData?.category || Array.isArray(meData?.tasks)) {
+            // Error 100 on /me/accounts or has category/tasks proves this is a Page node
+            if (meData?.id) {
+              pageId = meData.id
+              pageName = meData.name || pageName || 'Facebook Page'
+              isPage = true
             }
           }
+        } catch {}
+
+        // Fallback: If /me returned an id and no user accounts found, /me is the Page itself
+        if (!isPage && meData?.id) {
+          pageId = pageId || meData.id
+          pageName = pageName || meData.name || 'Facebook Page'
+          isPage = true
+        }
+
+        // Step 2: If pageId is known, verify Page Name and ensure we hold the real Page token
+        if (pageId) {
+          try {
+            const pageInfoRes = await fetch(
+              `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
+            )
+            if (pageInfoRes.ok) {
+              const pData = await pageInfoRes.json()
+              if (pData?.name) pageName = pData.name
+              if (pData?.access_token) pageToken = pData.access_token
+            }
+          } catch {}
         }
       } catch (tokenInspectErr) {
         console.warn('[Sync conversations token inspection warning]:', tokenInspectErr)
@@ -259,29 +284,47 @@ export async function syncFacebookMessengerConversations(
     }
 
     // 2. Fetch conversations from Meta Graph API
-    const syncLimit = Math.min(Math.max(limit || 25, 5), 100)
+    const syncLimit = Math.min(Math.max(limit || 50, 10), 100)
 
-    const workingFields =
-      'id,updated_time,participants,senders,messages{id,message,created_time,from,to,attachments{id,mime_type,name,size,image_data,video_data,file_url}},unread_count,message_count'
-    const simpleFields = 'id,updated_time,participants,senders,unread_count,message_count'
+    // Clean, robust fields supported across all Meta Graph API versions for UnifiedThread
+    const convFields = 'id,updated_time,participants,senders,unread_count,message_count,snippet'
 
     const candidates: string[] = []
     if (pageId) {
+      // 1. Messenger platform (Inbox) - REQUIRED platform=messenger in Meta v17+
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
+      // 2. Messenger platform (Archived / Done folder in Meta Business Suite)
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&folder=page_done&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
+      // 3. Messenger platform (Other / Filtered folder)
       candidates.push(
-        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${simpleFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&folder=other&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      )
+      // 4. Instagram Direct platform (if linked to page)
+      candidates.push(
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=instagram&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      )
+      // 5. Unrestricted platform fallback
+      candidates.push(
+        `https://graph.facebook.com/v20.0/${pageId}/conversations?fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
       )
     }
+
+    // Fallbacks using /me (which evaluates to the Page when using a Page Access Token)
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=${workingFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
     )
     candidates.push(
-      `https://graph.facebook.com/v20.0/me/conversations?fields=${simpleFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+      `https://graph.facebook.com/v20.0/me/conversations?platform=messenger&folder=page_done&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+    )
+    candidates.push(
+      `https://graph.facebook.com/v20.0/me/conversations?platform=instagram&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
+    )
+    candidates.push(
+      `https://graph.facebook.com/v20.0/me/conversations?fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
     )
 
     let rawConversations: Array<any> = []
@@ -294,13 +337,10 @@ export async function syncFacebookMessengerConversations(
         const cData = await cRes.json()
         if (cRes.ok && Array.isArray(cData?.data)) {
           for (const item of cData.data) {
-            if (item.id && !seenConvIds.has(item.id)) {
+            if (item?.id && !seenConvIds.has(item.id)) {
               seenConvIds.add(item.id)
               rawConversations.push(item)
             }
-          }
-          if (rawConversations.length > 0) {
-            break
           }
         } else if (cData?.error) {
           const errMsg = cData.error.message || `Error ${cData.error.code}`

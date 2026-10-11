@@ -473,8 +473,9 @@ function InboxPageInner() {
                 `Found ${rawCount} conversation(s) on Meta, but failed to save: ${errDetail}`
               );
             } else {
+              const displayName = data.pageName ? `"${data.pageName}"` : "Facebook Page";
               toast.info(
-                `Synced with Facebook (${data.pageName || "Page"}). Meta returned 0 Messenger conversations.`
+                `Synced with ${displayName}. No conversations found on Meta yet. Send a test message to your Page on Messenger, then click Sync again.`
               );
             }
           }

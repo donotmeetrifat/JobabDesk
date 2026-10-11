@@ -98,20 +98,60 @@ export async function connectFacebookPage(
 ): Promise<MessengerSession> {
   let pageId = pageData?.pageId?.trim() || ''
   let pageName = pageData?.pageName?.trim() || ''
-  const token = pageData?.accessToken?.trim() || ''
+  let token = pageData?.accessToken?.trim() || ''
 
-  // If token is provided, verify real Page ID and Page Name directly from Meta
+  // If token is provided, verify real Page ID, Page Name, and Page Token directly from Meta
   if (token) {
     try {
-      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(token)}`)
+      const meRes = await fetch(
+        `https://graph.facebook.com/v20.0/me?fields=id,name,category,tasks&access_token=${encodeURIComponent(token)}`
+      )
       if (meRes.ok) {
         const meData = await meRes.json()
-        if (meData?.id) {
-          pageId = meData.id
-          pageName = meData.name || pageName || 'Facebook Page'
+        let isUserToken = false
+
+        try {
+          const accountsRes = await fetch(
+            `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(token)}`
+          )
+          if (accountsRes.ok) {
+            const accountsData = await accountsRes.json()
+            const pages = accountsData?.data || []
+            if (pages.length > 0) {
+              isUserToken = true
+              const matched = pageId ? pages.find((p: any) => p.id === pageId) : pages[0]
+              if (matched) {
+                pageId = matched.id
+                pageName = matched.name || pageName || 'Facebook Page'
+                if (matched.access_token) {
+                  token = matched.access_token
+                }
+              }
+            }
+          }
+        } catch {}
+
+        if (!isUserToken && meData?.id) {
+          pageId = pageId || meData.id
+          pageName = pageName || meData.name || 'Facebook Page'
+        }
+
+        if (pageId && isUserToken) {
+          try {
+            const pageInfoRes = await fetch(
+              `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(token)}`
+            )
+            if (pageInfoRes.ok) {
+              const pData = await pageInfoRes.json()
+              if (pData?.name) pageName = pData.name
+              if (pData?.access_token) token = pData.access_token
+            }
+          } catch {}
         }
       }
-    } catch {}
+    } catch (tokenInspectErr) {
+      console.warn('[connectFacebookPage token inspection warning]:', tokenInspectErr)
+    }
   }
 
   if (!pageId && !token) {
@@ -126,7 +166,7 @@ export async function connectFacebookPage(
   // Auto-subscribe page to Webhooks via Meta Graph API if token available
   if (token && pageId) {
     try {
-      await fetch(`https://graph.facebook.com/v19.0/${pageId}/subscribed_apps`, {
+      await fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
