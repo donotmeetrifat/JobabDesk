@@ -504,4 +504,82 @@ describe('router-engine Banglish reply spelling and quality', () => {
     expect(reply.reply).toContain('janacchi')
     expect(reply.reply).not.toContain('janacche')
   })
+
+  it('responds with polite welcome and no order receipt when customer says thanks in Banglish, Bengali, or English', () => {
+    const replyBanglish = buildOfflineReply({
+      detectedLang: 'banglish',
+      messageText: 'thanks',
+      customerGender: 'female',
+    })
+    expect(replyBanglish.reply).toContain('welcome')
+    expect(replyBanglish.reply).toContain('Apu')
+    expect(replyBanglish.reply).not.toContain('অর্ডার বিবরণী')
+    expect(replyBanglish.reply).not.toContain('Order Summary')
+
+    const replyBn = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'ধন্যবাদ',
+      customerGender: 'female',
+    })
+    expect(replyBn.reply).toContain('স্বাগতম')
+    expect(replyBn.reply).toContain('আপু')
+    expect(replyBn.reply).not.toContain('অর্ডার বিবরণী')
+
+    const replyEn = buildOfflineReply({
+      detectedLang: 'en',
+      messageText: 'thank you so much',
+      customerGender: 'male',
+    })
+    expect(replyEn.reply).toContain('welcome')
+    expect(replyEn.reply).not.toContain('Order Summary')
+  })
+
+  it('never places thanks as the recipient name in buildOrderConfirmationMessage', () => {
+    const confirmation = buildOrderConfirmationMessage({
+      detectedLang: 'bn',
+      customerName: 'thanks',
+      customerGender: 'female',
+      targetProductName: 'boots vitamin C',
+      unitPrice: 1800,
+      quantity: 2,
+      productTotal: 3600,
+      deliveryCharge: 80,
+      isInsideDhaka: true,
+      totalAmount: 3680,
+      paymentMethod: 'cod',
+      customerPhone: '01326596251',
+      customerAddress: 'Mirpur 14,Muktijuddho sarok,Master goli,CB-204/A',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    })
+
+    // "thanks" must NEVER be printed as customer name or recipient name
+    expect(confirmation).not.toContain('ধন্যবাদ, thanks আপু!')
+    expect(confirmation).not.toContain('• প্রাপকের নাম: thanks')
+    expect(confirmation).toContain('ধন্যবাদ, আপু! 🎉')
+    expect(confirmation).toContain('• প্রাপকের নাম: N/A')
+  })
+
+  it('correctly uses the real customer name when provided in buildOrderConfirmationMessage', () => {
+    const confirmation = buildOrderConfirmationMessage({
+      detectedLang: 'bn',
+      customerName: 'Rifat',
+      customerGender: 'female',
+      targetProductName: 'boots vitamin C',
+      unitPrice: 1800,
+      quantity: 2,
+      productTotal: 3600,
+      deliveryCharge: 80,
+      isInsideDhaka: true,
+      totalAmount: 3680,
+      paymentMethod: 'cod',
+      customerPhone: '01326596251',
+      customerAddress: 'Mirpur 14,Muktijuddho sarok,Master goli,CB-204/A',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    })
+
+    expect(confirmation).toContain('ধন্যবাদ, Rifat আপু! 🎉')
+    expect(confirmation).toContain('• প্রাপকের নাম: Rifat')
+  })
 });

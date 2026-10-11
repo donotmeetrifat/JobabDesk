@@ -9,6 +9,9 @@ import {
   isDetailedDeliveryAddress,
   isInsideDhakaAddress,
   resolveDeliveryCharge,
+  isValidHumanCustomerName,
+  COURTESY_AND_NON_NAME_REGEX,
+  isGratitudeMessage,
 } from '@/lib/contacts/extract-info'
 import {
   resolveCustomerAddressing,
@@ -794,11 +797,24 @@ export function buildOfflineReply({
       }
     }
   }
-  // 6. Generic Fallback
+  // 6. Generic Fallback & Gratitude
   else {
     intent = 'general_faq'
+    const isGratitude = isGratitudeMessage(messageText)
     const isGreeting = /^(hi|hello|hey|salam|slm|assalamu alaikum|hlw|হাই|হ্যালো|সালাম)[\s!.]*$/i.test(textLower)
-    if (isGreeting && !conversationHistoryText) {
+
+    if (isGratitude) {
+      if (detectedLang === 'banglish') {
+        const title = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+        reply = `Apnake onek welcome${title}! Jekono proyojone amader janaben. Bhalo thakben! ❤️`
+      } else if (detectedLang === 'bn') {
+        const titleBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+        reply = `আপনাকে অনেক স্বাগতম${titleBn}! যেকোনো প্রয়োজনে নির্দ্বিধায় আমাদের জানাবেন। ভালো থাকুন! ❤️`
+      } else {
+        const titleEn = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+        reply = `You're most welcome${titleEn}! Please let us know if you need anything else. Have a wonderful day! ❤️`
+      }
+    } else if (isGreeting && !conversationHistoryText) {
       if (detectedLang === 'banglish') {
         reply = `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
       } else if (detectedLang === 'bn') {
@@ -1238,11 +1254,11 @@ export async function handleIncomingCustomerMessage({
   // 2b. Extract candidate customer name and resolve strict gender addressing (1st verify person name, then history lock)
   const initMsgInfo = extractCustomerInfoFromMessage(messageText)
   const initHistInfo = extractCustomerInfoFromMessage(conversationHistoryText)
-  const cleanedContactName = cleanCustomerName(customerContactName)
+  const cleanedContactName = isValidHumanCustomerName(customerContactName) ? cleanCustomerName(customerContactName) : ''
   const candidateCustomerName =
     cleanedContactName ||
-    cleanCustomerName(initMsgInfo.name) ||
-    cleanCustomerName(initHistInfo.name) ||
+    (isValidHumanCustomerName(initMsgInfo.name) ? cleanCustomerName(initMsgInfo.name) : '') ||
+    (isValidHumanCustomerName(initHistInfo.name) ? cleanCustomerName(initHistInfo.name) : '') ||
     null
 
   if (candidateCustomerName && contactId && (!customerContactName || !cleanedContactName)) {
@@ -2125,12 +2141,7 @@ Set "order": null if the customer is merely asking a question without ordering o
   }
 
   const isValidHumanName = (n?: string | null): boolean => {
-    if (!n) return false
-    const trimmed = n.trim()
-    if (trimmed.length < 2 || trimmed.length > 50) return false
-    if (/^(messenger user|unknown|user|guest|customer|test|admin|owner|null|undefined|none|n\/a)$/i.test(trimmed)) return false
-    if (/^\+?\d+$/.test(trimmed)) return false
-    return true
+    return isValidHumanCustomerName(n)
   }
 
   // CURRENT ORDER SPECIFIC DETAILS:
@@ -2140,6 +2151,8 @@ Set "order": null if the customer is merely asking a question without ordering o
     (isValidHumanName(extractedInfo.name) ? extractedInfo.name : null) ||
     (isValidHumanName(sessionExtractedInfo.name) ? sessionExtractedInfo.name : null) ||
     (isValidHumanName(llmOrderData?.customer_name) ? llmOrderData.customer_name : null) ||
+    (isValidHumanName(candidateCustomerName) ? candidateCustomerName : null) ||
+    (isValidHumanName(contactDbName) ? contactDbName : null) ||
     null
 
   const currentOrderPhone =
@@ -2335,21 +2348,25 @@ Set "order": null if the customer is merely asking a question without ordering o
   const orderIntentKeywords = /\b(?:order\s*(?:korte|korbo|kori|confirm|place|din|den|korun|dite|kora|chai|lagbe)|অর্ডার\s*(?:করতে|করব|করবো|দিন|কনফার্ম|করুন|চাই|নিব|নেব)|nite\s*chai|kinbo|kinte\s*chai|buy|purchase|place\s*order|want\s*to\s*buy|i\s*want\s*to\s*order|send\s*me|need\s*this|confirm\s*order)\b/i
   const isQuestionOrInquiry = /\b(?:\?|ki|koto|dam\s*koto|kivabe|details|sure|is\s*it|are\s*you\s*sure|free\s*naki\s*paid|paid\s*naki\s*free|free\s*or\s*paid|paid\s*or\s*free|কত|কী|কি|নাকি|পেইড|ফ্রি\s*নাকি)\b/i.test(messageText)
 
+  const isCustomerSendingGratitude = isGratitudeMessage(messageText)
+
   const customerProvidedCheckoutDetails = Boolean(
-    (!isOrderDigital && currentOrderAddress && currentOrderPhone) ||
-    (isOrderDigital && currentOrderEmail && currentOrderPhone) ||
+    (!isOrderDigital && currentOrderAddress && currentOrderPhone && !isCustomerSendingGratitude) ||
+    (isOrderDigital && currentOrderEmail && currentOrderPhone && !isCustomerSendingGratitude) ||
     hasTrx ||
     hasPaymentSent
   )
 
   const isCustomerAttemptingOrder =
-    (orderIntentKeywords.test(messageText) && !isQuestionOrInquiry) ||
-    customerProvidedCheckoutDetails ||
-    Boolean(llmOrderData?.is_order && orderIntentKeywords.test(currentSessionText) && !isQuestionOrInquiry)
+    !isCustomerSendingGratitude && (
+      (orderIntentKeywords.test(messageText) && !isQuestionOrInquiry) ||
+      customerProvidedCheckoutDetails ||
+      Boolean(llmOrderData?.is_order && orderIntentKeywords.test(currentSessionText) && !isQuestionOrInquiry)
+    )
 
-  // Invalidate order if incomplete or if customer is only asking an informational question
-  if (!isOrderFullyComplete || !isCustomerAttemptingOrder) {
-    if (llmOrderData && !customerProvidedCheckoutDetails) {
+  // Invalidate order if customer is sending gratitude, order is incomplete, or asking an informational question
+  if (isCustomerSendingGratitude || !isOrderFullyComplete || !isCustomerAttemptingOrder) {
+    if (llmOrderData && (isCustomerSendingGratitude || !customerProvidedCheckoutDetails)) {
       llmOrderData.is_order = false
     }
   }
@@ -2553,42 +2570,66 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
   aiReply = enforceGenderAddressingConsistency(aiReply, targetConsistencyGender)
+
+  if (isCustomerSendingGratitude) {
+    const titleBanglish = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+    const titleBn = targetConsistencyGender === 'female' ? ', আপু' : targetConsistencyGender === 'male' ? ', ভাইয়া' : ''
+    const titleEn = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+
+    if (
+      orderConfirmationPhrases.test(aiReply) ||
+      /\b(?:প্রাপকের\s*নাম|Recipient\s*Name|ডেলিভারি\s*তথ্য|Order\s*Summary|ডেলিভারি\s*চার্জ)\b/i.test(aiReply) ||
+      /\b(?:thanks|dhonnobad|ধন্যবাদ)\s*(?:apu|bhaiya|আপু|ভাইয়া)?\s*!/i.test(aiReply) ||
+      !/\b(?:welcome|স্বাগতম)\b/i.test(aiReply)
+    ) {
+      if (detectedLang === 'bn') {
+        aiReply = `আপনাকে অনেক স্বাগতম${titleBn}! ❤️ যেকোনো প্রয়োজনে নির্দ্বিধায় আমাদের জানাবেন। ভালো থাকুন!`
+      } else if (detectedLang === 'banglish') {
+        aiReply = `Apnake onek welcome${titleBanglish}! ❤️ Jekono proyojone amader janaben. Bhalo thakben!`
+      } else {
+        aiReply = `You're most welcome${titleEn}! ❤️ Please let us know if you need anything else. Have a wonderful day!`
+      }
+    }
+  }
+
   if (detectedLang === 'banglish') {
     aiReply = normalizeBanglishSpelling(aiReply)
   }
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
-  try {
-    const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
-      ? resolveDeliveryCharge({
-          address: currentOrderAddress,
-          policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
-          isDigital: isOrderDigital,
-          isFree: isFreeOrder,
-          explicitDeliveryCharge: llmOrderData?.delivery_charge,
-        }).deliveryCharge
-      : 0
+  if (!isCustomerSendingGratitude) {
+    try {
+      const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
+        ? resolveDeliveryCharge({
+            address: currentOrderAddress,
+            policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
+            isDigital: isOrderDigital,
+            isFree: isFreeOrder,
+            explicitDeliveryCharge: llmOrderData?.delivery_charge,
+          }).deliveryCharge
+        : 0
 
-    await detectAndCreateOrderFromChat({
-      accountId: account?.id || accountId,
-      contactId: contactId || null,
-      conversationId: convId || null,
-      channel,
-      customerName: currentOrderName || null,
-      customerPhone: currentOrderPhone || null,
-      customerAddress: currentOrderAddress || null,
-      customerEmail: currentOrderEmail || null,
-      messageText,
-      conversationHistoryText,
-      llmOrderData: {
-        ...llmOrderData,
-        delivery_charge: finalOrderDeliveryCharge,
-      },
-      storeProducts: products,
-      supabase: client,
-    })
-  } catch (err) {
-    console.warn('[AI Router Engine] Order capture error:', err)
+      await detectAndCreateOrderFromChat({
+        accountId: account?.id || accountId,
+        contactId: contactId || null,
+        conversationId: convId || null,
+        channel,
+        customerName: currentOrderName || null,
+        customerPhone: currentOrderPhone || null,
+        customerAddress: currentOrderAddress || null,
+        customerEmail: currentOrderEmail || null,
+        messageText,
+        conversationHistoryText,
+        llmOrderData: {
+          ...llmOrderData,
+          delivery_charge: finalOrderDeliveryCharge,
+        },
+        storeProducts: products,
+        supabase: client,
+      })
+    } catch (err) {
+      console.warn('[AI Router Engine] Order capture error:', err)
+    }
   }
 
   // 5. Log to ai_auto_replies database table (safe try/catch if table not created yet)

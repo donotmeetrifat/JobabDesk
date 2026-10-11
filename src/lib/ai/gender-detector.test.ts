@@ -13,6 +13,12 @@ describe('gender-detector name classification', () => {
     expect(cleanCustomerName('WhatsApp User')).toBe('')
     expect(cleanCustomerName('+8801712345678')).toBe('')
     expect(cleanCustomerName('Unknown')).toBe('')
+    expect(cleanCustomerName('thanks')).toBe('')
+    expect(cleanCustomerName('Thanks')).toBe('')
+    expect(cleanCustomerName('dhonnobad')).toBe('')
+    expect(cleanCustomerName('ধন্যবাদ')).toBe('')
+    expect(cleanCustomerName('welcome')).toBe('')
+    expect(cleanCustomerName('ok')).toBe('')
     expect(cleanCustomerName('Md. Tanvir Hasan')).toBe('Md. Tanvir Hasan')
   })
 

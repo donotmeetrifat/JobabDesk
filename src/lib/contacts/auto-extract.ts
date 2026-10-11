@@ -4,6 +4,7 @@ import {
   isFacebookPsid,
   cleanEmail,
   normalizeBengaliDigits,
+  isValidHumanCustomerName,
   type ExtractedCustomerInfo,
 } from './extract-info'
 
@@ -12,6 +13,7 @@ export {
   isFacebookPsid,
   cleanEmail,
   normalizeBengaliDigits,
+  isValidHumanCustomerName,
   type ExtractedCustomerInfo,
 }
 
@@ -90,14 +92,15 @@ export async function autoUpdateContactFromChatMessage(params: {
     }
 
     // Handle Name:
-    if (extracted.name) {
+    if (extracted.name && isValidHumanCustomerName(extracted.name)) {
       const currentName = contact.name || ''
       const isPlaceholder =
         !currentName ||
         currentName === 'Unknown' ||
         currentName === 'Facebook user' ||
         currentName.startsWith('Messenger User') ||
-        currentName.startsWith('WhatsApp ')
+        currentName.startsWith('WhatsApp ') ||
+        !isValidHumanCustomerName(currentName)
       if (isPlaceholder) {
         updates.name = extracted.name
         shouldUpdate = true

@@ -28,6 +28,48 @@ export interface ExtractedCustomerInfo {
   name?: string | null
 }
 
+export const GRATITUDE_MESSAGE_REGEX =
+  /^(?:many\s*thanks|thanks?(?:\s*(?:a\s*lot|so\s*much|a\s*ton|u|you))?|thank\s*you(?:\s*(?:so\s*much|very\s*much))?|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|onek\s*dhonnobad|shukriya|shukria|অনেক\s*ধন্যবাদ|ধন্যবাদ)[\s!.,❤️😊🙏]*$/i
+
+export function isGratitudeMessage(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false
+  return GRATITUDE_MESSAGE_REGEX.test(text.trim())
+}
+
+export const COURTESY_AND_NON_NAME_REGEX =
+  /^(?:many\s*thanks|thanks?(?:\s*(?:a\s*lot|so\s*much|a\s*ton|u|you))?|thank\s*you(?:\s*(?:so\s*much|very\s*much))?|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|onek\s*dhonnobad|shukriya|shukria|welcome|you(?:'re|\s*are)?\s*welcome|ok|okay|okk|okie|sure|alright|done|got\s*it|thik\s*(?:ache|ase)|acha|accha|achha|ji|haan|ha|haa|yes|no|na|nah|nope|bye|goodbye|tata|salam|slm|assalamu(?:\s*alaikum)?|hi|hello|hey|hlw|kemon\s*achen|kemon\s*acho|bhalo|valo|fine|good|nice|great|wow|vai|bhai|bhaiya|apu|appu|didi|dada|sir|madam|bro|sis|love|dear|boss|customer|guest|user|admin|owner|null|undefined|none|n\/a|ধন্যবাদ|অনেক\s*ধন্যবাদ|স্বাগতম|শুকরিয়া|সালাম|হ্যালো|হাই|ঠিক\s*আছে|আচ্ছা|জি|হ্যাঁ|না|বাই)$/i
+
+export const COMMON_BANGLISH_NON_NAME_WORDS =
+  /\b(?:thanks?|thank\s*you|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|shukriya|welcome|alright|sure|done|got\s*it|thik\s*(?:ache|ase)|accha?|acha|achha|valo|bhalo|kemon|achen|acho|chai|lagbe|nibo|nebo|kinbo|kinte|den|din|deben|kore|kora|korbo|korun|hobe|hoche|ache|ase|nai|nei|dekhi|dekhbo|bolo|bolun|janan|janaben|update|cancel|cancle|change|palte|order|product|item|cream|serum|lotion|facewash|canva|price|dam|koto|taka|delivery|courier|address|thikana|phone|number|mobile|email|mail|cod|cash|bkash|nagad|rocket|parcel|package|share|please|ami|tumi|apni|amra|apnara|amader|apnar|amar|tumar|tomar|tar|tader|she|oi|ei|eta|eita|oita|ar|ebong|kintu|ba|naki)\b/i
+
+// Helper to reject bot prompt instructions or questions
+export function isTemplateInstruction(str?: string | null): boolean {
+  if (!str) return false
+  const s = str.toLowerCase().trim()
+  if (s.endsWith('?')) return true
+  if (/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস|delivery\s*package)\b/i.test(s)) return true
+  return false
+}
+
+/**
+ * Strict validator for recipient human names in Bangladesh.
+ * Rejects courtesy phrases ("thanks", "dhonnobad"), greetings ("hi"), order instructions,
+ * addresses, phone artifacts, numbers, and generic conversational text.
+ */
+export function isValidHumanCustomerName(name?: string | null): boolean {
+  if (!name || typeof name !== 'string') return false
+  const trimmed = name.trim()
+  if (trimmed.length < 2 || trimmed.length > 40) return false
+  if (/\d/.test(trimmed)) return false
+  if (/[@:=$%&*+^/\\{}<>[\]~`|]/.test(trimmed)) return false
+  if (COURTESY_AND_NON_NAME_REGEX.test(trimmed)) return false
+  if (/^(?:messenger\s+user(?:\s*\(\d+\))?|whatsapp\s+user|customer\s*\d*|user\s*\d*|unknown|guest|anonymous|test|admin|owner|null|undefined|none|n\/a)$/i.test(trimmed)) return false
+  if (isTemplateInstruction(trimmed)) return false
+  if (/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(trimmed)) return false
+  if (COMMON_BANGLISH_NON_NAME_WORDS.test(trimmed)) return false
+  return /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(trimmed)
+}
+
 /**
  * Robust extractor for phone, address, and email from customer chat messages.
  * Handles English, Bengali script, Banglish formats, and common misspellings (e.g. "Adreass:").
@@ -77,14 +119,6 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     }
   }
 
-  // Helper to reject bot prompt instructions or questions
-  const isTemplateInstruction = (str: string) => {
-    if (!str) return false
-    const s = str.toLowerCase().trim()
-    if (s.endsWith('?')) return true
-    if (/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস|delivery\s*package)\b/i.test(s)) return true
-    return false
-  }
 
   // 3. ADDRESS EXTRACTION
   // Look for explicit prefix: Address: ..., Adreess: ..., Adress: ..., Addres: ..., Thikana: ..., ঠিকানায়: ..., Delivery address: ...
@@ -158,18 +192,9 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
   const suffixMatch = cleanText.match(nameSuffixRegex)
   const candidate = prefixMatch?.[1] || suffixMatch?.[1]
 
-  const INVALID_NAME_WORDS = /^(?:address|phone|email|cod|bkash|nagad|rocket|order|product|price|taka|dam|koto|delivery|cash|yes|no|ok|haan|ji|for|the|to|in|at|of|package|parcel|delivery\s*package|sir|madam|bhaiya|apu)$/i
-
   if (candidate) {
     const candidateName = candidate.replace(/[\n\r,।|•].*$/, '').trim()
-    if (
-      candidateName.length >= 2 &&
-      !candidateName.toLowerCase().startsWith('http') &&
-      !INVALID_NAME_WORDS.test(candidateName) &&
-      !isTemplateInstruction(candidateName) &&
-      !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(candidateName) &&
-      !/\b(?:delivery\s*package|package|parcel|share|please|address|phone|email|method|product|item|korte|chai|lagbe|kinbo)\b/i.test(candidateName)
-    ) {
+    if (isValidHumanCustomerName(candidateName)) {
       result.name = candidateName
     }
   }
@@ -179,30 +204,15 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
     const lines = cleanText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean)
     if (lines.length >= 2) {
       const firstLine = lines[0]
-      if (
-        firstLine.length >= 2 &&
-        firstLine.length <= 35 &&
-        !/\d/.test(firstLine) &&
-        !/[@:=-]/.test(firstLine) &&
-        !isTemplateInstruction(firstLine) &&
-        !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(firstLine) &&
-        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|package|parcel|share|please)\b/i.test(firstLine) &&
-        /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(firstLine)
-      ) {
+      if (isValidHumanCustomerName(firstLine)) {
         result.name = firstLine
       }
     } else if (lines.length === 1) {
       const singleLine = lines[0]
-      if (
-        singleLine.length >= 2 &&
-        singleLine.length <= 35 &&
-        !/\d/.test(singleLine) &&
-        !/[@:=-]/.test(singleLine) &&
-        !isTemplateInstruction(singleLine) &&
-        !/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(singleLine) &&
-        !/\b(?:order|cream|product|canva|price|taka|dam|koto|hi|hello|assalamu|delivery|address|phone|email|cod|bkash|nagad|rocket|yes|no|ok|package|parcel|share|please)\b/i.test(singleLine) &&
-        /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(singleLine)
-      ) {
+      // A standalone single-line message without address/phone must pass strict human name checks.
+      // Courtesy words ("thanks", "dhonnobad"), greetings ("hi"), and generic conversation
+      // must NEVER be extracted as names!
+      if (isValidHumanCustomerName(singleLine)) {
         result.name = singleLine
       }
     }

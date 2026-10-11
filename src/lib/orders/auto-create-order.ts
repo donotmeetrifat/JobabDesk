@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { extractCustomerInfoFromMessage, isFacebookPsid, isDetailedDeliveryAddress } from '@/lib/contacts/extract-info'
+import { extractCustomerInfoFromMessage, isFacebookPsid, isDetailedDeliveryAddress, isValidHumanCustomerName } from '@/lib/contacts/extract-info'
 import { checkIsDigitalOrder, isDigitalProduct } from '@/lib/products/product-type'
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
@@ -88,6 +88,12 @@ export async function detectAndCreateOrderFromChat({
 }: AutoOrderPayload) {
   if (!accountId) return null
 
+  // Expressions of gratitude / thanks must never create orders
+  const isGratitude = /^(?:thanks?|thank\s*you|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|shukriya|shukria|অনেক\s*ধন্যবাদ|ধন্যবাদ)[\s!.,❤️😊🙏]*$/i.test((messageText || '').trim())
+  if (isGratitude) {
+    return null
+  }
+
   const db = supabase || getAdminClient()
 
   // 1. Extract contact details from current message & order conversation session (customer lines only)
@@ -104,10 +110,11 @@ export async function detectAndCreateOrderFromChat({
   let address = customerAddress || extracted.address || historyExtracted.address || llmOrderData?.customer_address || null
   let email = customerEmail || extracted.email || historyExtracted.email || llmOrderData?.customer_email || null
 
-  let resolvedName = (customerName && customerName !== 'Messenger User' && customerName !== 'Unknown' ? customerName : null) ||
-    extracted.name ||
-    historyExtracted.name ||
-    llmOrderData?.customer_name ||
+  let resolvedName =
+    (isValidHumanCustomerName(customerName) ? customerName : null) ||
+    (isValidHumanCustomerName(extracted.name) ? extracted.name : null) ||
+    (isValidHumanCustomerName(historyExtracted.name) ? historyExtracted.name : null) ||
+    (isValidHumanCustomerName(llmOrderData?.customer_name) ? (llmOrderData?.customer_name ?? null) : null) ||
     null
 
   // 1b. Detect Order Cancellation Intent

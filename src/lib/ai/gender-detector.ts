@@ -6,7 +6,7 @@
 
 export type CustomerGender = 'male' | 'female' | 'unknown'
 
-// Words to strip before analyzing names (generic placeholders, phone artifacts, etc.)
+// Words to strip before analyzing names (generic placeholders, phone artifacts, courtesy tokens, etc.)
 const NON_NAME_PATTERNS = [
   /^messenger\s+user(?:\s*\(\d+\))?$/i,
   /^whatsapp\s+user$/i,
@@ -16,6 +16,14 @@ const NON_NAME_PATTERNS = [
   /^\+?\d[\d\s-]{6,}$/, // raw phone numbers
   /^guest$/i,
   /^anonymous$/i,
+  /^(?:thanks?|thank\s*you|thx|tnx|tysm|ty)$/i,
+  /^(?:dhonnobad|dhonnobaad|dhanobad|donnobad|shukriya|shukria)$/i,
+  /^(?:ধন্যবাদ|অনেক\s*ধন্যবাদ|শুকরিয়া|স্বাগতম)$/i,
+  /^(?:welcome|you(?:'re|\s*are)?\s*welcome|ok|okay|okk|okie|sure|alright|done|got\s*it)$/i,
+  /^(?:thik\s*(?:ache|ase)|acha|accha|achha|ji|haan|ha|haa|yes|no|na|nah|nope)$/i,
+  /^(?:bye|goodbye|tata|salam|slm|assalamu(?:\s*alaikum)?|hi|hello|hey|hlw)$/i,
+  /^(?:kemon\s*achen|bhalo|valo|fine|good|nice|great|wow)$/i,
+  /^(?:bhaiya|apu|appu|didi|dada|sir|madam|bro|sis)$/i,
 ]
 
 // Common Female Name Tokens (Latin / English script)
