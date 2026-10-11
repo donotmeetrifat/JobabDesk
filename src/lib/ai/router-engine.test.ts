@@ -430,3 +430,78 @@ describe('buildOrderConfirmationMessage multi-language order confirmation summar
     expect(summaryUnknown).not.toContain('ভাইয়া');
   });
 });
+
+describe('router-engine Banglish reply spelling and quality', () => {
+  it('generates correct, authentic Banglish spelling without phonetic distortions', () => {
+    const products = [
+      { name: 'Simple Cream', price: 650, stock_qty: 25, is_in_stock: true, category: 'skincare' },
+    ]
+    const account = {
+      ai_store_instructions: 'Customer satisfaction is our priority.',
+    }
+
+    const reply = buildOfflineReply({
+      detectedLang: 'banglish',
+      messageText: 'Simple Cream er dam koto?',
+      products,
+      recentOrders: [],
+      account,
+      customerGender: 'male',
+    })
+
+    // Must be in Banglish Latin script
+    expect(reply.reply).toContain('Simple Cream er dam ৳650')
+    expect(reply.reply).toContain('Stock e ache')
+    expect(reply.reply).toContain('Delivery Name')
+    expect(reply.reply).toContain('delivery address')
+    // Must NOT contain spelling distortions
+    expect(reply.reply).not.toContain('aponar')
+    expect(reply.reply).not.toContain('kibhabe')
+    expect(reply.reply).not.toContain('thikna')
+    expect(reply.reply).not.toContain('dhanyawad')
+  })
+
+  it('uses standard Banglish phrasing for expired Canva Pro offer without typos', () => {
+    const products: any[] = []
+    const account = {
+      ai_store_instructions: 'Customer satisfaction is our priority. We sell digital subscriptions.',
+      ai_business_description: 'Digiplus Digital Store',
+    }
+
+    const reply = buildOfflineReply({
+      detectedLang: 'banglish',
+      messageText: 'Canva pro free offer ta ache naki?',
+      products,
+      recentOrders: [],
+      account,
+      customerGender: 'female',
+    })
+
+    // Must contain correct spelling "meyad iti moddhe" (NOT "meyadh itomoddhe")
+    expect(reply.reply).toContain('meyad iti moddhe')
+    expect(reply.reply).not.toContain('meyadh')
+    expect(reply.reply).not.toContain('itomoddhe')
+  })
+
+  it('correctly uses 1st person janacchi when greeting in Banglish', () => {
+    const products = [
+      { name: 'Simple Cream', price: 650, stock_qty: 25, is_in_stock: true, category: 'skincare' },
+    ]
+    const account = {
+      ai_store_instructions: 'We sell skincare products.',
+    }
+
+    const reply = buildOfflineReply({
+      detectedLang: 'banglish',
+      messageText: 'amar kichu jante hobe',
+      products,
+      recentOrders: [],
+      account,
+      customerGender: 'male',
+      conversationHistoryText: 'Customer: hi\nBot: Hello!',
+    })
+
+    expect(reply.reply).toContain('janacchi')
+    expect(reply.reply).not.toContain('janacche')
+  })
+});

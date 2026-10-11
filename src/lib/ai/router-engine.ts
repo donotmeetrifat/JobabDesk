@@ -18,6 +18,10 @@ import {
   type CustomerGender,
 } from '@/lib/ai/gender-detector'
 import { fetchMetaUserProfile } from '@/lib/messenger/profile'
+import {
+  BANGLISH_SYSTEM_PROMPT_GUIDELINES,
+  normalizeBanglishSpelling,
+} from '@/lib/ai/banglish-spelling'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -573,7 +577,7 @@ export function buildOfflineReply({
       const totalPrice = matchedProducts.reduce((sum, p) => sum + (Number(p.price) || 0), 0)
       if (isDigital) {
         if (detectedLang === 'banglish') {
-          reply = `Ji oboshoy! ${namesAndPrices} - shobgulo available. Total ৳${totalPrice.toLocaleString()}. Digital product er delivery email e pathano hoy. Order korte apnar Email address, phone number o bKash/Nagad payment method confirm korben please?`
+          reply = `Ji oboshshoi! ${namesAndPrices} - shobgulo available. Total ৳${totalPrice.toLocaleString()}. Digital product er delivery email e pathano hoy. Order korte apnar Email address, phone number o bKash/Nagad payment method confirm korben please?`
         } else if (detectedLang === 'bn') {
           reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলোই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। ডিজিটাল পণ্যের অ্যাক্সেস ইমেইলে পাঠিয়ে দেওয়া হবে। অর্ডার করতে অনুগ্রহ করে আপনার ইমেইল অ্যাড্রেস, ফোন নম্বর এবং বিকাশ/নগদ পেমেন্ট মাধ্যমটি জানান।`
         } else {
@@ -581,7 +585,7 @@ export function buildOfflineReply({
         }
       } else {
         if (detectedLang === 'banglish') {
-          reply = `Ji oboshoy! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address, phone number o preferred payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
+          reply = `Ji oboshshoi! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address, phone number o preferred payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
         } else if (detectedLang === 'bn') {
           reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
         } else {
@@ -649,7 +653,7 @@ export function buildOfflineReply({
       const isAskingFree = /\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift|zero|0)\b/i.test(textLower)
       if (isAskingFree) {
         if (detectedLang === 'banglish') {
-          reply = `Amader Canva Pro er free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
+          reply = `Amader Canva Pro er free offer tir meyad iti moddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
         } else if (detectedLang === 'bn') {
           reply = `আমাদের Canva Pro-এর ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার সাবস্ক্রিপশনটি নিতে পারেন। আপনি কি বিস্তারিত জানতে চান?`
         } else {
@@ -657,7 +661,7 @@ export function buildOfflineReply({
         }
       } else {
         if (detectedLang === 'banglish') {
-          reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
+          reply = `Canva Pro somporke jekono proshno ba order er jonno kindly apnar requirement janaben, amader team apnake shob details diye shahajjo korbe.`
         } else if (detectedLang === 'bn') {
           reply = `Canva Pro সম্পর্কিত যেকোনো প্রশ্ন বা অর্ডারের জন্য অনুগ্রহ করে আপনার রিকোয়ারমেন্ট জানান, আমাদের টিম আপনাকে বিস্তারিত জানিয়ে সাহায্য করবে।`
         } else {
@@ -806,7 +810,7 @@ export function buildOfflineReply({
       if (detectedLang === 'banglish') {
         const greetingPrefix =
           customerGender === 'female' ? 'Ji Apu,' : customerGender === 'male' ? 'Ji Bhaiya,' : 'Ji,'
-        reply = `${greetingPrefix} ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacche!`
+        reply = `${greetingPrefix} ami apnar message ti bujhte perechi. Apnar pochonder product ba dorkari details bolun, ami ekhoni shob janacchi!`
       } else if (detectedLang === 'bn') {
         const greetingPrefixBn =
           customerGender === 'female' ? 'জি আপু,' : customerGender === 'male' ? 'জি ভাইয়া,' : 'জি,'
@@ -815,6 +819,10 @@ export function buildOfflineReply({
         reply = `Understood! Please tell me which product or details you would like to know about, and I will assist you right away.`
       }
     }
+  }
+
+  if (detectedLang === 'banglish') {
+    reply = normalizeBanglishSpelling(reply)
   }
 
   return { intent, reply }
@@ -1432,7 +1440,7 @@ export async function handleIncomingCustomerMessage({
   if (detectedLang === 'bn') {
     langGuidance = 'STRICT REQUIREMENT: The customer is communicating in Bengali. You MUST reply in natural, polite Bangladeshi Bengali written ONLY in Bengali script (বাংলা বর্ণমালা). NEVER output Arabic, Urdu, or Hindi characters. Every sentence must be in proper Bengali.'
   } else if (detectedLang === 'banglish') {
-    langGuidance = 'STRICT REQUIREMENT: The customer is communicating in Banglish. You MUST reply in natural Banglish (spoken Bengali written in Latin/English alphabet). For example: "Bhaiya, product er dam ৳850. Stock e ache!". NEVER output Bengali script, Arabic, Urdu, or Hindi characters.'
+    langGuidance = BANGLISH_SYSTEM_PROMPT_GUIDELINES
   } else {
     langGuidance = 'STRICT REQUIREMENT: The customer is communicating in English. You MUST reply completely and purely in clear, natural, and helpful English using the Latin alphabet. NEVER switch to Bengali script, Banglish, Arabic, Urdu, or any other language.'
   }
@@ -1506,7 +1514,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
        - DO NOT confirm or grant the expired offer!
        - Politely inform the customer that the previous promotional offer has ended / expired:
          * Bengali: "আমাদের ওই অফারটির/ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার প্যাকেজটি নিতে পারেন।"
-         * Banglish: "Amader oi offer tir/free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular package ti nite paren."
+         * Banglish: "Amader oi offer tir/free offer tir meyad iti moddhe sesh hoye geche. Apni chaile amader regular package ti nite paren."
          * English: "That promotional offer has now ended. You can check our regular packages if you are interested."
        - Provide the current catalog price or ask what other service they are looking for.
        - ABSOLUTELY NEVER continue granting, confirming, or claiming an expired offer just because the chat history from days ago mentioned it!
@@ -1606,14 +1614,14 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
      * YOU MUST NOT CREATE A NEW ORDER! Set "order": { "action": "cancel", "is_order": false, "is_cancelled": true }.
      * Reply politely confirming that their order has been cancelled:
        - Bengali: "আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে। ভবিষ্যতে যেকোনো প্রয়োজনে আমরা আপনার পাশে আছি। ধন্যবাদ!"
-       - Banglish: "Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhabisshote jekono proyojone amader janaben. Dhonnobad!"
+       - Banglish: "Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhobisshote jekono proyojone amader janaben. Dhonnobad!"
        - English: "Your order has been successfully cancelled as requested. Please let us know whenever you need anything in the future. Thank you!"
    - B. PRODUCT CHANGE / REPLACEMENT REQUESTS:
      * When a customer previously placed an order but now wants to order a DIFFERENT product or swap products (e.g. "Canva Pro nibo na, ami Netflix nibo", "Canva change kore Netflix din", "ami onno product ta nite chai", "change my order to [Product]"):
      * Set "order": { "action": "update_items", "is_order": true, "items": [{ "product_name": "[New Product Name]", "unit_price": [price], "quantity": 1 }], ... }
      * Confirm the switch politely:
        - Bengali: "অবশ্যই! আপনার অর্ডারটি পরিবর্তন করে [নতুন পণ্য] (৳[মূল্য]) দিয়ে আপডেট করা হয়েছে।"
-       - Banglish: "Obosshoy! Apnar order ti change kore [New Product] (৳[price]) diye update kora hoyeche."
+       - Banglish: "Oboshshoi! Apnar order ti change kore [New Product] (৳[price]) diye update kora hoyeche."
        - English: "Certainly! Your order has been updated to [New Product] (৳[price])."
 
 7. MULTIMODAL & PRODUCT PHOTO RULES:
@@ -2208,7 +2216,7 @@ Set "order": null if the customer is merely asking a question without ordering o
         if (detectedLang === 'bn') {
           aiReply = `আমাদের Canva Pro-এর ফ্রি অফারটির মেয়াদ ইতিমধ্যে শেষ হয়ে গেছে। আপনি চাইলে আমাদের রেগুলার সাবস্ক্রিপশনটি নিতে পারেন। আপনি কি বিস্তারিত জানতে চান?`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Amader Canva Pro er free offer tir meyadh itomoddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
+          aiReply = `Amader Canva Pro er free offer tir meyad iti moddhe sesh hoye geche. Apni chaile amader regular subscription ti nite paren. Details jante chan ki?`
         } else {
           aiReply = `Our free Canva Pro promotional offer has now ended. You can purchase our regular subscription if you are interested. Would you like more details?`
         }
@@ -2316,7 +2324,7 @@ Set "order": null if the customer is merely asking a question without ordering o
       if (detectedLang === 'bn') {
         aiReply = `আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে। ভবিষ্যতে যেকোনো প্রয়োজনে আমরা আপনার পাশে আছি। ধন্যবাদ!`
       } else if (detectedLang === 'banglish') {
-        aiReply = `Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhabisshote jekono proyojone amader janaben. Dhonnobad!`
+        aiReply = `Apnar onurodh onujayi order ti successfully cancel kora hoyeche. Bhobisshote jekono proyojone amader janaben. Dhonnobad!`
       } else {
         aiReply = `Your order has been successfully cancelled as requested. Please let us know whenever you need anything in the future. Thank you!`
       }
@@ -2545,6 +2553,9 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
   aiReply = enforceGenderAddressingConsistency(aiReply, targetConsistencyGender)
+  if (detectedLang === 'banglish') {
+    aiReply = normalizeBanglishSpelling(aiReply)
+  }
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
   try {
