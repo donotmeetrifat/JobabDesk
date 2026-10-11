@@ -119,7 +119,7 @@ export async function syncFacebookMessengerConversations(
       actualAccountId = accountRecord.id
       pageId = pageId || (accountRecord.facebook_page_id || accountRecord.fb_page_id || '').trim()
       pageToken = pageToken || (accountRecord.facebook_page_access_token || '').trim()
-      pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || '').trim()
+      pageName = (accountRecord.facebook_page_name || accountRecord.fb_page_name || accountRecord.name || '').trim()
     }
 
     // Try channel_connections table if credentials still missing
@@ -148,9 +148,9 @@ export async function syncFacebookMessengerConversations(
     // Resolve Page ID, Page Name, and Page Access Token from token if present
     if (pageToken) {
       try {
-        // Step 1: Check token directly via /me
+        // Step 1: Check token directly via /me with universal fields (supported by both User and Page nodes)
         const meRes = await fetch(
-          `https://graph.facebook.com/v20.0/me?fields=id,name,category,tasks&access_token=${encodeURIComponent(pageToken)}`
+          `https://graph.facebook.com/v20.0/me?fields=id,name&access_token=${encodeURIComponent(pageToken)}`
         )
         let isPage = false
         let meData: any = null
@@ -167,15 +167,21 @@ export async function syncFacebookMessengerConversations(
           const pages: any[] = accsData?.data || []
           if (pages.length > 0) {
             // User Access Token that has managed Pages
-            const matched = pageId ? pages.find((p) => p.id === pageId) : pages[0]
+            const matched = pageId
+              ? (pages.find(
+                  (p: any) =>
+                    p.id === pageId ||
+                    (p.name && pageId && p.name.trim().toLowerCase() === pageId.trim().toLowerCase())
+                ) || pages[0])
+              : pages[0]
             if (matched) {
               pageId = matched.id
               pageName = matched.name || pageName || 'Facebook Page'
               if (matched.access_token) pageToken = matched.access_token
               isPage = true
             }
-          } else if (accsData?.error?.code === 100 || meData?.category || Array.isArray(meData?.tasks)) {
-            // Error 100 on /me/accounts or has category/tasks proves this is a Page node
+          } else if (accsData?.error?.code === 100) {
+            // Error 100 on /me/accounts proves this is a Page node
             if (meData?.id) {
               pageId = meData.id
               pageName = meData.name || pageName || 'Facebook Page'
@@ -191,8 +197,8 @@ export async function syncFacebookMessengerConversations(
           isPage = true
         }
 
-        // Step 2: If pageId is known, verify Page Name and ensure we hold the real Page token
-        if (pageId) {
+        // Step 2: If numeric pageId is known, verify Page Name and ensure we hold the real Page token
+        if (pageId && /^\d+$/.test(pageId)) {
           try {
             const pageInfoRes = await fetch(
               `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(pageToken)}`
@@ -287,10 +293,10 @@ export async function syncFacebookMessengerConversations(
     const syncLimit = Math.min(Math.max(limit || 50, 10), 100)
 
     // Clean, robust fields supported across all Meta Graph API versions for UnifiedThread
-    const convFields = 'id,updated_time,participants,senders,unread_count,message_count,snippet'
+    const convFields = 'id,updated_time,participants,senders,unread_count,message_count'
 
     const candidates: string[] = []
-    if (pageId) {
+    if (pageId && /^\d+$/.test(pageId)) {
       // 1. Messenger platform (Inbox) - REQUIRED platform=messenger in Meta v17+
       candidates.push(
         `https://graph.facebook.com/v20.0/${pageId}/conversations?platform=messenger&fields=${convFields}&limit=${syncLimit}&access_token=${encodeURIComponent(pageToken)}`
@@ -330,12 +336,14 @@ export async function syncFacebookMessengerConversations(
     let rawConversations: Array<any> = []
     const seenConvIds = new Set<string>()
     const errorsEncountered: string[] = []
+    let anyEndpointSucceeded = false
 
     for (const url of candidates) {
       try {
         const cRes = await fetch(url)
         const cData = await cRes.json()
         if (cRes.ok && Array.isArray(cData?.data)) {
+          anyEndpointSucceeded = true
           for (const item of cData.data) {
             if (item?.id && !seenConvIds.has(item.id)) {
               seenConvIds.add(item.id)
@@ -351,7 +359,7 @@ export async function syncFacebookMessengerConversations(
       }
     }
 
-    if (rawConversations.length === 0 && errorsEncountered.length > 0) {
+    if (rawConversations.length === 0 && !anyEndpointSucceeded && errorsEncountered.length > 0) {
       const topError = errorsEncountered[0]
       return {
         success: false,
@@ -361,7 +369,7 @@ export async function syncFacebookMessengerConversations(
         error: topError,
         debug: {
           pageId,
-          pageName,
+          pageName: pageName || accountRecord?.facebook_page_name || accountRecord?.name || 'Facebook Page',
           rawMetaCount: 0,
           errors: errorsEncountered,
         },
@@ -369,7 +377,7 @@ export async function syncFacebookMessengerConversations(
     }
 
     // Auto-subscribe page to webhooks in background
-    if (pageId) {
+    if (pageId && /^\d+$/.test(pageId)) {
       fetch(
         `https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reactions,message_reads,messaging_optins&access_token=${encodeURIComponent(pageToken)}`,
         { method: 'POST' }
@@ -381,7 +389,7 @@ export async function syncFacebookMessengerConversations(
         success: true,
         conversationsCount: 0,
         messagesCount: 0,
-        pageName,
+        pageName: pageName || accountRecord?.facebook_page_name || accountRecord?.name || 'Facebook Page',
         debug: { pageId, pageName, rawMetaCount: 0 },
       }
     }

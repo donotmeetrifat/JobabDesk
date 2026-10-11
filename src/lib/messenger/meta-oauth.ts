@@ -104,7 +104,7 @@ export async function connectFacebookPage(
   if (token) {
     try {
       const meRes = await fetch(
-        `https://graph.facebook.com/v20.0/me?fields=id,name,category,tasks&access_token=${encodeURIComponent(token)}`
+        `https://graph.facebook.com/v20.0/me?fields=id,name&access_token=${encodeURIComponent(token)}`
       )
       if (meRes.ok) {
         const meData = await meRes.json()
@@ -119,7 +119,13 @@ export async function connectFacebookPage(
             const pages = accountsData?.data || []
             if (pages.length > 0) {
               isUserToken = true
-              const matched = pageId ? pages.find((p: any) => p.id === pageId) : pages[0]
+              const matched = pageId
+                ? (pages.find(
+                    (p: any) =>
+                      p.id === pageId ||
+                      (p.name && pageId && p.name.trim().toLowerCase() === pageId.trim().toLowerCase())
+                  ) || pages[0])
+                : pages[0]
               if (matched) {
                 pageId = matched.id
                 pageName = matched.name || pageName || 'Facebook Page'
@@ -136,7 +142,7 @@ export async function connectFacebookPage(
           pageName = pageName || meData.name || 'Facebook Page'
         }
 
-        if (pageId && isUserToken) {
+        if (pageId && isUserToken && /^\d+$/.test(pageId)) {
           try {
             const pageInfoRes = await fetch(
               `https://graph.facebook.com/v20.0/${pageId}?fields=id,name,access_token&access_token=${encodeURIComponent(token)}`
@@ -164,7 +170,7 @@ export async function connectFacebookPage(
   }
 
   // Auto-subscribe page to Webhooks via Meta Graph API if token available
-  if (token && pageId) {
+  if (token && pageId && /^\d+$/.test(pageId)) {
     try {
       await fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps`, {
         method: 'POST',

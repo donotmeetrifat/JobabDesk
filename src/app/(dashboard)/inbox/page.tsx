@@ -473,9 +473,10 @@ function InboxPageInner() {
                 `Found ${rawCount} conversation(s) on Meta, but failed to save: ${errDetail}`
               );
             } else {
-              const displayName = data.pageName ? `"${data.pageName}"` : "Facebook Page";
+              const displayName = data.pageName || messengerPageName || "Facebook Page";
               toast.info(
-                `Synced with ${displayName}. No conversations found on Meta yet. Send a test message to your Page on Messenger, then click Sync again.`
+                `Synced with "${displayName}". No active conversations on Meta yet. Send a message to your Page on Messenger, then click Sync again!`,
+                { duration: 7000 }
               );
             }
           }
@@ -1234,6 +1235,8 @@ function InboxPageInner() {
             onSyncMessenger={() => handleSyncMessenger()}
             isSyncingMessenger={isSyncingMessenger}
             messengerConnected={Boolean(messengerConnected)}
+            messengerPageName={messengerPageName}
+            messengerPageId={messengerPageId}
             tokenMissing={tokenMissing}
             onOpenTokenModal={() => setShowTokenModal(true)}
           />

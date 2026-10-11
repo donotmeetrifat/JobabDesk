@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X, RefreshCw, KeyRound } from "lucide-react";
+import { Search, ChevronDown, X, RefreshCw, KeyRound, ExternalLink } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,8 @@ interface ConversationListProps {
   onSyncMessenger?: () => void;
   isSyncingMessenger?: boolean;
   messengerConnected?: boolean;
+  messengerPageName?: string;
+  messengerPageId?: string;
   tokenMissing?: boolean;
   onOpenTokenModal?: () => void;
 }
@@ -60,6 +62,8 @@ export function ConversationList({
   onSyncMessenger,
   isSyncingMessenger = false,
   messengerConnected = false,
+  messengerPageName = "",
+  messengerPageId = "",
   tokenMissing = false,
   onOpenTokenModal,
 }: ConversationListProps) {
@@ -457,14 +461,34 @@ export function ConversationList({
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-            <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+          <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+            <p className="text-sm font-medium text-muted-foreground">{t("noConversations")}</p>
             {messengerConnected && (
-              <div className="mt-3 flex flex-col items-center gap-2">
+              <div className="mt-3 flex w-full max-w-[280px] flex-col items-center gap-2">
+                <div className="w-full rounded-lg border border-border bg-muted/40 p-3 text-left text-xs space-y-1.5 shadow-2xs">
+                  <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="truncate">{messengerPageName || "Facebook Page"}</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Meta reported 0 conversations for this page. Send a test message from your personal Facebook/Messenger to your page, then click Sync.
+                  </p>
+                  {messengerPageId && /^\d+$/.test(messengerPageId) && (
+                    <a
+                      href={`https://m.me/${messengerPageId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-400 hover:underline pt-0.5"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Message Page on Messenger
+                    </a>
+                  )}
+                </div>
                 <button
                   onClick={onSyncMessenger}
                   disabled={isSyncingMessenger}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3.5 py-1.5 text-xs font-semibold text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-blue-500/30 bg-blue-500/10 px-3.5 py-1.5 text-xs font-semibold text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
                 >
                   <RefreshCw className={cn("h-3.5 w-3.5", isSyncingMessenger && "animate-spin")} />
                   {isSyncingMessenger ? "Syncing..." : "Sync Messenger Chats"}
@@ -472,7 +496,7 @@ export function ConversationList({
                 {onOpenTokenModal && (
                   <button
                     onClick={onOpenTokenModal}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-2xs"
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-2xs"
                   >
                     <KeyRound className="h-3 w-3 text-blue-500" />
                     Enter / Update Page Token
