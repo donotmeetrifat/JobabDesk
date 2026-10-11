@@ -68,45 +68,106 @@ export async function GET() {
       console.warn('[api/inbox/conversations] SSR client query failed, falling back:', e)
     }
 
+    // 1b. Try SSR client with simpler join without contact_tags (in case contact_tags has schema issues)
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .order('last_message_at', { ascending: false })
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(data as any),
+        })
+      }
+    } catch (e) {}
+
+    // 1c. Try SSR client explicitly filtered by account_id / user_id
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .or(`account_id.eq.${accountId},user_id.eq.${user.id}`)
+        .order('last_message_at', { ascending: false })
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(data as any),
+        })
+      }
+    } catch (e) {}
+
     // 2. Fallback using Admin client (bypasses RLS mismatches)
     const admin = getAdminClient()
 
-    // Align user's profile account_id if needed
-    if (accountId && accountId !== user.id) {
-      try {
-        await admin
-          .from('profiles')
-          .update({ account_id: accountId })
-          .eq('user_id', user.id)
-      } catch {}
-    }
+    if (admin) {
+      // Align user's profile account_id if needed
+      if (accountId && accountId !== user.id) {
+        try {
+          await admin
+            .from('profiles')
+            .update({ account_id: accountId })
+            .eq('user_id', user.id)
+        } catch {}
+      }
 
-    // Query conversations with contacts joined via admin client
-    const { data: adminConvs, error: adminErr } = await admin
-      .from('conversations')
-      .select(CONVERSATION_SELECT)
-      .or(`account_id.eq.${accountId},user_id.eq.${user.id}`)
-      .order('last_message_at', { ascending: false })
+      // Query conversations with contacts joined via admin client
+      const { data: adminConvs, error: adminErr } = await admin
+        .from('conversations')
+        .select(CONVERSATION_SELECT)
+        .or(`account_id.eq.${accountId},user_id.eq.${user.id}`)
+        .order('last_message_at', { ascending: false })
 
-    if (!adminErr && Array.isArray(adminConvs) && adminConvs.length > 0) {
-      return NextResponse.json({
-        success: true,
-        conversations: normalizeConversations(adminConvs as any),
-      })
-    }
+      if (!adminErr && Array.isArray(adminConvs) && adminConvs.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(adminConvs as any),
+        })
+      }
 
-    // Secondary fallback: query by account_id alone or user_id alone
-    const { data: fallbackConvs } = await admin
-      .from('conversations')
-      .select(CONVERSATION_SELECT)
-      .eq('account_id', accountId)
-      .order('last_message_at', { ascending: false })
+      // Try simpler select on admin
+      const { data: adminSimple } = await admin
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .or(`account_id.eq.${accountId},user_id.eq.${user.id}`)
+        .order('last_message_at', { ascending: false })
 
-    if (Array.isArray(fallbackConvs) && fallbackConvs.length > 0) {
-      return NextResponse.json({
-        success: true,
-        conversations: normalizeConversations(fallbackConvs as any),
-      })
+      if (Array.isArray(adminSimple) && adminSimple.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(adminSimple as any),
+        })
+      }
+
+      // Secondary fallback: query by account_id alone
+      const { data: fallbackConvs } = await admin
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .eq('account_id', accountId)
+        .order('last_message_at', { ascending: false })
+
+      if (Array.isArray(fallbackConvs) && fallbackConvs.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(fallbackConvs as any),
+        })
+      }
+
+      // Broadest admin fallback: fetch conversations for this user or any in account
+      const { data: anyConvs } = await admin
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .order('last_message_at', { ascending: false })
+        .limit(100)
+
+      if (Array.isArray(anyConvs) && anyConvs.length > 0) {
+        return NextResponse.json({
+          success: true,
+          conversations: normalizeConversations(anyConvs as any),
+        })
+      }
     }
 
     return NextResponse.json({

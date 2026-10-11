@@ -462,6 +462,22 @@ function InboxPageInner() {
             toast.success(
               `Messenger synced! ${data.conversationsCount} conversation(s), ${data.messagesCount} message(s).`
             );
+            // Immediately load the freshly synced conversations directly into state with zero delay
+            try {
+              const freshRes = await fetch("/api/inbox/conversations");
+              if (freshRes.ok) {
+                const freshJson = await freshRes.json();
+                if (Array.isArray(freshJson.conversations) && freshJson.conversations.length > 0) {
+                  setConversations(freshJson.conversations);
+                  if (!activeConversation && freshJson.conversations[0]) {
+                    setActiveConversation(freshJson.conversations[0]);
+                    setActiveContact(freshJson.conversations[0].contact ?? null);
+                  }
+                }
+              }
+            } catch (loadErr) {
+              console.warn("Immediate conversation reload warning:", loadErr);
+            }
           } else {
             const rawCount = data.debug?.rawMetaCount ?? 0;
             if (rawCount > 0) {

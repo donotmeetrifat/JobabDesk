@@ -118,13 +118,18 @@ export function ConversationList({
 
         if (!error && Array.isArray(data) && data.length > 0) {
           convs = normalizeConversations(data);
-        } else if (error) {
-          console.warn("Direct conversations fetch error:", {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-          });
+        } else {
+          // Retry with simpler contact join without contact_tags (schema resilience)
+          const { data: simpleData, error: simpleErr } = await supabase
+            .from("conversations")
+            .select("*, contact:contacts(*)")
+            .order("last_message_at", { ascending: false });
+
+          if (!simpleErr && Array.isArray(simpleData) && simpleData.length > 0) {
+            convs = normalizeConversations(simpleData as any);
+          } else if (error || simpleErr) {
+            console.warn("Direct conversations fetch error:", error || simpleErr);
+          }
         }
       } catch (err) {
         console.warn("Direct conversations fetch exception:", err);
@@ -133,13 +138,10 @@ export function ConversationList({
       // If direct Supabase query returned empty or had RLS issues, fetch from our authenticated API endpoint
       if (convs.length === 0 && !cancelled) {
         try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 6000);
-          const res = await fetch("/api/inbox/conversations", { signal: controller.signal });
-          clearTimeout(timer);
+          const res = await fetch("/api/inbox/conversations");
           if (res.ok) {
             const json = await res.json();
-            if (Array.isArray(json.conversations)) {
+            if (Array.isArray(json.conversations) && json.conversations.length > 0) {
               convs = json.conversations;
             }
           }
