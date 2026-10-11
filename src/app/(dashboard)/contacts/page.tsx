@@ -838,13 +838,12 @@ export default function ContactsPage() {
                     <TableCell className="text-foreground font-medium">
                       <div className="flex items-center gap-3">
                         <Avatar className="size-8 rounded-full border border-border shrink-0 bg-muted">
-                          {contact.avatar_url && (
-                            <AvatarImage
-                              src={contact.avatar_url}
-                              alt={displayName || 'Contact'}
-                              className="object-cover"
-                            />
-                          )}
+                          <AvatarImage
+                            src={contact.avatar_url || `/api/contacts/${contact.id}/avatar`}
+                            alt={displayName || 'Contact'}
+                            referrerPolicy="no-referrer"
+                            className="object-cover"
+                          />
                           <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
                             {getInitials(displayName || contact.name)}
                           </AvatarFallback>

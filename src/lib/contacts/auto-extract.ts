@@ -92,7 +92,13 @@ export async function autoUpdateContactFromChatMessage(params: {
     }
 
     // Handle Name:
-    if (extracted.name && isValidHumanCustomerName(extracted.name)) {
+    // Only update name if it's NOT a Facebook Messenger contact (whose name must always remain their Facebook profile name)
+    const isMessengerContact =
+      contact.company === 'Facebook Messenger' ||
+      Boolean(contact.messenger_id) ||
+      isFacebookPsid(contact.phone)
+
+    if (!isMessengerContact && extracted.name && isValidHumanCustomerName(extracted.name)) {
       const currentName = contact.name || ''
       const isPlaceholder =
         !currentName ||

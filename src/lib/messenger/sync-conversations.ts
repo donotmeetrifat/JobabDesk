@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
+import { fetchMetaUserProfile } from '@/lib/messenger/profile'
+import { isFacebookPsid } from '@/lib/contacts/extract-info'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -518,7 +520,46 @@ export async function syncFacebookMessengerConversations(
           } catch {}
         }
 
+        if (contact) {
+          // If contact lacks avatar_url or has placeholder name, resolve from Meta profile
+          const needsProfile =
+            !contact.avatar_url ||
+            !contact.name ||
+            contact.name === 'Unknown' ||
+            contact.name.startsWith('Messenger User')
+          if (needsProfile && pageToken && customerPsid) {
+            try {
+              const metaProfile = await fetchMetaUserProfile(customerPsid, pageToken)
+              if (metaProfile?.name || metaProfile?.avatarUrl) {
+                const updates: Record<string, any> = {
+                  updated_at: new Date().toISOString(),
+                  company: 'Facebook Messenger',
+                  messenger_id: customerPsid,
+                }
+                if (metaProfile.name) {
+                  updates.name = metaProfile.name
+                  contact.name = metaProfile.name
+                }
+                if (metaProfile.avatarUrl) {
+                  updates.avatar_url = metaProfile.avatarUrl
+                  contact.avatar_url = metaProfile.avatarUrl
+                }
+                await db.from('contacts').update(updates).eq('id', contact.id)
+              }
+            } catch {}
+          }
+        }
+
         if (!contact) {
+          let resolvedAvatarUrl: string | null = null
+          if (pageToken && customerPsid) {
+            try {
+              const metaProfile = await fetchMetaUserProfile(customerPsid, pageToken)
+              if (metaProfile?.name) customerName = metaProfile.name
+              if (metaProfile?.avatarUrl) resolvedAvatarUrl = metaProfile.avatarUrl
+            } catch {}
+          }
+
           if (!customerName || customerName.trim() === '' || customerName === 'Unknown') {
             customerName = `Messenger User (${customerPsid.slice(-4)})`
           }
@@ -529,7 +570,7 @@ export async function syncFacebookMessengerConversations(
             phone: customerPsid,
             name: customerName,
             email: customerEmail && !customerEmail.endsWith('@facebook.com') ? customerEmail : null,
-            avatar_url: null,
+            avatar_url: resolvedAvatarUrl,
             company: 'Facebook Messenger',
           }
 
@@ -805,6 +846,33 @@ export async function syncFacebookMessengerConversations(
     for (let i = 0; i < rawConversations.length; i += CHUNK_SIZE) {
       const chunk = rawConversations.slice(i, i + CHUNK_SIZE)
       await Promise.all(chunk.map((c) => processConversation(c)))
+    }
+
+    // Background batch-heal for existing Messenger contacts in this account with missing avatars or placeholder names
+    if (pageToken) {
+      try {
+        const { data: missingAvatars } = await db
+          .from('contacts')
+          .select('id, name, phone, messenger_id, avatar_url')
+          .eq('account_id', actualAccountId)
+          .is('avatar_url', null)
+          .limit(25)
+
+        if (missingAvatars && missingAvatars.length > 0) {
+          for (const mc of missingAvatars) {
+            const psid = mc.messenger_id || (isFacebookPsid(mc.phone) ? mc.phone : null)
+            if (psid) {
+              const prof = await fetchMetaUserProfile(psid, pageToken)
+              if (prof?.avatarUrl || prof?.name) {
+                const up: Record<string, any> = { updated_at: new Date().toISOString() }
+                if (prof.avatarUrl) up.avatar_url = prof.avatarUrl
+                if (prof.name) up.name = prof.name
+                await db.from('contacts').update(up).eq('id', mc.id)
+              }
+            }
+          }
+        }
+      } catch {}
     }
 
     return {

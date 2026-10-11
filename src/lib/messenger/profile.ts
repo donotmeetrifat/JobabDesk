@@ -25,6 +25,11 @@ export async function fetchMetaUserProfile(
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
+    let resolvedName: string | undefined
+    let firstName: string | undefined
+    let lastName: string | undefined
+    let avatarUrl: string | undefined
+
     // 1. Try full fields: name, first_name, last_name, profile_pic
     try {
       const res = await fetch(
@@ -33,61 +38,76 @@ export async function fetchMetaUserProfile(
       )
       if (res.ok) {
         const json = await res.json()
-        const resolvedName =
+        resolvedName =
           json.name ||
           [json.first_name, json.last_name].filter(Boolean).join(' ').trim() ||
           undefined
-        if (resolvedName) {
-          clearTimeout(timer)
-          return {
-            name: resolvedName,
-            firstName: json.first_name || undefined,
-            lastName: json.last_name || undefined,
-            avatarUrl: json.profile_pic || undefined,
-          }
-        }
+        firstName = json.first_name || undefined
+        lastName = json.last_name || undefined
+        avatarUrl = json.profile_pic || json.picture?.data?.url || undefined
       }
     } catch {
       // Fall through to fallback fields
     }
 
     // 2. Fallback: fields=name,profile_pic (avoids #100 nonexisting field errors on first/last name)
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/v20.0/${encodeURIComponent(cleanPsid)}?fields=name,profile_pic&access_token=${encodeURIComponent(accessToken)}`,
-        { signal: controller.signal }
-      )
-      if (res.ok) {
-        const json = await res.json()
-        if (json.name) {
-          clearTimeout(timer)
-          return {
-            name: json.name.trim(),
-            avatarUrl: json.profile_pic || undefined,
-          }
+    if (!resolvedName) {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v20.0/${encodeURIComponent(cleanPsid)}?fields=name,profile_pic&access_token=${encodeURIComponent(accessToken)}`,
+          { signal: controller.signal }
+        )
+        if (res.ok) {
+          const json = await res.json()
+          if (json.name) resolvedName = json.name.trim()
+          if (!avatarUrl) avatarUrl = json.profile_pic || json.picture?.data?.url || undefined
         }
+      } catch {
+        // Fall through to bare name
       }
-    } catch {
-      // Fall through to bare name
     }
 
     // 3. Fallback: bare fields=name
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/v20.0/${encodeURIComponent(cleanPsid)}?fields=name&access_token=${encodeURIComponent(accessToken)}`,
-        { signal: controller.signal }
-      )
-      if (res.ok) {
-        const json = await res.json()
-        if (json.name) {
-          clearTimeout(timer)
-          return {
-            name: json.name.trim(),
+    if (!resolvedName) {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v20.0/${encodeURIComponent(cleanPsid)}?fields=name&access_token=${encodeURIComponent(accessToken)}`,
+          { signal: controller.signal }
+        )
+        if (res.ok) {
+          const json = await res.json()
+          if (json.name) resolvedName = json.name.trim()
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    // 4. Picture fallback if avatarUrl is missing: /{cleanPsid}/picture?type=large&redirect=false
+    if (!avatarUrl) {
+      try {
+        const picRes = await fetch(
+          `https://graph.facebook.com/v20.0/${encodeURIComponent(cleanPsid)}/picture?type=large&redirect=false&access_token=${encodeURIComponent(accessToken)}`,
+          { signal: controller.signal }
+        )
+        if (picRes.ok) {
+          const picJson = await picRes.json()
+          if (picJson?.data?.url) {
+            avatarUrl = picJson.data.url
           }
         }
+      } catch {
+        // Safe ignore
       }
-    } catch {
-      // safe fallback
+    }
+
+    if (resolvedName || avatarUrl) {
+      return {
+        name: resolvedName,
+        firstName,
+        lastName,
+        avatarUrl,
+      }
     }
   } catch (err) {
     console.warn('[Meta Profile Fetch] Error fetching profile for PSID:', cleanPsid, err)

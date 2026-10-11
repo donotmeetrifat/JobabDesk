@@ -543,14 +543,14 @@ export async function detectAndCreateOrderFromChat({
       (isFreeOrder || (explicitPaymentMethod === 'cod') || (Boolean(explicitPaymentMethod) && isPaymentConfirmed))
   }
 
-  // Update contact information in CRM even if order is not fully complete yet
-  if (contactId && (phone || address || email || (hasName && resolvedName))) {
+  // Update contact information in CRM even if order is not fully complete yet (address/phone/email)
+  // NEVER overwrite contact name with delivery recipient name — contact name must remain the customer's profile name!
+  if (contactId && (phone || address || email)) {
     try {
       const contactUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
       if (phone && !isFacebookPsid(phone)) contactUpdates.phone = phone
       if (address) contactUpdates.address = address
       if (email) contactUpdates.email = email
-      if (hasName && resolvedName) contactUpdates.name = resolvedName
       await db.from('contacts').update(contactUpdates).eq('id', contactId)
     } catch {
       // safe fallback

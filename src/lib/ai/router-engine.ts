@@ -1095,16 +1095,18 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
+  let contactDbAvatarUrl: string | null = null
   if (!customerContactName && contactId) {
     try {
       const { data: cRow } = await client
         .from('contacts')
-        .select('name, first_name, last_name, phone, address, email')
+        .select('name, first_name, last_name, phone, address, email, avatar_url')
         .eq('id', contactId)
         .maybeSingle()
       if (cRow) {
         customerContactName =
           cRow.name || [cRow.first_name, cRow.last_name].filter(Boolean).join(' ') || null
+        contactDbAvatarUrl = cRow.avatar_url || null
         if (!contactDbAddress) contactDbAddress = cRow.address || null
         if (!contactDbPhone) contactDbPhone = cRow.phone || null
         if (!contactDbEmail) contactDbEmail = cRow.email || null
@@ -1114,24 +1116,32 @@ export async function handleIncomingCustomerMessage({
     }
   }
 
-  // If customer name is empty or a placeholder on Messenger, try resolving their real Meta profile
+  // If on Messenger, ensure the contact has their verified Facebook profile name & avatar_url
   const cleanedInitialContactName = cleanCustomerName(customerContactName)
-  if (!cleanedInitialContactName && channel === 'messenger' && customerPhone) {
+  const isPlaceholderName =
+    !customerContactName ||
+    customerContactName === 'Unknown' ||
+    customerContactName.startsWith('Messenger User') ||
+    !cleanedInitialContactName
+
+  if (channel === 'messenger' && customerPhone) {
     const token = pageAccessToken || account?.facebook_page_access_token
-    if (token) {
+    const needsMetaProfile = isPlaceholderName || !contactDbAvatarUrl
+    if (token && needsMetaProfile) {
       try {
         const metaProfile = await fetchMetaUserProfile(customerPhone, token)
-        if (metaProfile?.name) {
-          customerContactName = metaProfile.name
+        if (metaProfile?.name || metaProfile?.avatarUrl) {
+          if (metaProfile.name) customerContactName = metaProfile.name
           if (contactId) {
+            const updates: Record<string, any> = {
+              company: 'Facebook Messenger',
+              updated_at: new Date().toISOString(),
+            }
+            if (metaProfile.name) updates.name = metaProfile.name
+            if (metaProfile.avatarUrl) updates.avatar_url = metaProfile.avatarUrl
             client
               .from('contacts')
-              .update({
-                name: metaProfile.name,
-                avatar_url: metaProfile.avatarUrl || null,
-                company: 'Facebook Messenger',
-                updated_at: new Date().toISOString(),
-              })
+              .update(updates)
               .eq('id', contactId)
               .catch(() => {})
           }

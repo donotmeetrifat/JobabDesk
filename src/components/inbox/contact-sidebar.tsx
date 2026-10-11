@@ -342,6 +342,15 @@ export function ContactSidebar({
       : contactHandle(effectiveContact);
   const initials = displayName.charAt(0).toUpperCase();
 
+  const sidebarAvatarSrc =
+    effectiveContact.avatar_url ||
+    (effectiveContact.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
+  const [sidebarAvatarFailed, setSidebarAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setSidebarAvatarFailed(false);
+  }, [sidebarAvatarSrc]);
+
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
       <ScrollArea className="flex-1">
@@ -349,16 +358,15 @@ export function ContactSidebar({
           {/* Contact Info Header */}
           <div className="flex flex-col items-center text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground overflow-hidden shadow-inner">
-              {effectiveContact.avatar_url ? (
+              {sidebarAvatarSrc && !sidebarAvatarFailed ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={effectiveContact.avatar_url}
+                  src={sidebarAvatarSrc}
                   alt={displayName}
                   referrerPolicy="no-referrer"
-                  crossOrigin="anonymous"
                   className="h-16 w-16 rounded-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = "none";
+                  onError={() => {
+                    setSidebarAvatarFailed(true);
                   }}
                 />
               ) : (

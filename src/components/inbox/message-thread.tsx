@@ -1051,6 +1051,15 @@ export function MessageThread({
     ? (currentAssignee?.full_name ?? t("assigned"))
     : t("assign");
 
+  const threadAvatarSrc =
+    effectiveContact.avatar_url ||
+    (effectiveContact.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
+  const [threadAvatarFailed, setThreadAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setThreadAvatarFailed(false);
+  }, [threadAvatarSrc]);
+
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
     // thread's flex *wrapper* (issue #165), but this root keeps the
@@ -1078,15 +1087,14 @@ export function MessageThread({
             </button>
           )}
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden shadow-inner">
-            {effectiveContact.avatar_url ? (
+            {threadAvatarSrc && !threadAvatarFailed ? (
               <img
-                src={effectiveContact.avatar_url}
+                src={threadAvatarSrc}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
                 className="h-9 w-9 rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = "none";
+                onError={() => {
+                  setThreadAvatarFailed(true);
                 }}
               />
             ) : (

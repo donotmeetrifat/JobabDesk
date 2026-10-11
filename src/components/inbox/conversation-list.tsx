@@ -551,6 +551,13 @@ function ConversationItem({
       : contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
 
+  const avatarSrc = contact?.avatar_url || (contact?.id ? `/api/contacts/${contact.id}/avatar` : null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarSrc]);
+
   const handleClick = useCallback(() => {
     onSelect(conversation);
   }, [onSelect, conversation]);
@@ -570,17 +577,15 @@ function ConversationItem({
       )}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden">
-        {contact?.avatar_url ? (
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground overflow-hidden shadow-inner">
+        {avatarSrc && !avatarFailed ? (
           <img
-            src={contact.avatar_url}
+            src={avatarSrc}
             alt={displayName}
             referrerPolicy="no-referrer"
-            crossOrigin="anonymous"
             className="h-10 w-10 rounded-full object-cover"
-            onError={(e) => {
-              // Hide broken image so initials show
-              (e.target as HTMLElement).style.display = 'none';
+            onError={() => {
+              setAvatarFailed(true);
             }}
           />
         ) : (
