@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Banknote, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import dynamic from 'next/dynamic'
 import { OrderTable } from './order-table'
-import { OrderDialog } from './order-dialog'
-import { OrderDetailDialog } from './order-detail-dialog'
+
+const OrderDialog = dynamic(() => import('./order-dialog').then((mod) => mod.OrderDialog), { ssr: false })
+const OrderDetailDialog = dynamic(() => import('./order-detail-dialog').then((mod) => mod.OrderDetailDialog), { ssr: false })
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
 import type { Order, OrderStats, PaymentStatus } from '@/types/orders'
@@ -431,20 +433,24 @@ export function OrdersShell() {
         onUpdatePaymentStatus={handleUpdatePaymentStatus}
       />
 
-      {/* Dialogs */}
-      <OrderDialog
-        open={dialogOpen}
-        order={selectedOrder}
-        onClose={() => setDialogOpen(false)}
-        onSaved={handleSaved}
-      />
+      {/* Lazy Dialogs */}
+      {dialogOpen && (
+        <OrderDialog
+          open={dialogOpen}
+          order={selectedOrder}
+          onClose={() => setDialogOpen(false)}
+          onSaved={handleSaved}
+        />
+      )}
 
-      <OrderDetailDialog
-        open={detailOpen}
-        order={selectedOrder}
-        onClose={() => setDetailOpen(false)}
-        onStatusUpdated={handleStatusUpdated}
-      />
+      {detailOpen && selectedOrder && (
+        <OrderDetailDialog
+          open={detailOpen}
+          order={selectedOrder}
+          onClose={() => setDetailOpen(false)}
+          onStatusUpdated={handleStatusUpdated}
+        />
+      )}
     </div>
   )
 }

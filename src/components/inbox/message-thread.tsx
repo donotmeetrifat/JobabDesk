@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
@@ -30,8 +31,12 @@ import {
   CreditCard,
   CheckCircle2,
 } from "lucide-react";
-import { OrderDetailDialog } from "@/components/orders/order-detail-dialog";
 import type { Order } from "@/types/orders";
+
+const OrderDetailDialog = dynamic(
+  () => import("@/components/orders/order-detail-dialog").then((m) => m.OrderDetailDialog),
+  { ssr: false }
+);
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +58,11 @@ import {
   type SendMediaPayload,
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
-import { TemplatePicker } from "./template-picker";
+
+const TemplatePicker = dynamic(
+  () => import("./template-picker").then((m) => m.TemplatePicker),
+  { ssr: false }
+);
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
