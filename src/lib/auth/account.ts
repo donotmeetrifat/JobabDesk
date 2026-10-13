@@ -115,19 +115,61 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   }
 
   // Use SECURITY DEFINER function to bypass RLS for account context
-  // lookup. Safe: user is already authenticated via getUser() above.
-  const { data: rawCtx, error: ctxErr } = await supabase
-    .rpc("get_account_context", { p_user_id: user.id })
-    .maybeSingle();
-
-  let ctx = rawCtx as {
+  // lookup. Fallback to direct point queries if RPC is unavailable or returns empty.
+  interface AccountCtxRecord {
     account_id: string;
     account_role: string;
     account_name: string;
-  } | null;
+  }
+  let ctx: AccountCtxRecord | null = null;
 
-  if (ctxErr) {
-    console.error("[getCurrentAccount] context fetch error:", ctxErr);
+  if (typeof supabase.rpc === 'function') {
+    try {
+      const { data: rawCtx, error: ctxErr } = await supabase
+        .rpc("get_account_context", { p_user_id: user.id })
+        .maybeSingle();
+
+      if (ctxErr) {
+        console.error("[getCurrentAccount] context fetch error:", ctxErr);
+      } else if (rawCtx) {
+        ctx = rawCtx as unknown as AccountCtxRecord;
+      }
+    } catch (e) {
+      console.warn("[getCurrentAccount] RPC call failed, falling back to direct queries:", e);
+    }
+  }
+
+  // Point query fallback for direct lookups or when RPC is not defined
+  if (!ctx || !ctx.account_id || !ctx.account_role) {
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("account_id, account_role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      throw new ForbiddenError("Could not load account context");
+    }
+
+    if (profile?.account_id && profile?.account_role) {
+      const { data: acct, error: acctErr } = await supabase
+        .from("accounts")
+        .select("id, name")
+        .eq("id", profile.account_id)
+        .maybeSingle();
+
+      if (acctErr) {
+        throw new ForbiddenError("Could not load account context");
+      }
+
+      if (acct) {
+        ctx = {
+          account_id: acct.id,
+          account_role: profile.account_role,
+          account_name: acct.name,
+        };
+      }
+    }
   }
 
   // Auto-healing: If user exists but has no account linked (e.g. signup trigger mismatch),

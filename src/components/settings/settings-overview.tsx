@@ -114,6 +114,11 @@ export function SettingsOverview({
       subtitle: 'Manual tracking & Steadfast / Pathao APIs',
     },
     {
+      section: 'security',
+      loading: false,
+      subtitle: 'RBAC, secret masking & audit trail',
+    },
+    {
       section: 'appearance',
       loading: false,
       subtitle: t('appearance', { mode: cap(mode), theme: themeName }),

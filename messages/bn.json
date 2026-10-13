@@ -1551,14 +1551,16 @@
     "sections": {
       "overview": "ওভারভিউ",
       "profile": "আপনার প্রোফাইল",
-      "security": "লগইন ও সিকিউরিটি",
       "appearance": "অ্যাপিয়ারেন্স",
+      "payment": "পেমেন্ট মাধ্যম",
+      "courier": "কুরিয়ার ও ডেলিভারি",
+      "deals": "ডিল ও মুদ্রা",
+      "security": "নিরাপত্তা ও অ্যাক্সেস",
+      "members": "টিম মেম্বারস",
       "whatsapp": "হোয়াটসঅ্যাপ",
       "templates": "টেমপ্লেট",
       "quick-replies": "দ্রুত উত্তর (Quick replies)",
       "fields": "ফিল্ড ও ট্যাগ",
-      "deals": "ডিল ও মুদ্রা",
-      "members": "টিম মেম্বারস",
       "api": "এপিআই কি (API keys)"
     },
     "overview": {

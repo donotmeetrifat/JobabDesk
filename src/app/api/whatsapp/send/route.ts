@@ -18,7 +18,7 @@ function getAdminClient() {
   const serviceKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
+    'dummy-service-key-for-test'
   return createAdminClient(url, serviceKey)
 }
 

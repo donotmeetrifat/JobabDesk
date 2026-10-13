@@ -5,6 +5,8 @@ import {
   resolveMerchantPaymentSettings,
   parsePaymentInstructions,
 } from '@/lib/payments/instruction-parser'
+import { maskSecret, isMaskedValue } from '@/lib/security/masking'
+import { logSecurityAudit } from '@/lib/security/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +24,7 @@ function getAdminClient() {
 
 export async function GET() {
   try {
-    const { supabase, accountId } = await requireRole('agent')
+    const { supabase, accountId, role } = await requireRole('agent')
     const admin = getAdminClient()
     const db = admin || supabase
 
@@ -37,7 +39,24 @@ export async function GET() {
       return NextResponse.json({ settings: {} })
     }
 
-    return NextResponse.json({ settings: account || {}, ...account })
+    const isOwner = role === 'owner'
+    const sanitizedAccount = { ...(account || {}) }
+
+    // Mask sensitive Meta tokens unless accessed by owner
+    if (!isOwner) {
+      if (sanitizedAccount.whatsapp_access_token) {
+        sanitizedAccount.whatsapp_access_token = maskSecret(sanitizedAccount.whatsapp_access_token)
+      }
+      if (sanitizedAccount.facebook_page_access_token) {
+        sanitizedAccount.facebook_page_access_token = maskSecret(sanitizedAccount.facebook_page_access_token)
+      }
+    }
+
+    return NextResponse.json({
+      settings: sanitizedAccount,
+      ...sanitizedAccount,
+      is_masked: !isOwner,
+    })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -45,7 +64,8 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, accountId } = await requireRole('agent')
+    // Modifying operational and channel configuration requires admin or owner
+    const { supabase, accountId, userId } = await requireRole('admin')
     const admin = getAdminClient()
     const db = admin || supabase
     const body = await req.json()
@@ -86,6 +106,13 @@ export async function PATCH(req: Request) {
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
       if (body[key] !== undefined) {
+        // Do not overwrite real tokens with masked strings
+        if (
+          (key === 'whatsapp_access_token' || key === 'facebook_page_access_token') &&
+          isMaskedValue(body[key])
+        ) {
+          continue
+        }
         updates[key] = body[key]
       }
     }
@@ -98,19 +125,22 @@ export async function PATCH(req: Request) {
         body.ai_store_instructions !== undefined ||
         body.ai_business_description !== undefined)
     ) {
+      const textToParse = [
+        body.special_instructions,
+        body.ai_store_instructions,
+        body.ai_business_description,
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      const parsed = parsePaymentInstructions(textToParse)
+
       const { data: currentAcc } = await db
         .from('accounts')
-        .select('payment_settings, special_instructions, ai_store_instructions, ai_business_description')
+        .select('payment_settings')
         .eq('id', accountId)
         .maybeSingle()
 
-      const targetSpecial =
-        body.special_instructions !== undefined
-          ? body.special_instructions
-          : currentAcc?.special_instructions || ''
-      const targetExtra = `${body.ai_store_instructions !== undefined ? body.ai_store_instructions : currentAcc?.ai_store_instructions || ''} ${body.ai_business_description !== undefined ? body.ai_business_description : currentAcc?.ai_business_description || ''}`
-
-      const parsed = parsePaymentInstructions(`${targetSpecial}\n${targetExtra}`)
       const currentPs = currentAcc?.payment_settings || {}
 
       const updatedPs = {
@@ -140,7 +170,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ success: true })
     }
 
-    // Try full update first with adminClient
+    // Try update with adminClient
     const { data, error } = await db
       .from('accounts')
       .update(updates)
@@ -150,7 +180,6 @@ export async function PATCH(req: Request) {
 
     if (error) {
       console.warn('[PATCH /api/ai/settings] Full update warning:', error.message)
-      // Retry by filtering fields one by one if column missing in Supabase
       const safeUpdates: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(updates)) {
         const { error: singleErr } = await db
@@ -161,12 +190,30 @@ export async function PATCH(req: Request) {
           safeUpdates[k] = v
         }
       }
+      await logSecurityAudit({
+        supabase: db,
+        accountId,
+        actorUserId: userId,
+        action: 'settings_updated',
+        resourceType: 'settings',
+        details: { updated_fields: Object.keys(safeUpdates) },
+      })
       return NextResponse.json({ settings: safeUpdates, ...safeUpdates })
     }
+
+    // Log security audit event
+    await logSecurityAudit({
+      supabase: db,
+      accountId,
+      actorUserId: userId,
+      action: 'settings_updated',
+      resourceType: 'settings',
+      details: { updated_fields: Object.keys(updates) },
+    })
 
     return NextResponse.json({ settings: data || {}, ...data })
   } catch (err) {
     console.error('[PATCH /api/ai/settings] Error:', err)
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+    return toErrorResponse(err)
   }
 }

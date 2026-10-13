@@ -41,7 +41,9 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "products": "Products",
+    "orders": "Orders"
   },
   "Header": {
     "dashboard": "Panel",
@@ -88,7 +90,8 @@
       "orders": "Pedidos",
       "newDeal": "Nuevo negocio",
       "newBroadcast": "Nueva difusión",
-      "newAutomation": "Nueva automatización"
+      "newAutomation": "Nueva automatización",
+      "aiAgents": "AI Agents"
     },
     "activityFeed": {
       "title": "Actividad reciente",
@@ -362,7 +365,9 @@
       "toastFailedDelete": "Error al eliminar el contacto",
       "toastDeleted": "Contacto eliminado",
       "toastBulkFailedDelete": "Error al eliminar los contactos",
-      "toastBulkDeleted": "{count} contactos eliminados"
+      "toastBulkDeleted": "{count} contactos eliminados",
+      "exportBtn": "Export CSV",
+      "exporting": "Exporting..."
     },
     "form": {
       "addTitle": "Agregar contacto",
@@ -463,7 +468,7 @@
     },
     "importModal": {
       "title": "Importar contactos",
-      "desc": "Sube un CSV con una columna <phoneCode>phone</phoneCode> obligatoria. Opcionales: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por comas; pon entre comillas las celdas con varias etiquetas).",
+      "desc": "Upload a CSV with <phoneCode>phone</phoneCode> (WhatsApp) or <profileCode>profile_url</profileCode> (Messenger). Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode>.",
       "uploadDropzone": "Haz clic para elegir un archivo CSV",
       "uploadHint": ".csv hasta el límite de tu navegador",
       "rowsReady": "{count} fila lista",
@@ -1404,7 +1409,8 @@
       "labelTooLong": "La etiqueta debe tener {max} caracteres o menos",
       "copied": "Enlace de invitación copiado",
       "clipboardBlocked": "Portapapeles bloqueado: copia el enlace manualmente",
-      "whatsappMessage": "Únete a {accountName} en wacrm con este enlace (válido por {expiresInDays} días): {url}"
+      "whatsappMessage": "Únete a {accountName} en wacrm con este enlace (válido por {expiresInDays} días): {url}",
+      "createFailed": "Failed to create invitation"
     },
     "tagsAndFields": {
       "title": "Campos y etiquetas",
@@ -1660,7 +1666,8 @@
       "phoneNumberIdNotNumeric": "El Phone Number ID debe contener solo dígitos. Copia el id numérico desde Meta → WhatsApp → Configuración de la API, no el número de teléfono en sí.",
       "wabaIdNotNumeric": "El ID de la cuenta de WhatsApp Business debe contener solo dígitos. Cópialo desde Meta → WhatsApp → Configuración de la API.",
       "wabaSubscribed": "La cuenta de WhatsApp Business está suscrita a esta app: los webhooks entrantes pueden entregarse.",
-      "wabaNotSubscribed": "La cuenta de WhatsApp Business no está suscrita a esta app, así que Meta no entregará webhooks entrantes. Vuelve a ingresar el token de acceso y guarda de nuevo para suscribirla."
+      "wabaNotSubscribed": "La cuenta de WhatsApp Business no está suscrita a esta app, así que Meta no entregará webhooks entrantes. Vuelve a ingresar el token de acceso y guarda de nuevo para suscribirla.",
+      "savedButRegistrationFailedMessage": "Saved, but Meta couldn't register the number: {error}"
     },
     "sections": {
       "overview": "Resumen",
@@ -1731,7 +1738,8 @@
       "cancel": "Cancelar",
       "signingOut": "Cerrando sesión…",
       "signOutEverywhere": "Cerrar sesión en todas partes",
-      "signOutFailed": "Error al cerrar sesión: {message}"
+      "signOutFailed": "Error al cerrar sesión: {message}",
+      "avatar": "Avatar"
     },
     "appearance": {
       "title": "Apariencia",
@@ -1859,7 +1867,8 @@
       "saveSuccess": "Asistente de IA guardado.",
       "saveFailed": "Error al guardar.",
       "removeSuccess": "Configuración de IA eliminada.",
-      "removeFailed": "Error al eliminar."
+      "removeFailed": "Error al eliminar.",
+      "loading": "Loading…"
     },
     "aiKnowledge": {
       "loadFailed": "Error al cargar la base de conocimiento",
@@ -1889,6 +1898,27 @@
       "editDoc": "Editar",
       "deleteDoc": "Eliminar",
       "loading": "Cargando…"
+    },
+    "quickReplies": {
+      "title": "Quick replies",
+      "description": "Reusable snippets — plain text or a saved interactive message — that agents can insert from the inbox composer.",
+      "newQuickReply": "New quick reply",
+      "noQuickReplies": "No quick replies yet. Create one to reuse it across conversations.",
+      "nameRequired": "Give the quick reply a name.",
+      "saveFailed": "Couldn't save the quick reply.",
+      "saveSuccessUpdate": "Quick reply updated.",
+      "saveSuccessCreate": "Quick reply created.",
+      "confirmDelete": "Delete this quick reply?",
+      "deleteFailed": "Couldn't delete the quick reply.",
+      "editTitle": "Edit quick reply",
+      "newTitle": "New quick reply",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Business hours",
+      "tabText": "Text",
+      "tabInteractive": "Interactive",
+      "contentPlaceholder": "The message text to insert",
+      "cancel": "Cancel",
+      "save": "Save"
     }
   },
   "SignupPage": {

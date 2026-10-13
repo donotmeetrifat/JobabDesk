@@ -26,14 +26,48 @@ export async function GET(
       return NextResponse.json({ error: 'Missing conversationId' }, { status: 400 })
     }
 
-    // Soft check - do not block reactions with 401 if browser session cookie is in flux
-    try {
-      const supabase = await createServerClient()
-      await supabase.auth.getUser()
-    } catch {}
+    const supabase = await createServerClient()
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser()
 
-    // Fetch all reactions for this conversation using Admin client to bypass browser RLS limitations
+    if (userErr || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const admin = getAdminClient()
+
+    // Enforce tenant isolation (Anti-IDOR)
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('account_id')
+      .or(`user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle()
+
+    let accountId = profile?.account_id
+    if (!accountId) {
+      const { data: ownedAcc } = await admin
+        .from('accounts')
+        .select('id')
+        .eq('owner_user_id', user.id)
+        .maybeSingle()
+      if (ownedAcc?.id) accountId = ownedAcc.id
+    }
+
+    if (accountId) {
+      const { data: conv } = await admin
+        .from('conversations')
+        .select('id')
+        .eq('id', conversationId)
+        .or(`account_id.eq.${accountId},user_id.eq.${user.id}`)
+        .maybeSingle()
+
+      if (!conv) {
+        return NextResponse.json({ error: 'Conversation not found', reactions: [] }, { status: 404 })
+      }
+    }
+
     const { data: adminReactions, error: adminErr } = await admin
       .from('message_reactions')
       .select('*')

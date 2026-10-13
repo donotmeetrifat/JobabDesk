@@ -14,6 +14,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { PaymentSettingsTab } from '@/components/settings/payment-settings-tab';
 import { CourierSettingsTab } from '@/components/settings/courier-settings-tab';
+import { SecurityTab } from '@/components/settings/security-tab';
 import {
   resolveSection,
   type SettingsSection,
@@ -68,6 +69,7 @@ function SettingsPageInner() {
     payment: <PaymentSettingsTab />,
     courier: <CourierSettingsTab />,
     deals: <DealsSettings />,
+    security: <SecurityTab />,
     members: <MembersTab />,
   };
 

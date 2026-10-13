@@ -1335,7 +1335,9 @@
       "profile": "Your profile",
       "appearance": "Appearance",
       "payment": "Payment methods",
+      "courier": "Courier & Delivery",
       "deals": "Deals & currency",
+      "security": "Security & Access",
       "members": "Team members"
     },
     "overview": {

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { CourierSettings } from '@/types/orders'
+import { maskSecret, isMaskedValue } from '@/lib/security/masking'
+import { logSecurityAudit } from '@/lib/security/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +34,7 @@ function getAdminClient() {
 
 export async function GET() {
   try {
-    const { supabase, accountId } = await requireRole('agent')
+    const { supabase, accountId, role } = await requireRole('agent')
     const admin = getAdminClient()
     const db = admin || supabase
 
@@ -48,36 +50,40 @@ export async function GET() {
     }
 
     const raw = (account?.courier_settings as CourierSettings) || {}
+    const hasSteadfast = Boolean(raw.steadfast?.api_key && raw.steadfast?.secret_key)
+    const hasPathao = Boolean(
+      raw.pathao?.client_id &&
+        raw.pathao?.client_secret &&
+        raw.pathao?.username &&
+        raw.pathao?.password &&
+        raw.pathao?.store_id
+    )
+
+    const isOwner = role === 'owner'
+
+    // Mask sensitive tokens unless accessed by owner
     const settings: CourierSettings = {
       default_provider: raw.default_provider || 'manual',
       steadfast: {
         enabled: Boolean(raw.steadfast?.enabled),
-        api_key: raw.steadfast?.api_key || '',
-        secret_key: raw.steadfast?.secret_key || '',
+        api_key: isOwner ? (raw.steadfast?.api_key || '') : maskSecret(raw.steadfast?.api_key),
+        secret_key: isOwner ? (raw.steadfast?.secret_key || '') : maskSecret(raw.steadfast?.secret_key),
       },
       pathao: {
         enabled: Boolean(raw.pathao?.enabled),
         client_id: raw.pathao?.client_id || '',
-        client_secret: raw.pathao?.client_secret || '',
+        client_secret: isOwner ? (raw.pathao?.client_secret || '') : maskSecret(raw.pathao?.client_secret),
         username: raw.pathao?.username || '',
-        password: raw.pathao?.password || '',
+        password: isOwner ? (raw.pathao?.password || '') : maskSecret(raw.pathao?.password),
         store_id: raw.pathao?.store_id || '',
       },
     }
-
-    const hasSteadfast = Boolean(settings.steadfast.api_key && settings.steadfast.secret_key)
-    const hasPathao = Boolean(
-      settings.pathao.client_id &&
-        settings.pathao.client_secret &&
-        settings.pathao.username &&
-        settings.pathao.password &&
-        settings.pathao.store_id
-    )
 
     return NextResponse.json({
       settings,
       has_steadfast: hasSteadfast,
       has_pathao: hasPathao,
+      is_masked: !isOwner,
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -86,12 +92,13 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, accountId } = await requireRole('agent')
+    // Only admin and owner can modify API credentials and settings
+    const { supabase, accountId, userId } = await requireRole('admin')
     const admin = getAdminClient()
     const db = admin || supabase
     const body = await req.json()
 
-    // 1. Fetch current settings to preserve values if partial updates are sent
+    // 1. Fetch current settings to preserve values if partial updates or masked values are sent
     const { data: currentAcc } = await db
       .from('accounts')
       .select('courier_settings')
@@ -103,6 +110,14 @@ export async function PATCH(req: Request) {
       ...((currentAcc?.courier_settings as CourierSettings) || {}),
     }
 
+    // Preserve existing real secrets if masked values were submitted
+    const resolveSecret = (incoming: unknown, previous: string | undefined): string => {
+      if (incoming === undefined || incoming === null) return previous || ''
+      const str = String(incoming).trim()
+      if (isMaskedValue(str)) return previous || ''
+      return str
+    }
+
     const nextSettings: CourierSettings = {
       default_provider: body.default_provider || existing.default_provider || 'manual',
       steadfast: {
@@ -110,14 +125,8 @@ export async function PATCH(req: Request) {
           body.steadfast?.enabled !== undefined
             ? Boolean(body.steadfast.enabled)
             : existing.steadfast.enabled,
-        api_key:
-          body.steadfast?.api_key !== undefined
-            ? String(body.steadfast.api_key).trim()
-            : existing.steadfast.api_key,
-        secret_key:
-          body.steadfast?.secret_key !== undefined
-            ? String(body.steadfast.secret_key).trim()
-            : existing.steadfast.secret_key,
+        api_key: resolveSecret(body.steadfast?.api_key, existing.steadfast.api_key),
+        secret_key: resolveSecret(body.steadfast?.secret_key, existing.steadfast.secret_key),
       },
       pathao: {
         enabled:
@@ -128,18 +137,12 @@ export async function PATCH(req: Request) {
           body.pathao?.client_id !== undefined
             ? String(body.pathao.client_id).trim()
             : existing.pathao.client_id,
-        client_secret:
-          body.pathao?.client_secret !== undefined
-            ? String(body.pathao.client_secret).trim()
-            : existing.pathao.client_secret,
+        client_secret: resolveSecret(body.pathao?.client_secret, existing.pathao.client_secret),
         username:
           body.pathao?.username !== undefined
             ? String(body.pathao.username).trim()
             : existing.pathao.username,
-        password:
-          body.pathao?.password !== undefined
-            ? String(body.pathao.password).trim()
-            : existing.pathao.password,
+        password: resolveSecret(body.pathao?.password, existing.pathao.password),
         store_id:
           body.pathao?.store_id !== undefined
             ? String(body.pathao.store_id).trim()
@@ -159,6 +162,20 @@ export async function PATCH(req: Request) {
       console.error('[PATCH /api/courier/settings] Error:', updateError.message)
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
+
+    // Log security audit event
+    await logSecurityAudit({
+      supabase: db,
+      accountId,
+      actorUserId: userId,
+      action: 'courier_settings_updated',
+      resourceType: 'settings',
+      details: {
+        default_provider: nextSettings.default_provider,
+        steadfast_enabled: nextSettings.steadfast.enabled,
+        pathao_enabled: nextSettings.pathao.enabled,
+      },
+    })
 
     return NextResponse.json({
       success: true,

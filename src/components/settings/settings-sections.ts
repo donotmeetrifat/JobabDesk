@@ -6,6 +6,7 @@ import {
   Truck,
   User,
   UsersRound,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export const SETTINGS_SECTIONS = [
   'payment',
   'courier',
   'deals',
+  'security',
   'members',
 ] as const;
 
@@ -41,6 +43,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   payment: { id: 'payment', label: 'Payment methods', icon: CreditCard, group: 'workspace' },
   courier: { id: 'courier', label: 'Courier & Delivery', icon: Truck, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
+  security: { id: 'security', label: 'Security & Access', icon: ShieldCheck, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
 };
 
