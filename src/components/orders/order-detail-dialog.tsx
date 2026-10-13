@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   X,
   CheckCircle2,
+  XCircle,
   Clock,
   Truck,
   PackageCheck,
@@ -23,12 +24,14 @@ import {
   ChevronRight,
   ShieldCheck,
   RotateCcw,
+  Link2,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
-import type { Order, OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus, PaymentRequest } from '@/types/orders'
 
 interface OrderDetailDialogProps {
   open: boolean
@@ -89,6 +92,74 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   if (!open || !order) return null
+
+  const [liveRequests, setLiveRequests] = useState<PaymentRequest[]>(order.payment_requests || [])
+  const [loadingRequests, setLoadingRequests] = useState(false)
+
+  useEffect(() => {
+    if (!open || !order?.id) return
+    setLiveRequests(order.payment_requests || [])
+
+    let isMounted = true
+    const fetchRequests = async () => {
+      try {
+        setLoadingRequests(true)
+        const res = await fetch(`/api/pay/${order.id}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (isMounted && data.payment_requests) {
+          setLiveRequests(data.payment_requests)
+        }
+      } catch {
+        // silent fallback
+      } finally {
+        if (isMounted) setLoadingRequests(false)
+      }
+    }
+
+    fetchRequests()
+    return () => {
+      isMounted = false
+    }
+  }, [open, order?.id, order?.payment_requests])
+
+  const handleVerifyPayment = async (
+    paymentRequestId: string,
+    action: 'approve' | 'reject'
+  ) => {
+    setUpdating(true)
+    try {
+      const res = await fetch('/api/pay/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_request_id: paymentRequestId,
+          action,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Verification failed')
+
+      toast.success(
+        action === 'approve'
+          ? 'Payment verified and order confirmed!'
+          : 'Payment request marked as rejected.'
+      )
+
+      // Refresh live requests
+      const reqRes = await fetch(`/api/pay/${order.id}`)
+      if (reqRes.ok) {
+        const reqData = await reqRes.json()
+        if (reqData.payment_requests) setLiveRequests(reqData.payment_requests)
+      }
+
+      onStatusUpdated()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Action failed')
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text)
@@ -210,6 +281,18 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 <ExternalLink className="size-3" />
               </a>
             ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                const payUrl = `${window.location.origin}/pay/${order.order_number || order.id}`
+                handleCopy(payUrl, 'Payment Link')
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
+              title="Copy public customer payment link"
+            >
+              <Link2 className="size-3.5" />
+              <span>Copy Pay Link</span>
+            </button>
             <button
               onClick={onClose}
               className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
@@ -503,12 +586,15 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                     className={`rounded-lg border px-2.5 py-1 text-xs font-bold outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-colors ${
                       order.payment_status === 'paid'
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                        : order.payment_status === 'payment_submitted'
+                        ? 'bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400'
                         : order.payment_status === 'partial'
                         ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
                         : 'bg-muted border-border text-foreground'
                     }`}
                   >
                     <option value="unpaid">Unpaid</option>
+                    <option value="payment_submitted">Submitted (TrxID)</option>
                     <option value="partial">Partial</option>
                     <option value="paid">Paid</option>
                   </select>
@@ -555,6 +641,125 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                     {formatCurrency(Number(order.total) || 0, defaultCurrency)}
                   </span>
                 </div>
+
+                {/* Customer TrxID Submissions / 1-Click Verification */}
+                {liveRequests.length > 0 && (
+                  <div className="pt-3 border-t space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                        <ShieldCheck className="size-3.5 text-emerald-500" />
+                        TrxID Submissions ({liveRequests.length})
+                      </span>
+                      {loadingRequests && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                    </div>
+
+                    <div className="space-y-2">
+                      {liveRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className={`rounded-lg border p-2.5 text-xs space-y-2 transition-all ${
+                            req.status === 'verified'
+                              ? 'bg-emerald-500/5 border-emerald-500/30'
+                              : req.status === 'rejected'
+                              ? 'bg-rose-500/5 border-rose-500/30 opacity-70'
+                              : 'bg-amber-500/10 border-amber-500/40 shadow-xs'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold uppercase text-[10px] px-1.5 py-0.5 rounded bg-muted text-foreground">
+                                {req.payment_method}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {req.payment_type === 'delivery_advance' ? 'Advance Fee' : 'Full Payment'}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                req.status === 'verified'
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                  : req.status === 'rejected'
+                                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                  : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
+                              }`}
+                            >
+                              {req.status === 'submitted' ? 'Needs Verification' : req.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-background/60 p-2 rounded border border-border/50">
+                            <div>
+                              <span className="text-muted-foreground block text-[10px]">Sender Number:</span>
+                              <span className="font-mono font-medium text-foreground">{req.sender_number}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[10px]">TrxID:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-mono font-bold text-foreground tracking-wider">{req.trx_id}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(req.trx_id, 'TrxID')}
+                                  className="p-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                                  title="Copy TrxID"
+                                >
+                                  {copiedField === 'TrxID' ? (
+                                    <Check className="size-2.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="size-2.5" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[10px]">Amount:</span>
+                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {formatCurrency(Number(req.amount), defaultCurrency)}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[10px]">Submitted:</span>
+                              <span className="text-muted-foreground text-[10px]">
+                                {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+
+                          {req.notes && (
+                            <p className="text-[11px] text-muted-foreground italic">Note: &ldquo;{req.notes}&rdquo;</p>
+                          )}
+
+                          {req.status === 'rejected' && req.rejection_reason && (
+                            <p className="text-[11px] text-rose-500 font-medium">Reason: {req.rejection_reason}</p>
+                          )}
+
+                          {/* Action buttons if status === 'submitted' */}
+                          {req.status === 'submitted' && (
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                disabled={updating}
+                                onClick={() => handleVerifyPayment(req.id, 'approve')}
+                                className="flex-1 flex items-center justify-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-2 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                              >
+                                <CheckCircle2 className="size-3.5" />
+                                <span>Verify &amp; Mark Paid</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={updating}
+                                onClick={() => handleVerifyPayment(req.id, 'reject')}
+                                className="flex items-center justify-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 py-1.5 px-3 text-xs font-semibold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                              >
+                                <XCircle className="size-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

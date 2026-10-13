@@ -420,6 +420,7 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
                   className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="unpaid">Unpaid</option>
+                  <option value="payment_submitted">Submitted (TrxID)</option>
                   <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
                 </select>

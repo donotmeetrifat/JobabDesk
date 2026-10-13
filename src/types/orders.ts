@@ -1,6 +1,52 @@
 export type OrderStatus = 'new' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 export type PaymentMethod = 'cod' | 'bkash' | 'rocket' | 'nagad' | 'bank_transfer' | 'free'
-export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
+export type PaymentStatus = 'unpaid' | 'partial' | 'paid' | 'payment_submitted'
+
+export interface BkashSettings {
+  number: string
+  type: 'personal' | 'merchant' | 'agent'
+}
+
+export interface NagadSettings {
+  number: string
+  type: 'personal' | 'merchant'
+}
+
+export interface RocketSettings {
+  number: string
+  type: 'personal' | 'merchant'
+}
+
+export interface BankSettings {
+  details: string
+}
+
+export interface PaymentSettings {
+  bkash?: BkashSettings
+  nagad?: NagadSettings
+  rocket?: RocketSettings
+  bank?: BankSettings
+  allow_cod_advance?: boolean
+  cod_advance_amount?: number
+}
+
+export interface PaymentRequest {
+  id: string
+  order_id: string
+  account_id: string
+  amount: number
+  payment_method: 'bkash' | 'nagad' | 'rocket' | 'bank'
+  payment_type: 'full' | 'delivery_advance'
+  sender_number: string
+  trx_id: string
+  notes?: string | null
+  status: 'submitted' | 'verified' | 'rejected'
+  verified_at?: string | null
+  verified_by?: string | null
+  rejection_reason?: string | null
+  created_at: string
+  updated_at: string
+}
 
 export interface OrderItem {
   id?: string
@@ -37,6 +83,7 @@ export interface Order {
   created_at: string
   updated_at: string
   order_items?: OrderItem[]
+  payment_requests?: PaymentRequest[]
   contact?: {
     id: string
     name: string
@@ -51,3 +98,4 @@ export interface OrderStats {
   cancelled: number
   totalRevenue: number
 }
+

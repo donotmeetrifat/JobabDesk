@@ -16,7 +16,7 @@ export async function GET(req: Request) {
 
     let query = supabase
       .from('orders')
-      .select('*, order_items(*), contact:contacts(id, name, phone)', { count: 'exact' })
+      .select('*, order_items(*), contact:contacts(id, name, phone), payment_requests(*)', { count: 'exact' })
       .eq('account_id', accountId)
       .order('created_at', { ascending: false })
 

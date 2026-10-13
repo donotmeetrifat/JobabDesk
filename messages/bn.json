@@ -1544,6 +1544,18 @@
     "pageTitle": "সেটিংস",
     "pageDesc": "অ্যাকাউন্ট, টিম মেম্বার, হোয়াটসঅ্যাপ এপিআই ও চ্যানেল পরিচালনা করুন।",
     "sectionsNav": "সেটিংস মেনু",
+    "groups": {
+      "account": "অ্যাকাউন্ট",
+      "workspace": "ওয়ার্কস্পেস"
+    },
+    "sections": {
+      "overview": "ওভারভিউ",
+      "profile": "প্রোফাইল",
+      "appearance": "অ্যাপিয়ারেন্স",
+      "payment": "পেমেন্ট মেথড",
+      "deals": "ডিল ও কারেন্সি",
+      "members": "টিম মেম্বার"
+    },
     "overview": {
       "notSetup": "Not set up yet",
       "connected": "Connected",

@@ -27,7 +27,11 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  CreditCard,
+  CheckCircle2,
 } from "lucide-react";
+import { OrderDetailDialog } from "@/components/orders/order-detail-dialog";
+import type { Order } from "@/types/orders";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
@@ -1060,6 +1064,72 @@ export function MessageThread({
     setThreadAvatarFailed(false);
   }, [threadAvatarSrc]);
 
+  // Check if active contact/conversation has an order with payment_submitted
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null);
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
+  const [verifyingTrx, setVerifyingTrx] = useState(false);
+
+  const fetchPendingOrder = useCallback(async () => {
+    if (!conversation) {
+      setPendingPaymentOrder(null);
+      return;
+    }
+    const contactId = conversation.contact_id || effectiveContact?.id;
+    if (!contactId && !conversation.id) {
+      setPendingPaymentOrder(null);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      let query = supabase
+        .from("orders")
+        .select("*, order_items(*), contact:contacts(id, name, phone), payment_requests(*)")
+        .eq("payment_status", "payment_submitted")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (contactId && conversation.id) {
+        query = query.or(`contact_id.eq.${contactId},conversation_id.eq.${conversation.id}`);
+      } else if (contactId) {
+        query = query.eq("contact_id", contactId);
+      } else {
+        query = query.eq("conversation_id", conversation.id);
+      }
+
+      const { data } = await query.maybeSingle();
+      setPendingPaymentOrder((data as Order) || null);
+    } catch {
+      setPendingPaymentOrder(null);
+    }
+  }, [conversation?.id, conversation?.contact_id, effectiveContact?.id]);
+
+  useEffect(() => {
+    fetchPendingOrder();
+  }, [fetchPendingOrder]);
+
+  const handleQuickVerify = async (paymentRequestId: string) => {
+    try {
+      setVerifyingTrx(true);
+      const res = await fetch("/api/pay/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payment_request_id: paymentRequestId,
+          action: "approve",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+      toast.success("Payment verified & order confirmed!");
+      await fetchPendingOrder();
+    } catch (err: any) {
+      toast.error(err?.message || "Verification failed");
+    } finally {
+      setVerifyingTrx(false);
+    }
+  };
+
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
     // thread's flex *wrapper* (issue #165), but this root keeps the
@@ -1286,6 +1356,50 @@ export function MessageThread({
         </div>
       </div>
 
+      {/* Attention Banner if Contact has Submitted Payment TrxID */}
+      {pendingPaymentOrder && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-xs backdrop-blur-sm animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium">
+            <CreditCard className="size-4 shrink-0 text-amber-500 animate-pulse" />
+            <span>
+              💳 Customer submitted TrxID:{" "}
+              <strong className="font-mono text-foreground bg-background/70 px-1.5 py-0.5 rounded border border-amber-500/30">
+                {pendingPaymentOrder.payment_requests?.[0]?.trx_id ||
+                  pendingPaymentOrder.payment_reference ||
+                  "Pending"}
+              </strong>{" "}
+              for Order{" "}
+              <strong className="font-mono text-foreground">
+                #{pendingPaymentOrder.order_number}
+              </strong>{" "}
+              (৳{Number(pendingPaymentOrder.total).toLocaleString()})
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {pendingPaymentOrder.payment_requests?.[0]?.id && (
+              <button
+                type="button"
+                disabled={verifyingTrx}
+                onClick={() =>
+                  handleQuickVerify(pendingPaymentOrder.payment_requests![0].id)
+                }
+                className="rounded bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 text-[11px] font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+              >
+                <CheckCircle2 className="size-3" />
+                <span>{verifyingTrx ? "Verifying..." : "Verify Payment"}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowOrderDialog(true)}
+              className="rounded border border-amber-500/40 bg-background/80 hover:bg-background text-foreground px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer"
+            >
+              View Order
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
@@ -1427,6 +1541,19 @@ export function MessageThread({
         onActiveIdChange={handleMediaChange}
         contactLabel={contactDisplayName}
       />
+
+      {/* Order Detail Modal for Payment Verification */}
+      {pendingPaymentOrder && (
+        <OrderDetailDialog
+          open={showOrderDialog}
+          order={pendingPaymentOrder}
+          onClose={() => setShowOrderDialog(false)}
+          onStatusUpdated={() => {
+            setShowOrderDialog(false);
+            fetchPendingOrder();
+          }}
+        />
+      )}
     </div>
   );
 }

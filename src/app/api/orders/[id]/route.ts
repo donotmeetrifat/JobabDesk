@@ -13,7 +13,7 @@ export async function GET(
 
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*, order_items(*), contact:contacts(id, name, phone)')
+      .select('*, order_items(*), contact:contacts(id, name, phone), payment_requests(*)')
       .eq('id', id)
       .eq('account_id', accountId)
       .single()
@@ -110,7 +110,7 @@ export async function PATCH(
       .update(updates)
       .eq('id', id)
       .eq('account_id', accountId)
-      .select('*, order_items(*), contact:contacts(id, name, phone)')
+      .select('*, order_items(*), contact:contacts(id, name, phone), payment_requests(*)')
       .single()
 
     if (updateErr) {

@@ -1,5 +1,6 @@
 import {
   Coins,
+  CreditCard,
   LayoutGrid,
   Palette,
   User,
@@ -14,6 +15,7 @@ export const SETTINGS_SECTIONS = [
   'overview',
   'profile',
   'appearance',
+  'payment',
   'deals',
   'members',
 ] as const;
@@ -34,6 +36,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
   profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
   appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
+  payment: { id: 'payment', label: 'Payment methods', icon: CreditCard, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
 };

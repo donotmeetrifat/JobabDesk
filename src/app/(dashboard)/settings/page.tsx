@@ -12,6 +12,7 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
+import { PaymentSettingsTab } from '@/components/settings/payment-settings-tab';
 import {
   resolveSection,
   type SettingsSection,
@@ -63,6 +64,7 @@ function SettingsPageInner() {
     overview: <SettingsOverview onSelect={go} />,
     profile: <ProfileForm />,
     appearance: <AppearancePanel />,
+    payment: <PaymentSettingsTab />,
     deals: <DealsSettings />,
     members: <MembersTab />,
   };

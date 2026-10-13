@@ -75,6 +75,7 @@ export async function PATCH(req: Request) {
       'facebook_page_access_token',
       'messenger_status',
       'playground_chat_history',
+      'payment_settings',
     ]
 
     const updates: Record<string, unknown> = {}

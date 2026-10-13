@@ -52,6 +52,10 @@ const PAYMENT_BADGES: Record<PaymentStatus, { label: string; style: string }> = 
     label: 'Unpaid',
     style: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800',
   },
+  payment_submitted: {
+    label: 'Submitted (TrxID)',
+    style: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800',
+  },
   partial: {
     label: 'Partial',
     style: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800',

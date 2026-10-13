@@ -1326,6 +1326,18 @@
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
     "sectionsNav": "Settings sections",
+    "groups": {
+      "account": "Account",
+      "workspace": "Workspace"
+    },
+    "sections": {
+      "overview": "Overview",
+      "profile": "Your profile",
+      "appearance": "Appearance",
+      "payment": "Payment methods",
+      "deals": "Deals & currency",
+      "members": "Team members"
+    },
     "overview": {
       "notSetup": "Not set up yet",
       "connected": "Connected",
