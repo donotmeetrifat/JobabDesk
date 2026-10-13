@@ -160,9 +160,9 @@ export async function detectAndCreateOrderFromChat({
     address = extracted.address || historyExtracted.address || customerAddress || null
   }
 
-  let email = extracted.email || historyExtracted.email || customerEmail || llmOrderData?.customer_email || null
+  const email = extracted.email || historyExtracted.email || customerEmail || llmOrderData?.customer_email || null
 
-  let resolvedName =
+  const resolvedName =
     (isValidHumanCustomerName(customerName) ? customerName : null) ||
     (isValidHumanCustomerName(extracted.name) ? extracted.name : null) ||
     (isValidHumanCustomerName(historyExtracted.name) ? historyExtracted.name : null) ||
@@ -276,7 +276,7 @@ export async function detectAndCreateOrderFromChat({
   }
 
   // Helper to validate realistic product prices (reject phone numbers, bKash numbers, etc.)
-  const isPlausiblePrice = (val: any): boolean => {
+  const isPlausiblePrice = (val: unknown): boolean => {
     if (val === null || val === undefined) return false
     const num = Number(val)
     if (isNaN(num) || num <= 0) return false
@@ -568,6 +568,11 @@ export async function detectAndCreateOrderFromChat({
   }
 
   const hasName = isValidHumanName(resolvedName)
+  const hasCustomerIdentity =
+    hasName ||
+    Boolean(customerName && customerName.trim().length > 1) ||
+    Boolean(contactId) ||
+    Boolean(phone)
   const hasPhone = Boolean(phone && !isFacebookPsid(phone) && phone.length >= 10)
   const hasAddress = Boolean(address && isDetailedDeliveryAddress(address))
   const hasEmail = Boolean(email && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()))
@@ -584,8 +589,8 @@ export async function detectAndCreateOrderFromChat({
     }
     isOrderComplete = hasPhone && hasEmail && (isFreeOrder || Boolean(explicitPaymentMethod))
   } else {
-    // PHYSICAL PRODUCT: 4 items (Name, Delivery Address, Delivery Phone, Payment Method)
-    if (!hasName) missingRequirements.push('name')
+    // PHYSICAL PRODUCT: Must have delivery address, phone number, payment method, and customer identity
+    if (!hasCustomerIdentity) missingRequirements.push('name')
     if (!hasAddress) missingRequirements.push('delivery_address')
     if (!hasPhone) missingRequirements.push('delivery_number')
     if (!isFreeOrder && !explicitPaymentMethod) {
@@ -593,7 +598,7 @@ export async function detectAndCreateOrderFromChat({
     }
 
     isOrderComplete =
-      hasName &&
+      hasCustomerIdentity &&
       hasAddress &&
       hasPhone &&
       (isFreeOrder || Boolean(explicitPaymentMethod))
@@ -619,7 +624,11 @@ export async function detectAndCreateOrderFromChat({
     return null
   }
 
-  const finalPaymentMethod: PaymentMethod = isFreeOrder ? 'free' : (explicitPaymentMethod || (isDigital ? 'bkash' : 'cod'))
+  let normalizedMethod = isFreeOrder ? 'free' : (explicitPaymentMethod || (isDigital ? 'bkash' : 'cod'))
+  if ((normalizedMethod as string) === 'online') {
+    normalizedMethod = 'bkash'
+  }
+  const finalPaymentMethod: PaymentMethod = normalizedMethod as PaymentMethod
   const finalPaymentStatus: PaymentStatus = isFreeOrder ? 'paid' : (isPaymentConfirmed && finalPaymentMethod !== 'cod' ? 'paid' : 'unpaid')
 
   // 7. Deduplication & Existing Order Update Check:

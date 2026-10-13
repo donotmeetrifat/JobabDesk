@@ -1088,8 +1088,9 @@ export function MessageThread({
       if (!res.ok) throw new Error(data.error || "Verification failed");
       toast.success("Payment verified & order confirmed!");
       await fetchPendingOrder();
-    } catch (err: any) {
-      toast.error(err?.message || "Verification failed");
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : "Verification failed";
+      toast.error(errorMsg);
     } finally {
       setVerifyingTrx(false);
     }

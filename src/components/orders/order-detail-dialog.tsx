@@ -90,10 +90,7 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
   const { defaultCurrency } = useAuth()
   const [updating, setUpdating] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
-
-  if (!open || !order) return null
-
-  const [liveRequests, setLiveRequests] = useState<PaymentRequest[]>(order.payment_requests || [])
+  const [liveRequests, setLiveRequests] = useState<PaymentRequest[]>(order?.payment_requests || [])
   const [loadingRequests, setLoadingRequests] = useState(false)
 
   useEffect(() => {
@@ -122,6 +119,8 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
       isMounted = false
     }
   }, [open, order?.id, order?.payment_requests])
+
+  if (!open || !order) return null
 
   const handleVerifyPayment = async (
     paymentRequestId: string,

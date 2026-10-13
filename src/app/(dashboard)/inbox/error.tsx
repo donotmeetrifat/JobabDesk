@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
 export default function InboxError({
@@ -10,6 +11,8 @@ export default function InboxError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const router = useRouter()
+
   useEffect(() => {
     console.error('[Inbox Error Boundary]:', error)
   }, [error])
@@ -35,7 +38,10 @@ export default function InboxError({
           </button>
           <button
             type="button"
-            onClick={() => window.location.assign('/inbox')}
+            onClick={() => {
+              router.push('/inbox')
+              reset()
+            }}
             className="rounded-lg border border-border bg-background px-4 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
           >
             Reset to All Chats

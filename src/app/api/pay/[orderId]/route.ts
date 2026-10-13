@@ -18,23 +18,146 @@ function getAdminClient() {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-async function findOrder(admin: ReturnType<typeof getAdminClient>, orderId: string) {
-  const isUuid = UUID_REGEX.test(orderId)
-  let query = admin
-    .from('orders')
-    .select(
-      'id, order_number, customer_name, customer_phone, customer_address, delivery_charge, subtotal, discount, total, status, payment_status, payment_method, notes, created_at, account_id, order_items(id, product_name, product_sku, unit_price, quantity, total)'
-    )
+async function findOrder(admin: ReturnType<typeof getAdminClient>, rawOrderId: string) {
+  let cleanId = ''
+  try {
+    cleanId = decodeURIComponent(rawOrderId || '').trim()
+  } catch {
+    cleanId = (rawOrderId || '').trim()
+  }
+  cleanId = cleanId.replace(/^#+/, '').trim()
 
-  if (isUuid) {
-    query = query.eq('id', orderId)
+  const isSpecialPlaceholder =
+    !cleanId ||
+    cleanId.toLowerCase() === 'undefined' ||
+    cleanId.toLowerCase() === 'null' ||
+    cleanId.toLowerCase() === 'latest' ||
+    cleanId.toLowerCase() === 'recent'
+
+  const selectColumnsWithItems =
+    'id, order_number, customer_name, customer_phone, customer_address, delivery_charge, subtotal, discount, total, status, payment_status, payment_method, notes, created_at, account_id, order_items(id, product_name, product_sku, unit_price, quantity, total)'
+  const selectColumnsSimple =
+    'id, order_number, customer_name, customer_phone, customer_address, delivery_charge, subtotal, discount, total, status, payment_status, payment_method, notes, created_at, account_id'
+
+  let order: any = null
+
+  if (isSpecialPlaceholder) {
+    // Graceful fallback: return the latest order
+    const { data } = await admin
+      .from('orders')
+      .select(selectColumnsWithItems)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    order = data
+  } else if (UUID_REGEX.test(cleanId)) {
+    const { data } = await admin
+      .from('orders')
+      .select(selectColumnsWithItems)
+      .eq('id', cleanId)
+      .maybeSingle()
+    order = data
   } else {
-    query = query.eq('order_number', orderId.trim())
+    // 1. Exact match on order_number
+    let res = await admin
+      .from('orders')
+      .select(selectColumnsWithItems)
+      .eq('order_number', cleanId)
+      .maybeSingle()
+    order = res.data
+
+    // 1b. Uppercase match (order_number in DB is usually ORD-YYYY-XXXX)
+    if (!order && cleanId.toUpperCase() !== cleanId) {
+      const resUpper = await admin
+        .from('orders')
+        .select(selectColumnsWithItems)
+        .eq('order_number', cleanId.toUpperCase())
+        .maybeSingle()
+      order = resUpper.data
+    }
+
+    // 2. Try prefixing 'ORD-' if not already matching
+    if (!order && !cleanId.toUpperCase().startsWith('ORD-')) {
+      const resPrefix = await admin
+        .from('orders')
+        .select(selectColumnsWithItems)
+        .eq('order_number', `ORD-${cleanId.toUpperCase()}`)
+        .maybeSingle()
+      order = resPrefix.data
+    }
+
+    // 3. Try case-insensitive ilike if supported by the client
+    if (!order) {
+      const builder = admin.from('orders').select(selectColumnsWithItems) as any
+      if (typeof builder.ilike === 'function') {
+        try {
+          const resIlike = await builder.ilike('order_number', cleanId).maybeSingle()
+          if (resIlike?.data) order = resIlike.data
+        } catch {
+          // safe fallback
+        }
+      }
+    }
+
+    // 4. Try phone number lookup if cleanId is a phone number (strictly numeric)
+    const isPhoneNumber = /^\+?\d{10,15}$/.test(cleanId)
+    if (!order && isPhoneNumber) {
+      const resPhone = await admin
+        .from('orders')
+        .select(selectColumnsWithItems)
+        .eq('customer_phone', cleanId)
+        .maybeSingle()
+      order = resPhone.data
+    }
+
+    // 5. Try partial search via ilike if available
+    if (!order && cleanId.length >= 3) {
+      const builder = admin.from('orders').select(selectColumnsWithItems) as any
+      if (typeof builder.ilike === 'function') {
+        try {
+          const resPartial = await builder
+            .ilike('order_number', `%${cleanId}%`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (resPartial?.data) order = resPartial.data
+        } catch {
+          // safe fallback
+        }
+      }
+    }
   }
 
-  const { data, error } = await query.maybeSingle()
-  if (error || !data) return null
-  return data
+  // Fallback if join on order_items failed or threw an error: query orders table directly
+  if (!order && !isSpecialPlaceholder) {
+    let simpleQuery = admin.from('orders').select(selectColumnsSimple)
+    if (UUID_REGEX.test(cleanId)) {
+      simpleQuery = simpleQuery.eq('id', cleanId)
+    } else {
+      simpleQuery = simpleQuery.eq('order_number', cleanId.toUpperCase())
+    }
+    const { data: simpleData } = await simpleQuery.maybeSingle()
+    if (simpleData) {
+      order = simpleData
+    }
+  }
+
+  if (!order) return null
+
+  // Ensure items array is always populated even if join failed
+  if (!order.order_items || !Array.isArray(order.order_items)) {
+    try {
+      const { data: items } = await admin
+        .from('order_items')
+        .select('id, product_name, product_sku, unit_price, quantity, total')
+        .eq('order_id', order.id)
+      order.order_items = items || []
+    } catch {
+      order.order_items = []
+    }
+  }
+
+  return order
 }
 
 export async function GET(

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, use } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ShieldCheck,
   Copy,
@@ -93,6 +94,7 @@ export default function PublicPaymentPage({
   params: Promise<{ orderId: string }>
 }) {
   const { orderId } = use(params)
+  const router = useRouter()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -111,6 +113,8 @@ export default function PublicPaymentPage({
   const [submitting, setSubmitting] = useState(false)
   const [showResubmitForm, setShowResubmitForm] = useState(false)
 
+  const [lookupQuery, setLookupQuery] = useState('')
+
   const fetchOrderData = async () => {
     try {
       setLoading(true)
@@ -126,12 +130,19 @@ export default function PublicPaymentPage({
       setStore(data.store)
       setPaymentRequests(data.payment_requests || [])
 
+      if (typeof window !== 'undefined' && data.order?.order_number) {
+        try {
+          localStorage.setItem('jobabdesk_last_order', data.order.order_number)
+        } catch {}
+      }
+
       // Auto-prefill sender number with customer phone if available
       if (data.order?.customer_phone && !senderNumber) {
         setSenderNumber(data.order.customer_phone)
       }
-    } catch (err: any) {
-      setError(err?.message || 'Unable to load payment page')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to load payment page'
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -140,6 +151,13 @@ export default function PublicPaymentPage({
   useEffect(() => {
     fetchOrderData()
   }, [orderId])
+
+  const handleLookupSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const clean = lookupQuery.trim().replace(/^#+/, '').trim()
+    if (!clean) return
+    router.push(`/pay/${encodeURIComponent(clean)}`)
+  }
 
   const copyToClipboard = (text: string, key: string) => {
     if (!text) return
@@ -195,8 +213,9 @@ export default function PublicPaymentPage({
       setNotes('')
       // Refresh order state
       await fetchOrderData()
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to submit payment details.')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to submit payment details.'
+      toast.error(msg)
     } finally {
       setSubmitting(false)
     }
@@ -214,19 +233,52 @@ export default function PublicPaymentPage({
   if (error || !order) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-2xl">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Order Not Found</h2>
-          <p className="text-slate-400 text-sm mb-6">
-            {error || 'We could not locate this order. Please verify your order link.'}
-          </p>
-          <Button
-            variant="outline"
-            className="w-full border-slate-700 text-slate-200"
-            onClick={() => window.location.reload()}
-          >
-            Retry Loading
-          </Button>
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-2xl space-y-4">
+          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
+          <div>
+            <h2 className="text-xl font-bold mb-1">Order Not Found</h2>
+            <p className="text-slate-400 text-xs">
+              {error || 'We could not locate this order with the provided link.'}
+            </p>
+          </div>
+
+          <form onSubmit={handleLookupSubmit} className="space-y-2.5 pt-2 text-left">
+            <label className="text-[11px] font-medium text-slate-300 block">
+              Search by Order Number or Phone Number:
+            </label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g. ORD-2026-0001 or 017XXXXXXXX"
+                value={lookupQuery}
+                onChange={(e) => setLookupQuery(e.target.value)}
+                className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600 font-mono text-xs focus:border-emerald-500"
+              />
+              <Button
+                type="submit"
+                disabled={!lookupQuery.trim()}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-4"
+              >
+                Find
+              </Button>
+            </div>
+          </form>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 border-slate-800 text-slate-300 hover:bg-slate-800 text-xs"
+              onClick={() => window.location.reload()}
+            >
+              Retry Loading
+            </Button>
+            <Button
+              variant="ghost"
+              className="flex-1 text-slate-400 hover:text-white text-xs"
+              onClick={() => router.push('/pay')}
+            >
+              Payment Portal
+            </Button>
+          </div>
         </div>
       </div>
     )

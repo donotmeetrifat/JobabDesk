@@ -77,6 +77,7 @@ export function ContactSidebar({
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
   const [togglingAiMute, setTogglingAiMute] = useState(false);
+  const [failedAvatarSrc, setFailedAvatarSrc] = useState<string | null>(null);
   const [aiMuted, setAiMuted] = useState(
     Boolean(contact?.ai_auto_reply_muted ?? conversation?.ai_autoreply_disabled ?? false)
   );
@@ -91,6 +92,11 @@ export function ContactSidebar({
   useEffect(() => {
     onConversationUpdatedRef.current = onConversationUpdated;
   });
+
+  const sidebarAvatarSrc =
+    effectiveContact?.avatar_url ||
+    (effectiveContact?.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
+  const sidebarAvatarFailed = Boolean(sidebarAvatarSrc && failedAvatarSrc === sidebarAvatarSrc);
 
   // Track conversation scan signature to avoid redundant network queries
   const lastScannedSignatureRef = useRef<string | null>(null);
@@ -264,9 +270,9 @@ export function ContactSidebar({
       }
 
       toast.success(next ? "AI auto-reply muted for this customer" : "AI auto-reply resumed");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setAiMuted(!next);
-      toast.error(err?.message || "Failed to update AI status");
+      toast.error(err instanceof Error ? err.message : "Failed to update AI status");
     } finally {
       setTogglingAiMute(false);
     }
@@ -342,14 +348,7 @@ export function ContactSidebar({
       : contactHandle(effectiveContact);
   const initials = displayName.charAt(0).toUpperCase();
 
-  const sidebarAvatarSrc =
-    effectiveContact.avatar_url ||
-    (effectiveContact.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
-  const [sidebarAvatarFailed, setSidebarAvatarFailed] = useState(false);
 
-  useEffect(() => {
-    setSidebarAvatarFailed(false);
-  }, [sidebarAvatarSrc]);
 
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
@@ -366,7 +365,7 @@ export function ContactSidebar({
                   referrerPolicy="no-referrer"
                   className="h-16 w-16 rounded-full object-cover"
                   onError={() => {
-                    setSidebarAvatarFailed(true);
+                    if (sidebarAvatarSrc) setFailedAvatarSrc(sidebarAvatarSrc);
                   }}
                 />
               ) : (

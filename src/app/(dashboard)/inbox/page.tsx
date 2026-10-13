@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
@@ -16,7 +15,7 @@ import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { extractCustomerInfoFromMessage, isFacebookPsid } from "@/lib/contacts/extract-info";
 import Link from "next/link";
 import { toast } from "sonner";
-import { WifiOff, RefreshCw, KeyRound, ExternalLink, X, MessageCircle, Trash2 } from "lucide-react";
+import { RefreshCw, KeyRound, ExternalLink, X, MessageCircle, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
@@ -35,7 +34,6 @@ export default function InboxPage() {
 }
 
 function InboxPageInner() {
-  const t = useTranslations("Inbox.page");
   const router = useRouter();
   const searchParams = useSearchParams();
   /**
@@ -509,15 +507,16 @@ function InboxPageInner() {
           }
           toast.error(data.error || "Failed to sync Messenger conversations");
         }
-      } catch (err: any) {
-        setTokenModalError(err.message || "Network error syncing Messenger");
-        toast.error(err.message || "Network error syncing Messenger");
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : "Network error syncing Messenger";
+        setTokenModalError(errorMsg);
+        toast.error(errorMsg);
       } finally {
         setIsSyncingMessenger(false);
         setSavingToken(false);
       }
     },
-    [messengerPageId, messengerPageName, tokenMissing]
+    [activeConversation, messengerPageId, messengerPageName, tokenMissing]
   );
 
   const handleCleanInbox = useCallback(async () => {
@@ -978,14 +977,14 @@ function InboxPageInner() {
           if (data) {
             const normalized = {
               ...data,
-              tags: (data.contact_tags ?? [])
-                .map((ct: any) => ct.tags)
-                .filter((t: any) => t != null),
+              tags: ((data.contact_tags ?? []) as Array<{ tags?: unknown }>)
+                .map((ct) => ct.tags)
+                .filter((t): t is NonNullable<typeof t> => t != null),
             };
-            setActiveContact(normalized);
+            setActiveContact(normalized as Contact);
             setConversations((prev) =>
               prev.map((c) =>
-                c.id === activeConversation.id ? { ...c, contact: normalized } : c
+                c.id === activeConversation.id ? { ...c, contact: normalized as Contact } : c
               )
             );
           }

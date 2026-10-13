@@ -64,7 +64,7 @@ export function ConversationList({
   messengerConnected = false,
   messengerPageName = "",
   messengerPageId = "",
-  tokenMissing = false,
+  tokenMissing: _tokenMissing = false,
   onOpenTokenModal,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
@@ -126,7 +126,7 @@ export function ConversationList({
             .order("last_message_at", { ascending: false });
 
           if (!simpleErr && Array.isArray(simpleData) && simpleData.length > 0) {
-            convs = normalizeConversations(simpleData as any);
+            convs = normalizeConversations(simpleData as unknown as Parameters<typeof normalizeConversations>[0]);
           } else if (error || simpleErr) {
             console.warn("Direct conversations fetch error:", error || simpleErr);
           }
@@ -552,11 +552,8 @@ function ConversationItem({
   const initials = displayName.charAt(0).toUpperCase();
 
   const avatarSrc = contact?.avatar_url || (contact?.id ? `/api/contacts/${contact.id}/avatar` : null);
-  const [avatarFailed, setAvatarFailed] = useState(false);
-
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [avatarSrc]);
+  const [failedAvatarSrc, setFailedAvatarSrc] = useState<string | null>(null);
+  const avatarFailed = Boolean(avatarSrc && failedAvatarSrc === avatarSrc);
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -585,7 +582,7 @@ function ConversationItem({
             referrerPolicy="no-referrer"
             className="h-10 w-10 rounded-full object-cover"
             onError={() => {
-              setAvatarFailed(true);
+              if (avatarSrc) setFailedAvatarSrc(avatarSrc);
             }}
           />
         ) : (

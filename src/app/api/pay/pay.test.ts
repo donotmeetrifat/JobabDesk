@@ -76,7 +76,12 @@ vi.mock('@supabase/supabase-js', () => ({
           filters[field + '_in'] = vals
           return builder
         }),
+        ilike: vi.fn((field: string, val: any) => {
+          filters[field] = val
+          return builder
+        }),
         order: vi.fn(() => builder),
+        limit: vi.fn(() => builder),
         insert: vi.fn((row: any) => {
           const inserted = { id: 'pr-new-' + Math.random(), ...row, created_at: new Date().toISOString() }
           existingPaymentRequests.push(inserted)
@@ -112,6 +117,7 @@ vi.mock('@supabase/supabase-js', () => ({
           if (table === 'orders') {
             if (filters.id && filters.id !== mockOrder.id) return { data: null, error: null }
             if (filters.order_number && filters.order_number !== mockOrder.order_number) return { data: null, error: null }
+            if (filters.customer_phone && filters.customer_phone !== mockOrder.customer_phone) return { data: null, error: null }
             return { data: { ...mockOrder }, error: null }
           }
           if (table === 'accounts') {
