@@ -1080,12 +1080,17 @@ export default function PublicPaymentPage({
 
         {/* BEGIN: Gateway Footer */}
         <footer className="text-center text-xs text-slate-500 pb-4">
-          <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 border border-slate-200/80 shadow-2xs">
+          <a
+            href="https://jobabdesk.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 hover:bg-white border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-all group"
+          >
             <img src="/logo.png" alt="JobabDesk" className="w-4 h-4 object-contain" />
-            <span className="text-[11px] text-slate-500">
-              Powered by <strong className="text-slate-800 font-semibold">JobabDesk</strong>
+            <span className="text-[11px] text-slate-500 group-hover:text-slate-700 transition-colors">
+              Powered by <strong className="text-slate-800 font-semibold group-hover:text-blue-600 transition-colors">JobabDesk</strong>
             </span>
-          </div>
+          </a>
         </footer>
         {/* END: Gateway Footer */}
       </div>
