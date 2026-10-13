@@ -197,26 +197,42 @@ function PayPortalContent() {
         </Card>
 
         {/* Accepted Payment Badges */}
-        <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 text-center shadow-xs">
+        <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 text-center shadow-xs">
           <span className="text-[11px] font-bold text-slate-500 block mb-3 uppercase tracking-wider">
             Supported Payment Methods
           </span>
           <div className="grid grid-cols-4 gap-2 text-xs font-medium">
-            <div className="p-2 rounded-xl bg-pink-50/50 border border-pink-100 text-slate-700 flex flex-col items-center gap-0.5">
-              <span className="text-[#e2136e] font-bold">bKash</span>
-              <span className="text-[10px] text-slate-500">Send / Pay</span>
+            <div className="p-2 rounded-xl bg-pink-50/40 border border-pink-100/80 text-slate-700 flex flex-col items-center gap-1.5 shadow-2xs">
+              <img
+                src="/images/payment-methods/bkash.png"
+                alt="bKash"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <span className="text-[#e2136e] font-bold text-[11px]">bKash</span>
             </div>
-            <div className="p-2 rounded-xl bg-orange-50/50 border border-orange-100 text-slate-700 flex flex-col items-center gap-0.5">
-              <span className="text-[#f7941d] font-bold">Nagad</span>
-              <span className="text-[10px] text-slate-500">Send / Pay</span>
+            <div className="p-2 rounded-xl bg-orange-50/40 border border-orange-100/80 text-slate-700 flex flex-col items-center gap-1.5 shadow-2xs">
+              <img
+                src="/images/payment-methods/nagad.png"
+                alt="Nagad"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <span className="text-[#f7941d] font-bold text-[11px]">Nagad</span>
             </div>
-            <div className="p-2 rounded-xl bg-purple-50/50 border border-purple-100 text-slate-700 flex flex-col items-center gap-0.5">
-              <span className="text-[#8c3494] font-bold">Rocket</span>
-              <span className="text-[10px] text-slate-500">Personal</span>
+            <div className="p-2 rounded-xl bg-purple-50/40 border border-purple-100/80 text-slate-700 flex flex-col items-center gap-1.5 shadow-2xs">
+              <img
+                src="/images/payment-methods/rocket.png"
+                alt="Rocket"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <span className="text-[#8c3494] font-bold text-[11px]">Rocket</span>
             </div>
-            <div className="p-2 rounded-xl bg-blue-50/50 border border-blue-100 text-slate-700 flex flex-col items-center gap-0.5">
-              <span className="text-blue-600 font-bold">Bank</span>
-              <span className="text-[10px] text-slate-500">NPSB / BEFTN</span>
+            <div className="p-2 rounded-xl bg-blue-50/40 border border-blue-100/80 text-slate-700 flex flex-col items-center gap-1.5 shadow-2xs">
+              <img
+                src="/images/payment-methods/card.png"
+                alt="Cards / Bank"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <span className="text-blue-600 font-bold text-[11px]">Card / Bank</span>
             </div>
           </div>
         </div>
