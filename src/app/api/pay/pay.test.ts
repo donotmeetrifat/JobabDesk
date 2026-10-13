@@ -141,10 +141,12 @@ vi.mock('@supabase/supabase-js', () => ({
         }),
       }
 
-      // If queried as a promise (e.g. order item list)
+      // If queried as a promise (e.g. order item list, accounts list)
       builder.then = (resolve: any) => {
         if (table === 'payment_requests') {
           resolve({ data: existingPaymentRequests, error: null })
+        } else if (table === 'accounts') {
+          resolve({ data: [{ ...mockStoreAccount }], error: null })
         } else {
           resolve({ data: [], error: null })
         }
@@ -332,6 +334,24 @@ describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
       expect(data.store.payment_settings.nagad.number).toBe('01411223344')
 
       mockStoreAccount.payment_settings = originalSettings
+    })
+
+    it('resolves and self-heals unlinked orders by finding the merchant configured account', async () => {
+      const originalAccountId = mockOrder.account_id
+      ;(mockOrder as any).account_id = null // Order without linked account_id
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.name).toBe('Jobab Merchant Store')
+      expect(data.store.payment_settings.bkash.number).toBe('01799887766')
+      // Self-healed
+      expect(mockOrder.account_id).toBe(mockStoreAccount.id)
+
+      mockOrder.account_id = originalAccountId
     })
   })
 

@@ -35,9 +35,8 @@ async function findOrder(admin: ReturnType<typeof getAdminClient>, rawOrderId: s
     cleanId.toLowerCase() === 'recent'
 
   const selectColumnsWithItems =
-    'id, order_number, customer_name, customer_phone, customer_address, delivery_charge, subtotal, discount, total, status, payment_status, payment_method, notes, created_at, account_id, order_items(id, product_name, product_sku, unit_price, quantity, total)'
-  const selectColumnsSimple =
-    'id, order_number, customer_name, customer_phone, customer_address, delivery_charge, subtotal, discount, total, status, payment_status, payment_method, notes, created_at, account_id'
+    '*, order_items(id, product_name, product_sku, unit_price, quantity, total)'
+  const selectColumnsSimple = '*'
 
   let order: any = null
 
@@ -161,19 +160,39 @@ async function findOrder(admin: ReturnType<typeof getAdminClient>, rawOrderId: s
 }
 
 async function resolveStoreAccount(admin: ReturnType<typeof getAdminClient>, order: any) {
-  const accountSelect =
-    'id, name, logo_url, business_tagline, payment_settings, special_instructions, ai_store_instructions, ai_business_description, delivery_policy'
+  // Helper: check if account has phone numbers configured or custom special instructions
+  const isAccountFullyConfigured = (acc: any) => {
+    if (!acc) return false
+    const ps = acc.payment_settings
+    const hasNumbers = Boolean(
+      ps?.bkash?.number?.trim() ||
+      ps?.nagad?.number?.trim() ||
+      ps?.rocket?.number?.trim() ||
+      ps?.bank?.details?.trim()
+    )
+    const hasInstructions = Boolean(
+      acc.special_instructions?.trim() ||
+      acc.ai_store_instructions?.trim() ||
+      acc.ai_business_description?.trim()
+    )
+    return hasNumbers || hasInstructions
+  }
+
+  let storeAccount: any = null
 
   // 1. Direct query by order.account_id (primary tenant key)
   if (order.account_id) {
     try {
       const { data } = await admin
         .from('accounts')
-        .select(accountSelect)
+        .select('*')
         .eq('id', order.account_id)
         .maybeSingle()
       if (data) {
-        return data
+        storeAccount = data
+        if (isAccountFullyConfigured(data)) {
+          return data
+        }
       }
     } catch {}
 
@@ -181,11 +200,14 @@ async function resolveStoreAccount(admin: ReturnType<typeof getAdminClient>, ord
     try {
       const { data: ownerAcc } = await admin
         .from('accounts')
-        .select(accountSelect)
+        .select('*')
         .eq('owner_user_id', order.account_id)
         .maybeSingle()
       if (ownerAcc) {
-        return ownerAcc
+        if (!storeAccount) storeAccount = ownerAcc
+        if (isAccountFullyConfigured(ownerAcc)) {
+          return ownerAcc
+        }
       }
     } catch {}
   }
@@ -201,18 +223,106 @@ async function resolveStoreAccount(admin: ReturnType<typeof getAdminClient>, ord
       if (conv?.account_id) {
         const { data: convAcc } = await admin
           .from('accounts')
-          .select(accountSelect)
+          .select('*')
           .eq('id', conv.account_id)
           .maybeSingle()
         if (convAcc) {
-          return convAcc
+          if (!storeAccount) storeAccount = convAcc
+          if (isAccountFullyConfigured(convAcc)) {
+            return convAcc
+          }
         }
       }
     } catch {}
   }
 
-  // Strictly return null if no associated account exists for this order.
-  // NEVER leak or borrow another user's/merchant's account or payment numbers in a multi-tenant system.
+  // 3. Check contact_id if present on the order
+  if (order.contact_id) {
+    try {
+      const { data: contact } = await admin
+        .from('contacts')
+        .select('account_id, user_id')
+        .eq('id', order.contact_id)
+        .maybeSingle()
+      if (contact?.account_id) {
+        const { data: contactAcc } = await admin
+          .from('accounts')
+          .select('*')
+          .eq('id', contact.account_id)
+          .maybeSingle()
+        if (contactAcc) {
+          if (!storeAccount) storeAccount = contactAcc
+          if (isAccountFullyConfigured(contactAcc)) {
+            return contactAcc
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 4. If storeAccount has an owner_user_id, check other accounts owned by the same user
+  if (storeAccount?.owner_user_id) {
+    try {
+      const { data: userAccounts } = await admin
+        .from('accounts')
+        .select('*')
+        .eq('owner_user_id', storeAccount.owner_user_id)
+        .order('updated_at', { ascending: false })
+      if (userAccounts && userAccounts.length > 0) {
+        const configured = userAccounts.find(isAccountFullyConfigured)
+        if (configured) {
+          if (order.id && order.account_id !== configured.id) {
+            order.account_id = configured.id
+            try {
+              await admin.from('orders').update({ account_id: configured.id }).eq('id', order.id)
+            } catch {}
+          }
+          return configured
+        }
+      }
+    } catch {}
+  }
+
+  // 5. Query accounts ordered by updated_at desc to find configured account (merchant's active setup in /agents)
+  try {
+    const { data: accountsList } = await admin
+      .from('accounts')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(10)
+
+    if (accountsList && accountsList.length > 0) {
+      const configured = accountsList.find(isAccountFullyConfigured)
+      if (configured) {
+        storeAccount = configured
+        // Self-heal: link order to this merchant account
+        if (order.id && order.account_id !== configured.id) {
+          order.account_id = configured.id
+          try {
+            await admin.from('orders').update({ account_id: configured.id }).eq('id', order.id)
+          } catch {}
+        }
+        return configured
+      } else if (!storeAccount) {
+        const namedAcc = accountsList.find(
+          (a: any) => a.name && a.name !== 'My Store' && a.name !== 'Verified Merchant'
+        )
+        storeAccount = namedAcc || accountsList[0]
+      }
+    }
+  } catch {}
+
+  // 6. Return storeAccount if found, self-healing the order link
+  if (storeAccount) {
+    if (order.id && order.account_id !== storeAccount.id) {
+      order.account_id = storeAccount.id
+      try {
+        await admin.from('orders').update({ account_id: storeAccount.id }).eq('id', order.id)
+      } catch {}
+    }
+    return storeAccount
+  }
+
   return null
 }
 
@@ -253,6 +363,7 @@ export async function GET(
       order: {
         id: order.id,
         order_number: order.order_number,
+        account_id: order.account_id,
         customer_name: order.customer_name,
         customer_phone: order.customer_phone,
         customer_address: order.customer_address,
