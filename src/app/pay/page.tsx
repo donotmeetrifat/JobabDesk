@@ -7,6 +7,7 @@ import {
   Search,
   ArrowRight,
   Loader2,
+  Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,8 +18,8 @@ export default function PayPortalPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+        <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
         </div>
       }
     >
@@ -115,43 +116,44 @@ function PayPortalContent() {
 
   if (autoChecking) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
-        <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
-        <p className="text-slate-400 text-sm">Opening secure payment portal...</p>
+      <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex flex-col items-center justify-center p-4">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+        <p className="text-slate-500 font-medium text-sm">Opening secure payment portal...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-16 antialiased selection:bg-emerald-500 selection:text-white">
-      {/* Background radial glows */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/10 blur-[130px] rounded-full" />
-        <div className="absolute top-1/3 -right-20 w-[300px] h-[300px] bg-cyan-500/10 blur-[120px] rounded-full" />
-      </div>
-
-      <div className="relative z-10 max-w-md mx-auto px-4 pt-8 sm:pt-16">
-        <header className="text-center mb-8">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium mb-4 shadow-sm">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>100% Secure • Direct Merchant Payment</span>
+    <div
+      className="min-h-screen text-slate-800 antialiased font-sans flex flex-col justify-between py-8 px-4 sm:px-6 lg:px-8"
+      style={{
+        backgroundColor: '#faf8ff',
+        backgroundImage:
+          'radial-gradient(at 100% 0%, rgba(0, 102, 255, 0.05) 0px, transparent 50%), radial-gradient(at 0% 100%, rgba(16, 185, 129, 0.04) 0px, transparent 50%)',
+      }}
+    >
+      <div className="relative z-10 max-w-md mx-auto w-full pt-4 sm:pt-8 my-auto">
+        <header className="text-center mb-6">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-3 shadow-xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>256-Bit SSL Encrypted • Direct Merchant Payment</span>
           </div>
 
-          <h1 className="text-2xl font-bold tracking-tight text-white mb-2">
-            Payment Portal
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-1.5">
+            JobabDesk Pay
           </h1>
-          <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-            Enter your Order Number or Mobile Number below to proceed with bKash, Nagad, or Rocket payment.
+          <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+            Enter your Order Number or Mobile Number below to proceed with secure bKash, Nagad, or Rocket checkout.
           </p>
         </header>
 
-        <Card className="bg-slate-900/90 border-slate-800 shadow-2xl backdrop-blur-md overflow-hidden mb-6">
+        <Card className="bg-white border-slate-200/90 shadow-xl shadow-slate-200/60 rounded-2xl overflow-hidden mb-6">
           <CardContent className="p-6">
             <form onSubmit={handleSearch} className="space-y-4">
               <div>
                 <label
                   htmlFor="orderQuery"
-                  className="block text-xs font-semibold text-slate-300 mb-2"
+                  className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2"
                 >
                   Order Number or Phone Number
                 </label>
@@ -160,30 +162,31 @@ function PayPortalContent() {
                     id="orderQuery"
                     type="text"
                     required
-                    placeholder="e.g. ORD-2026-0001 or 017XXXXXXXX"
+                    placeholder="e.g. ORD-2026-0002 or 017XXXXXXXX"
                     value={orderQuery}
                     onChange={(e) => setOrderQuery(e.target.value)}
-                    className="bg-slate-950 border-slate-800 text-white placeholder:text-slate-600 focus:border-emerald-500 font-mono text-sm py-5 pr-10"
+                    className="bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-600 font-mono text-sm py-5 pr-10 rounded-xl"
                   />
-                  <Search className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1.5">
-                  You can find your Order Number in your Messenger/WhatsApp chat summary.
+                  You can find your Order Number in your Messenger or WhatsApp chat summary.
                 </p>
               </div>
 
               <Button
                 type="submit"
                 disabled={loading || !orderQuery.trim()}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-6 text-sm rounded-xl shadow-lg shadow-emerald-950/50 transition-all flex items-center justify-center gap-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-6 text-sm rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Finding Order...</span>
+                    <span>Locating Order...</span>
                   </>
                 ) : (
                   <>
+                    <Lock className="w-4 h-4 text-emerald-200" />
                     <span>Proceed to Payment</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
@@ -194,30 +197,43 @@ function PayPortalContent() {
         </Card>
 
         {/* Accepted Payment Badges */}
-        <div className="rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 text-center">
-          <span className="text-[11px] font-semibold text-slate-400 block mb-3 uppercase tracking-wider">
+        <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 text-center shadow-xs">
+          <span className="text-[11px] font-bold text-slate-500 block mb-3 uppercase tracking-wider">
             Supported Payment Methods
           </span>
           <div className="grid grid-cols-4 gap-2 text-xs font-medium">
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 flex flex-col items-center gap-1">
-              <span className="text-[#D12053] font-bold">bKash</span>
-              <span className="text-[10px] text-slate-500">Personal / Merch</span>
+            <div className="p-2 rounded-xl bg-pink-50/50 border border-pink-100 text-slate-700 flex flex-col items-center gap-0.5">
+              <span className="text-[#e2136e] font-bold">bKash</span>
+              <span className="text-[10px] text-slate-500">Send / Pay</span>
             </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 flex flex-col items-center gap-1">
-              <span className="text-[#F7941D] font-bold">Nagad</span>
-              <span className="text-[10px] text-slate-500">Personal / Merch</span>
+            <div className="p-2 rounded-xl bg-orange-50/50 border border-orange-100 text-slate-700 flex flex-col items-center gap-0.5">
+              <span className="text-[#f7941d] font-bold">Nagad</span>
+              <span className="text-[10px] text-slate-500">Send / Pay</span>
             </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 flex flex-col items-center gap-1">
-              <span className="text-[#8C3494] font-bold">Rocket</span>
-              <span className="text-[10px] text-slate-500">Personal / Agent</span>
+            <div className="p-2 rounded-xl bg-purple-50/50 border border-purple-100 text-slate-700 flex flex-col items-center gap-0.5">
+              <span className="text-[#8c3494] font-bold">Rocket</span>
+              <span className="text-[10px] text-slate-500">Personal</span>
             </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 flex flex-col items-center gap-1">
-              <span className="text-indigo-400 font-bold">Bank</span>
+            <div className="p-2 rounded-xl bg-blue-50/50 border border-blue-100 text-slate-700 flex flex-col items-center gap-0.5">
+              <span className="text-blue-600 font-bold">Bank</span>
               <span className="text-[10px] text-slate-500">NPSB / BEFTN</span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Gateway Footer */}
+      <footer className="max-w-md mx-auto w-full mt-6 text-center text-xs text-slate-500 space-y-1">
+        <p className="flex items-center justify-center gap-2">
+          <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[11px]">
+            0% Commission
+          </span>
+          <span className="text-[11px]">Direct Settlement</span>
+        </p>
+        <p className="text-slate-400 text-[11px]">
+          Powered by <strong className="text-slate-700 font-semibold">JobabDesk</strong>
+        </p>
+      </footer>
     </div>
   )
 }
