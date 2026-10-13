@@ -369,7 +369,7 @@ export default function PublicPaymentPage({
       }}
     >
       <div className="max-w-5xl mx-auto w-full space-y-5">
-        {/* BEGIN: Top Trust Bar */}
+        {/* BEGIN: Top Header Bar */}
         <header className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1">
           {/* Merchant Identity & Trust Badge */}
           <div className="flex items-center gap-3">
@@ -380,9 +380,11 @@ export default function PublicPaymentPage({
                 className="h-10 w-10 rounded-xl object-cover border border-slate-200 shadow-sm"
               />
             ) : (
-              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                {store?.name?.charAt(0) || 'J'}
-              </div>
+              <img
+                src="/logo.png"
+                alt="JobabDesk"
+                className="h-10 w-10 rounded-xl object-contain bg-white p-1 border border-slate-200 shadow-sm"
+              />
             )}
             <div>
               <div className="flex items-center gap-2">
@@ -396,28 +398,25 @@ export default function PublicPaymentPage({
               </div>
               <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
                 <span>Checkout via JobabDesk Pay</span>
-                <span className="text-slate-300">•</span>
-                <span className="text-slate-500 font-mono text-[11px]">
-                  {store?.business_tagline || 'Direct Settlement Enabled'}
-                </span>
+                {store?.business_tagline && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-500 font-mono text-[11px]">
+                      {store.business_tagline}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
 
-          {/* Security Trust Indicator */}
-          <div className="flex items-center gap-3 text-xs font-medium text-slate-600 bg-white px-3.5 py-1.5 rounded-full border border-slate-200/90 shadow-xs">
-            <div className="flex items-center gap-1.5 text-emerald-700">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>256-Bit SSL Encrypted</span>
-            </div>
-            <div className="h-3 w-px bg-slate-200" />
-            <div className="flex items-center gap-1.5 text-slate-600">
-              <Lock className="w-3.5 h-3.5 text-blue-600" />
-              <span>PCI-DSS Validated</span>
-            </div>
+          {/* JobabDesk Original Brand Badge */}
+          <div className="flex items-center gap-2.5 bg-white px-3.5 py-1.5 rounded-full border border-slate-200/90 shadow-2xs">
+            <img src="/logo.png" alt="JobabDesk" className="w-5 h-5 rounded-md object-contain" />
+            <span className="text-xs font-bold text-slate-800 tracking-tight">JobabDesk Pay</span>
           </div>
         </header>
-        {/* END: Top Trust Bar */}
+        {/* END: Top Header Bar */}
 
         {/* BEGIN: Main Container */}
         <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200/90 overflow-hidden">
@@ -620,15 +619,6 @@ export default function PublicPaymentPage({
                     </p>
                   </div>
                 )}
-              </div>
-
-              {/* Protection Seal */}
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400">
-                <span className="flex items-center gap-1.5 font-medium text-slate-500">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  Buyer Protection Guarantee
-                </span>
-                <span>SSLCOMMERZ Standard</span>
               </div>
             </aside>
 
@@ -1073,17 +1063,14 @@ export default function PublicPaymentPage({
               </div>
 
               {/* Bottom Security Seals */}
-              <div className="pt-5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex items-center gap-1 font-semibold text-slate-700">
-                    <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                    Bank-Grade Security
-                  </span>
-                  <span className="text-slate-300">•</span>
-                  <span>Real-time Settlement</span>
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="flex items-center gap-1.5 text-slate-500 font-medium">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Secure Direct Settlement</span>
                 </div>
-                <div>
-                  <span className="text-slate-400">Standard SSLCOMMERZ Layout Spec</span>
+                <div className="flex items-center gap-1.5">
+                  <img src="/logo.png" alt="JobabDesk" className="w-3.5 h-3.5 object-contain" />
+                  <span className="font-semibold text-slate-600">JobabDesk Verified</span>
                 </div>
               </div>
             </main>
@@ -1092,16 +1079,13 @@ export default function PublicPaymentPage({
         {/* END: Main Container */}
 
         {/* BEGIN: Gateway Footer */}
-        <footer className="text-center text-xs text-slate-500 space-y-1.5 pb-4">
-          <p className="flex items-center justify-center gap-2">
-            <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[11px]">
-              0% Commission
+        <footer className="text-center text-xs text-slate-500 pb-4">
+          <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 border border-slate-200/80 shadow-2xs">
+            <img src="/logo.png" alt="JobabDesk" className="w-4 h-4 object-contain" />
+            <span className="text-[11px] text-slate-500">
+              Powered by <strong className="text-slate-800 font-semibold">JobabDesk</strong>
             </span>
-            <span className="text-[11px]">Direct Merchant Account Settlement</span>
-          </p>
-          <p className="text-slate-400 text-[11px]">
-            Powered by <strong className="text-slate-700 font-semibold">JobabDesk</strong> • Next-Gen Smart E-Commerce Operating System
-          </p>
+          </div>
         </footer>
         {/* END: Gateway Footer */}
       </div>

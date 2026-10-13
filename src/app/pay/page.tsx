@@ -134,13 +134,13 @@ function PayPortalContent() {
     >
       <div className="relative z-10 max-w-md mx-auto w-full pt-4 sm:pt-8 my-auto">
         <header className="text-center mb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold mb-3 shadow-xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>256-Bit SSL Encrypted • Direct Merchant Payment</span>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200/90 shadow-2xs mb-3">
+            <img src="/logo.png" alt="JobabDesk" className="w-5 h-5 rounded-md object-contain" />
+            <span className="text-xs font-bold text-slate-800 tracking-tight">JobabDesk Pay</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-1.5">
-            JobabDesk Pay
+            Payment Portal
           </h1>
           <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
             Enter your Order Number or Mobile Number below to proceed with secure bKash, Nagad, or Rocket checkout.
@@ -239,16 +239,13 @@ function PayPortalContent() {
       </div>
 
       {/* Gateway Footer */}
-      <footer className="max-w-md mx-auto w-full mt-6 text-center text-xs text-slate-500 space-y-1">
-        <p className="flex items-center justify-center gap-2">
-          <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[11px]">
-            0% Commission
+      <footer className="max-w-md mx-auto w-full mt-6 text-center text-xs text-slate-500 pb-2">
+        <div className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 border border-slate-200/80 shadow-2xs">
+          <img src="/logo.png" alt="JobabDesk" className="w-4 h-4 object-contain" />
+          <span className="text-[11px] text-slate-500">
+            Powered by <strong className="text-slate-800 font-semibold">JobabDesk</strong>
           </span>
-          <span className="text-[11px]">Direct Settlement</span>
-        </p>
-        <p className="text-slate-400 text-[11px]">
-          Powered by <strong className="text-slate-700 font-semibold">JobabDesk</strong>
-        </p>
+        </div>
       </footer>
     </div>
   )
