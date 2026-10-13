@@ -1550,11 +1550,16 @@
     },
     "sections": {
       "overview": "ওভারভিউ",
-      "profile": "প্রোফাইল",
-      "appearance": "অ্যাপিয়ারেন্স",
-      "payment": "পেমেন্ট মেথড",
-      "deals": "ডিল ও কারেন্সি",
-      "members": "টিম মেম্বার"
+      "profile": "আপনার প্রোফাইল",
+      "security": "লগইন ও সিকিউরিটি",
+      "appearance": "অ্যাপিয়ারেন্স",
+      "whatsapp": "হোয়াটসঅ্যাপ",
+      "templates": "টেমপ্লেট",
+      "quick-replies": "দ্রুত উত্তর (Quick replies)",
+      "fields": "ফিল্ড ও ট্যাগ",
+      "deals": "ডিল ও মুদ্রা",
+      "members": "টিম মেম্বারস",
+      "api": "এপিআই কি (API keys)"
     },
     "overview": {
       "notSetup": "Not set up yet",
@@ -1898,23 +1903,6 @@
       "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
       "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
       "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it."
-    },
-    "sections": {
-      "overview": "ওভারভিউ",
-      "profile": "আপনার প্রোফাইল",
-      "security": "লগইন ও সিকিউরিটি",
-      "appearance": "অ্যাপিয়ারেন্স",
-      "whatsapp": "হোয়াটসঅ্যাপ",
-      "templates": "টেমপ্লেট",
-      "quick-replies": "দ্রুত উত্তর (Quick replies)",
-      "fields": "ফিল্ড ও ট্যাগ",
-      "deals": "ডিল ও মুদ্রা",
-      "members": "টিম মেম্বারস",
-      "api": "এপিআই কি (API keys)"
-    },
-    "groups": {
-      "account": "অ্যাকাউন্ট",
-      "workspace": "ওয়ার্কস্পেস"
     },
     "profile": {
       "title": "আপনার প্রোফাইল",
