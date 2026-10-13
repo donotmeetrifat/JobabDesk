@@ -187,6 +187,37 @@ describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
 
       expect(res.status).toBe(404)
     })
+
+    it('resolves merchant numbers directly from /agents special_instructions when payment_settings is empty', async () => {
+      // Mock store account where payment_settings numbers are empty but special_instructions has them
+      const originalSettings = { ...mockStoreAccount.payment_settings }
+      mockStoreAccount.payment_settings = {
+        bkash: { number: '', type: 'personal' },
+        nagad: { number: '', type: 'personal' },
+        rocket: { number: '', type: 'personal' },
+        bank: { details: '' },
+        allow_cod_advance: true,
+        cod_advance_amount: 150,
+      } as any
+      ;(mockStoreAccount as any).special_instructions =
+        'bKash (Merchant): 01700-112233 | Nagad: 01800-445566 | Rocket: 01900-778899. Cash on Delivery (COD) accepted nationwide.'
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.payment_settings.bkash.number).toBe('01700112233')
+      expect(data.store.payment_settings.bkash.type).toBe('merchant')
+      expect(data.store.payment_settings.nagad.number).toBe('01800445566')
+      expect(data.store.payment_settings.rocket.number).toBe('01900778899')
+      expect(data.store.special_instructions).toContain('Cash on Delivery (COD)')
+
+      // Restore mockStoreAccount
+      mockStoreAccount.payment_settings = originalSettings
+      delete (mockStoreAccount as any).special_instructions
+    })
   })
 
   describe('POST /api/pay/[orderId] (Anti-Fraud & Submission)', () => {

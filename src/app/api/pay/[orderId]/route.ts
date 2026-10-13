@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
+import { resolveMerchantPaymentSettings } from '@/lib/payments/instruction-parser'
+
 export const dynamic = 'force-dynamic'
 
 function getAdminClient() {
@@ -52,12 +54,17 @@ export async function GET(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Fetch store branding and payment settings
+    // Fetch store branding and payment settings (including /agents special_instructions)
     const { data: storeAccount } = await admin
       .from('accounts')
-      .select('id, name, logo_url, business_tagline, payment_settings')
+      .select('id, name, logo_url, business_tagline, payment_settings, special_instructions')
       .eq('id', order.account_id)
       .maybeSingle()
+
+    const resolvedPaymentSettings = resolveMerchantPaymentSettings(
+      storeAccount?.payment_settings,
+      storeAccount?.special_instructions
+    )
 
     // Fetch submitted / verified payment requests for this order
     const { data: paymentRequests } = await admin
@@ -88,14 +95,8 @@ export async function GET(
         name: storeAccount?.name || 'Verified Merchant',
         logo_url: storeAccount?.logo_url || null,
         business_tagline: storeAccount?.business_tagline || null,
-        payment_settings: storeAccount?.payment_settings || {
-          bkash: { number: '', type: 'personal' },
-          nagad: { number: '', type: 'personal' },
-          rocket: { number: '', type: 'personal' },
-          bank: { details: '' },
-          allow_cod_advance: true,
-          cod_advance_amount: 150,
-        },
+        payment_settings: resolvedPaymentSettings,
+        special_instructions: storeAccount?.special_instructions || '',
       },
       payment_requests: paymentRequests || [],
     })

@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Loader2,
   HelpCircle,
+  Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -60,6 +61,7 @@ interface StoreData {
   name: string
   logo_url: string | null
   business_tagline: string | null
+  special_instructions?: string | null
   payment_settings: {
     bkash?: { number: string; type: 'personal' | 'merchant' | 'agent' }
     nagad?: { number: string; type: 'personal' | 'merchant' }
@@ -67,6 +69,7 @@ interface StoreData {
     bank?: { details: string }
     allow_cod_advance?: boolean
     cod_advance_amount?: number
+    special_instructions?: string
   }
 }
 
@@ -722,6 +725,19 @@ export default function PublicPaymentPage({
                   </div>
                 </TabsContent>
               </Tabs>
+
+              {/* Merchant Custom Instructions (from /agents business setup) */}
+              {(store?.special_instructions || store?.payment_settings?.special_instructions) && (
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 space-y-1 shadow-inner">
+                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Store Checkout & Payment Instructions:</span>
+                  </div>
+                  <p className="whitespace-pre-line text-slate-400 leading-relaxed font-sans text-[11px]">
+                    {store.special_instructions || store.payment_settings?.special_instructions}
+                  </p>
+                </div>
+              )}
 
               {/* Payment Submission Form */}
               <form onSubmit={handleSubmit} className="space-y-4 pt-2 border-t border-slate-800">

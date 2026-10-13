@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { resolveMerchantPaymentSettings } from '@/lib/payments/instruction-parser'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,6 +84,22 @@ export async function PATCH(req: Request) {
       if (body[key] !== undefined) {
         updates[key] = body[key]
       }
+    }
+
+    // If merchant updated special_instructions (Accepted Payment Channels in /agents)
+    // without explicitly overriding payment_settings, auto-sync parsed numbers!
+    if (body.special_instructions !== undefined && body.payment_settings === undefined) {
+      const { data: currentAcc } = await db
+        .from('accounts')
+        .select('payment_settings')
+        .eq('id', accountId)
+        .maybeSingle()
+
+      const resolved = resolveMerchantPaymentSettings(
+        currentAcc?.payment_settings,
+        body.special_instructions
+      )
+      updates['payment_settings'] = resolved
     }
 
     if (Object.keys(updates).length === 0) {
