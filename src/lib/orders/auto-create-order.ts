@@ -1,5 +1,12 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { extractCustomerInfoFromMessage, isFacebookPsid, isDetailedDeliveryAddress, isValidHumanCustomerName } from '@/lib/contacts/extract-info'
+import {
+  extractCustomerInfoFromMessage,
+  isFacebookPsid,
+  isDetailedDeliveryAddress,
+  isValidHumanCustomerName,
+  isGreetingMessage,
+  isGratitudeMessage,
+} from '@/lib/contacts/extract-info'
 import { checkIsDigitalOrder, isDigitalProduct } from '@/lib/products/product-type'
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
@@ -68,6 +75,10 @@ export interface AutoOrderPayload {
   supabase?: any
 }
 
+// Regex to detect order confirmation / completion phrases so past orders don't leak into new sessions
+export const ORDER_CONFIRMATION_PHRASES_REGEX =
+  /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked|received|cancelled)|all\s*details\s*for\s*your\s*(?:digital\s*)?order\s*have\s*been\s*successfully\s*received|order\s*summary|subscription\s*summary|delivery\s*details|অর্ডার(?:ের|টি)?\s*(?:সকল\s*তথ্য\s*)?(?:সফলভাবে\s*)?(?:গ্রহণ\s*করা\s*হয়েছে|কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে|বাতিল(?:\s*করা\s*হয়েছে)?)|অর্ডার\s*বিবরণী|সাবস্ক্রিপশন\s*বিবরণী|ডেলিভারি\s*তথ্য|order\s*(?:confirm|place|cancel)\s*(?:kora\s*hoyeche|hoyeche)|successfully\s*cancel(?:led)?)/i
+
 // Regex to detect order intent in Bengali, Banglish, and English
 const ORDER_INTENT_REGEX = /(?:order|confirm|want|need|buy|purchase|book|booking|get|send|dispatch|delivery|parcel|checkout|address|adreass|adress|thikana|nite\s*chai|nite\s*chi|nebo|nibo|kinte\s*chai|kinbo|lagbe|dorkar|pathan|pathiye\s*din|bheje\s*din|দিতে\s*পারবেন|কুরিয়ার|অর্ডার|পাঠান|পৌঁছে\s*দিন|পাঠিয়ে\s*দিন|নিব|নেব|চাই|লাগবে|কিনতে|কিনবো)/i
 
@@ -88,17 +99,31 @@ export async function detectAndCreateOrderFromChat({
 }: AutoOrderPayload) {
   if (!accountId) return null
 
-  // Expressions of gratitude / thanks must never create orders
-  const isGratitude = /^(?:thanks?|thank\s*you|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|shukriya|shukria|অনেক\s*ধন্যবাদ|ধন্যবাদ)[\s!.,❤️😊🙏]*$/i.test((messageText || '').trim())
-  if (isGratitude) {
+  // Expressions of gratitude / thanks or greetings must NEVER trigger order creation
+  const isGratitude = isGratitudeMessage(messageText)
+  const isGreeting = isGreetingMessage(messageText)
+  if (isGratitude || isGreeting) {
     return null
   }
 
   const db = supabase || getAdminClient()
 
+  // Separate conversation history into previous orders vs active order session:
+  // If an order was previously confirmed in chat history, any details prior to that belong to the past order!
+  const rawHistoryLines = (conversationHistoryText || '').split('\n').filter(Boolean)
+  let lastConfirmIdx = -1
+  for (let i = rawHistoryLines.length - 1; i >= 0; i--) {
+    if (ORDER_CONFIRMATION_PHRASES_REGEX.test(rawHistoryLines[i])) {
+      lastConfirmIdx = i
+      break
+    }
+  }
+  const activeHistoryLines = lastConfirmIdx >= 0 ? rawHistoryLines.slice(lastConfirmIdx + 1) : rawHistoryLines
+  const activeHistoryText = activeHistoryLines.join('\n')
+
   // 1. Extract contact details from current message & order conversation session (customer lines only)
   const extracted = extractCustomerInfoFromMessage(messageText)
-  const customerOnlyHistoryText = (conversationHistoryText || '')
+  const customerOnlyHistoryText = activeHistoryText
     .split('\n')
     .filter((l) => !/^\s*(?:\[[^\]]+\]\s*)?(?:Salesman|Bot|Assistant|Agent|Shop|AI)\s*:/i.test(l))
     .map((l) => l.replace(/^\s*(?:\[[^\]]+\]\s*)?(?:Customer|User)\s*:\s*/i, '').trim())
@@ -106,9 +131,35 @@ export async function detectAndCreateOrderFromChat({
     .join('\n')
   const historyExtracted = extractCustomerInfoFromMessage(customerOnlyHistoryText)
 
-  let phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || extracted.phone || historyExtracted.phone || (llmOrderData?.customer_phone && !isFacebookPsid(llmOrderData.customer_phone) ? llmOrderData.customer_phone : null) || null
-  let address = customerAddress || extracted.address || historyExtracted.address || llmOrderData?.customer_address || null
-  let email = customerEmail || extracted.email || historyExtracted.email || llmOrderData?.customer_email || null
+  const explicitReusePhrases = /\b(?:ager\s*(?:address|thikana|moto|details)|same\s*(?:address|thikana|details|place)|previous\s*(?:address|details)|purber\s*(?:thikana|address)|আগের\s*(?:ঠিকানা|ঠিকানায়|মতে|মতো|ডিটেইলস)|একই\s*(?:ঠিকানা|ঠিকানায়)|পূর্বের\s*(?:ঠিকানা|ঠিকানায়))\b/i
+  const shortAffirmationPhrases = /^(?:ha|haa|ji|jee|yes|yeah|yup|ok|okay|thik\s*ache|confirm|sure|proceed|হাঁ|হ্যাঁ|জি|জী|ঠিক\s*আছে|কনফার্ম|করুন|পাঠান|দিয়ে\s*দিন|দেন)[.!]?$/i
+
+  const lastAssistantLine = activeHistoryLines
+    .filter((l) => /^\s*(?:\[[^\]]+\]\s*)?(?:Salesman|Bot|Assistant|Agent|Shop|AI)\s*:/i.test(l))
+    .pop() || ''
+  const didAssistantAskForConfirmation = /\b(?:পূর্বের\s*ঠিকানা|ager\s*address|previous\s*address|confirm\s*korte|কনফার্ম\s*করতে|ঠিকানায়\s*পাঠাতে\s*চাইলে)\b/i.test(lastAssistantLine)
+
+  const isCustomerConfirmingSavedDetails =
+    explicitReusePhrases.test(messageText) ||
+    (didAssistantAskForConfirmation && shortAffirmationPhrases.test(messageText.trim()))
+
+  const isInitialOrderIntent = ORDER_INTENT_REGEX.test(messageText) && !extracted.address && !isCustomerConfirmingSavedDetails
+
+  let phone: string | null = null
+  let address: string | null = null
+
+  if (isInitialOrderIntent) {
+    phone = extracted.phone || null
+    address = null
+  } else if (isCustomerConfirmingSavedDetails) {
+    phone = (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || historyExtracted.phone || extracted.phone || null
+    address = customerAddress || historyExtracted.address || extracted.address || null
+  } else {
+    phone = extracted.phone || historyExtracted.phone || (customerPhone && !isFacebookPsid(customerPhone) ? customerPhone : null) || null
+    address = extracted.address || historyExtracted.address || customerAddress || null
+  }
+
+  let email = extracted.email || historyExtracted.email || customerEmail || llmOrderData?.customer_email || null
 
   let resolvedName =
     (isValidHumanCustomerName(customerName) ? customerName : null) ||
@@ -237,7 +288,7 @@ export async function detectAndCreateOrderFromChat({
 
   const NON_PRODUCT_WORDS = /^(bkash|b-kash|b_kash|বিকাশ|nagad|নগদ|rocket|রকেট|upay|উপায়|cod|cash on delivery|ক্যাশ|ক্যাশ অন ডেলিভারি|delivery|charge|fee|subtotal|total|discount|phone|mobile|number|address|contact|order|taka|tk|bdt|bangladesh|customer order)$/i
 
-  const fullText = `${conversationHistoryText || ''}\n${messageText || ''}`.trim()
+  const fullText = `${activeHistoryText}\n${messageText || ''}`.trim()
 
   // 3. Resolve Items
   let items: ExtractedOrderItem[] = []
@@ -283,7 +334,7 @@ export async function detectAndCreateOrderFromChat({
     }
   }
 
-  // If no items extracted by LLM, extract from conversation text & catalog products
+  // If no items extracted by LLM, extract from active session conversation text & catalog products
   if (items.length === 0) {
     const sortedProds = [...catalogProducts].sort((a, b) => b.name.length - a.name.length)
 
@@ -308,9 +359,9 @@ export async function detectAndCreateOrderFromChat({
       }
     }
 
-    // 2) If not in current message, look back at recent conversation history backwards
-    if (items.length === 0 && conversationHistoryText) {
-      const lines = conversationHistoryText.split('\n').filter(Boolean)
+    // 2) If not in current message, look back at active order session history backwards
+    if (items.length === 0 && activeHistoryText) {
+      const lines = activeHistoryText.split('\n').filter(Boolean)
       for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i]
         for (const prod of sortedProds) {
@@ -455,12 +506,12 @@ export async function detectAndCreateOrderFromChat({
       isPaymentConfirmed = true
     }
 
-    if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(custMsg)) {
+    if (/\b(?:rocket|রকেট)\b/i.test(custMsg)) {
+      explicitPaymentMethod = 'rocket'
+    } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(custMsg)) {
       explicitPaymentMethod = 'bkash'
     } else if (/\b(?:nagad|নগদ)\b/i.test(custMsg)) {
       explicitPaymentMethod = 'nagad'
-    } else if (/\b(?:rocket|রকেট)\b/i.test(custMsg)) {
-      explicitPaymentMethod = 'rocket'
     } else if (/\b(?:bank transfer|bank|ব্যাংক)\b/i.test(custMsg)) {
       explicitPaymentMethod = 'bank_transfer'
     } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|ক্যাশ|ক্যাশে|delivery te taka|হাতে পেয়ে)\b/i.test(custMsg)) {
@@ -470,9 +521,15 @@ export async function detectAndCreateOrderFromChat({
       }
     }
 
-    // If physical and not in current message, check if customer already confirmed COD in recent conversation
+    // If physical and not in current message, check if customer chose in customerOnlyHistoryText
     if (!explicitPaymentMethod && !isDigital) {
-      if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি)\b/i.test(combinedText)) {
+      if (/\b(?:rocket|রকেট)\b/i.test(customerOnlyHistoryText)) {
+        explicitPaymentMethod = 'rocket'
+      } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(customerOnlyHistoryText)) {
+        explicitPaymentMethod = 'bkash'
+      } else if (/\b(?:nagad|নগদ)\b/i.test(customerOnlyHistoryText)) {
+        explicitPaymentMethod = 'nagad'
+      } else if (/\b(?:cod|cash on delivery|ক্যাশ অন ডেলিভারি|হাতে পেয়ে)\b/i.test(customerOnlyHistoryText)) {
         explicitPaymentMethod = 'cod'
         isPaymentConfirmed = true
       }
@@ -484,7 +541,7 @@ export async function detectAndCreateOrderFromChat({
       if (['bkash', 'nagad', 'rocket', 'bank_transfer'].includes(pm)) {
         explicitPaymentMethod = pm as PaymentMethod
       } else if (pm === 'cod' && !isDigital) {
-        if (/\b(?:cod|cash on delivery|ক্যাশ)\b/i.test(combinedText)) {
+        if (/\b(?:cod|cash on delivery|ক্যাশ)\b/i.test(customerOnlyHistoryText)) {
           explicitPaymentMethod = 'cod'
           isPaymentConfirmed = true
         }

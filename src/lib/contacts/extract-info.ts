@@ -36,6 +36,14 @@ export function isGratitudeMessage(text?: string | null): boolean {
   return GRATITUDE_MESSAGE_REGEX.test(text.trim())
 }
 
+export const GREETING_MESSAGE_REGEX =
+  /^(?:(?:hi+|he+y+|he+llo+|hlw+|hlo|halo|hy+|salam|slm|slaam|salaam|assalamu\s*alaikum|assalamualaykum|as-salamu\s*alaykum|kemon\s*achen|kemon\s*acho|ki\s*khobor|good\s*morning|good\s*afternoon|good\s*evening|হাই+|হ্যালো+|সালাম|আসসালামু\s*আলাইকুম|কেমন\s*আছেন|কেমন\s*আছো|কি\s*খবর)(?:\s+(?:vai|vaiya|bhai|bhaiya|apu|appu|didi|dada|bro|brother|sis|sister|sir|madam|dear|ভাই|ভাইয়া|আপু|দিদি|দাদা))?|(?:vai|vaiya|bhai|bhaiya|apu|appu|didi|dada|bro|brother|sis|sister|sir|madam|dear|ভাই|ভাইয়া|আপু|দিদি|দাদা))[\s!.,❤️😊🙏?]*$/i
+
+export function isGreetingMessage(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false
+  return GREETING_MESSAGE_REGEX.test(text.trim())
+}
+
 export const COURTESY_AND_NON_NAME_REGEX =
   /^(?:many\s*thanks|thanks?(?:\s*(?:a\s*lot|so\s*much|a\s*ton|u|you))?|thank\s*you(?:\s*(?:so\s*much|very\s*much))?|thx|tnx|tysm|ty|dhonnobad|dhonnobaad|dhanobad|donnobad|onek\s*dhonnobad|shukriya|shukria|welcome|you(?:'re|\s*are)?\s*welcome|ok|okay|okk|okie|sure|alright|done|got\s*it|thik\s*(?:ache|ase)|acha|accha|achha|ji|haan|ha|haa|yes|no|na|nah|nope|bye|goodbye|tata|salam|slm|assalamu(?:\s*alaikum)?|hi|hello|hey|hlw|kemon\s*achen|kemon\s*acho|bhalo|valo|fine|good|nice|great|wow|vai|bhai|bhaiya|apu|appu|didi|dada|sir|madam|bro|sis|love|dear|boss|customer|guest|user|admin|owner|null|undefined|none|n\/a|ধন্যবাদ|অনেক\s*ধন্যবাদ|স্বাগতম|শুকরিয়া|সালাম|হ্যালো|হাই|ঠিক\s*আছে|আচ্ছা|জি|হ্যাঁ|না|বাই)$/i
 
@@ -47,14 +55,15 @@ export function isTemplateInstruction(str?: string | null): boolean {
   if (!str) return false
   const s = str.toLowerCase().trim()
   if (s.endsWith('?')) return true
-  if (/\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস|delivery\s*package)\b/i.test(s)) return true
+  if (/(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|বাসা\/রোড|থানা,\s*জেলা|basha\/road|thana,\s*district|share\s*your|could\s*you\s*please|to\s*complete\s*your|অনুগ্রহ\s*করে|জানিয়ে\s*দিন|বুকিংয়ের\s*জন্য|পাঠিয়ে\s*দিচ্ছি|প্রস্তুত\s*করছি|যেকোনো\s*প্রয়োজনে|কুরিয়ার\s*সার্ভিস|delivery\s*package)/i.test(s)) return true
   return false
 }
 
 /**
  * Strict validator for recipient human names in Bangladesh.
  * Rejects courtesy phrases ("thanks", "dhonnobad"), greetings ("hi"), order instructions,
- * addresses, phone artifacts, numbers, and generic conversational text.
+ * addresses, phone artifacts, numbers, label artifacts (e.g. "নাম", "এর নাম", "name"),
+ * and invalid Bengali combining diacritics.
  */
 export function isValidHumanCustomerName(name?: string | null): boolean {
   if (!name || typeof name !== 'string') return false
@@ -67,6 +76,16 @@ export function isValidHumanCustomerName(name?: string | null): boolean {
   if (isTemplateInstruction(trimmed)) return false
   if (/^(?:for|to|in|at|of|the|a|an|with|by|from|about)\s+/i.test(trimmed)) return false
   if (COMMON_BANGLISH_NON_NAME_WORDS.test(trimmed)) return false
+
+  // Reject strings starting with Bengali vowel diacritics / combining signs
+  // (e.g. "ের নাম", "ার নাম", combining marks cannot start a word)
+  if (/^[\u0981-\u0983\u09BC-\u09CD\u09D7]/.test(trimmed)) return false
+
+  // Reject strings containing metadata words or labels (note: \b does not work on Bengali unicode)
+  if (/(?:^|\s|[^\u0980-\u09FF])(?:নাম|ঠিকানা|ফোন|নম্বর|মোবাইল|কাস্টমার|গ্রাহক|প্রাপক|ডেলিভারি|অর্ডার)(?:$|\s|[^\u0980-\u09FF])/i.test(trimmed)) return false
+  if (/\b(?:name|address|phone|number|customer|recipient|order|summary)\b/i.test(trimmed)) return false
+  if (/^(?:ের\s*নাম|এর\s*নাম)$/i.test(trimmed)) return false
+
   return /^[a-zA-Z.\s\u0980-\u09FF]+$/.test(trimmed)
 }
 
@@ -185,7 +204,7 @@ export function extractCustomerInfoFromMessage(text: string): ExtractedCustomerI
 
   // 4. NAME EXTRACTION
   const namePrefixRegex =
-    /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|(?:ami|আমি)\s+|(?:full\s*name|delivery\s*name|customer\s*name|recipient(?:\s*name)?|receiver(?:\s*name)?|name|naam|na+m|নাম|কাস্টমার\s*নাম|প্রাপক(?:\s*নাম)?)\s*(?:is|holo|hoche|hobe|:|=|-)?)\s*)([a-zA-Z.\s\u0980-\u09FF]{2,35})/i
+    /(?:(?:my\s*name\s*is|amar\s*na+m\s*(?:hoche|holo|is)?|(?:ami|আমি)\s+|(?:full\s*name|delivery\s*name|customer\s*name|recipient(?:\s*name)?|receiver(?:\s*name)?|প্রাপকের\s*নাম|গ্রাহকের\s*নাম|কাস্টমারের\s*নাম|আপনার\s*নাম|কাস্টমার\s*নাম|প্রাপক(?:\s*নাম)?|name|naam|na+m|নাম)\s*(?:is|holo|hoche|hobe|:|=|-|–|—)?)\s*)([a-zA-Z.\s\u0980-\u09FF]{2,35})/i
   const nameSuffixRegex = /^([a-zA-Z.\s\u0980-\u09FF]{2,35})\s+(?:is\s*(?:the|my)?\s*(?:full\s*)?name|amar\s*na+m|hoche\s*amar\s*na+m|holo\s*amar\s*na+m)/i
 
   const prefixMatch = cleanText.match(namePrefixRegex)

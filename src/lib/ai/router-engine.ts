@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
-import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
+import { detectAndCreateOrderFromChat, ORDER_CONFIRMATION_PHRASES_REGEX } from '@/lib/orders/auto-create-order'
 import { isDigitalProduct, checkIsDigitalOrder, isDigitalText } from '@/lib/products/product-type'
 import {
   extractCustomerInfoFromMessage,
@@ -12,6 +12,7 @@ import {
   isValidHumanCustomerName,
   COURTESY_AND_NON_NAME_REGEX,
   isGratitudeMessage,
+  isGreetingMessage,
 } from '@/lib/contacts/extract-info'
 import {
   resolveCustomerAddressing,
@@ -366,7 +367,9 @@ export function buildOrderConfirmationMessage({
       const honorificEn = customerGender === 'female' ? 'Apu' : customerGender === 'male' ? 'Bhaiya' : ''
       const nameGreetingEn = cleanName ? `${cleanName} ${honorificEn}`.trim() : (honorificEn || '')
       const greetingEn = nameGreetingEn ? `Thank you, ${nameGreetingEn}! 🎉` : `Thank you! 🎉`
-      const pmLabelEn = isFreeOrder ? 'Free (৳0)' : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+      const pmLabelEn = isFreeOrder
+        ? 'Free (৳0)'
+        : (paymentMethod === 'rocket' ? 'Rocket' : paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
 
       return `${greetingEn}
 All details for your digital order have been successfully received.
@@ -386,7 +389,7 @@ Our team will verify the details and grant access to your email shortly. Thank y
       const greetingBn = nameGreetingBn ? `ধন্যবাদ, ${nameGreetingBn}! 🎉` : `ধন্যবাদ! 🎉`
       const pmLabelBn = isFreeOrder
         ? 'ফ্রি অফার (৳০)'
-        : (paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
+        : (paymentMethod === 'rocket' ? 'রকেট (Rocket)' : paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
 
       return `${greetingBn}
 আপনার ডিজিটাল অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে।
@@ -413,7 +416,7 @@ Our team will verify the details and grant access to your email shortly. Thank y
 
     const pmLabelEn = paymentMethod === 'cod'
       ? 'Cash on Delivery (COD)'
-      : (paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
+      : (paymentMethod === 'rocket' ? 'Rocket' : paymentMethod === 'bkash' ? 'bKash' : paymentMethod === 'nagad' ? 'Nagad' : 'Online Payment')
 
     let itemsSectionEn = ''
     if (items && items.length > 1) {
@@ -447,7 +450,7 @@ Our shop team will review the information and dispatch your package shortly. Tha
 
     const pmLabelBn = paymentMethod === 'cod'
       ? 'ক্যাশ অন ডেলিভারি (Cash on Delivery)'
-      : (paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
+      : (paymentMethod === 'rocket' ? 'রকেট (Rocket)' : paymentMethod === 'bkash' ? 'বিকাশ (bKash)' : paymentMethod === 'nagad' ? 'নগদ (Nagad)' : 'অনলাইন পেমেন্ট')
 
     let itemsSectionBn = ''
     if (items && items.length > 1) {
@@ -512,8 +515,38 @@ export function buildOfflineReply({
   })
   const matchedProduct = matchedProducts[0] || null
 
-  // 0. If an image was sent but offline fallback is active
-  if (activeMediaUrl) {
+  const isGratitude = isGratitudeMessage(messageText)
+  const isGreeting = isGreetingMessage(messageText)
+
+  // 0a. Greetings & Gratitude have highest priority in conversational flow
+  if (isGreeting) {
+    intent = 'general_faq'
+    const titleBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+    const titleBanglish = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+    const titleEn = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+
+    if (detectedLang === 'banglish') {
+      reply = `Hello${titleBanglish}! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+    } else if (detectedLang === 'bn') {
+      reply = `আসসালামু আলাইকুম${titleBn}! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+    } else {
+      reply = `Hello${titleEn}! How can we assist you today? Are you looking for any particular product or service?`
+    }
+  } else if (isGratitude) {
+    intent = 'general_faq'
+    if (detectedLang === 'banglish') {
+      const title = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+      reply = `Apnake onek welcome${title}! Jekono proyojone amader janaben. Bhalo thakben! ❤️`
+    } else if (detectedLang === 'bn') {
+      const titleBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+      reply = `আপনাকে অনেক স্বাগতম${titleBn}! যেকোনো প্রয়োজনে নির্দ্বিধায় আমাদের জানাবেন। ভালো থাকুন! ❤️`
+    } else {
+      const titleEn = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+      reply = `You're most welcome${titleEn}! Please let us know if you need anything else. Have a wonderful day! ❤️`
+    }
+  }
+  // 0b. If an image was sent but offline fallback is active
+  else if (activeMediaUrl) {
     intent = 'product_inquiry'
     if (detectedLang === 'banglish') {
       reply = 'Apnar pathano chobi ti ami peyechi! Amader team chobi ti dekhe product er stock o dam janacche, ektu shomoy din.'
@@ -588,11 +621,11 @@ export function buildOfflineReply({
         }
       } else {
         if (detectedLang === 'banglish') {
-          reply = `Ji oboshshoi! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address, phone number o preferred payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
+          reply = `Ji oboshshoi! ${namesAndPrices} - shobgulo-i stock e ache. Total ৳${totalPrice.toLocaleString()}. Order confirm korte apnar delivery address, phone number o preferred payment method (Cash on Delivery naki bKash/Nagad/Rocket) janaben please?`
         } else if (detectedLang === 'bn') {
-          reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+          reply = `জি অবশ্যই! ${namesAndPricesBn} - সবগুলো পণ্যই স্টকে আছে। সর্বমোট ৳${totalPrice.toLocaleString()}। অর্ডার কনফার্ম করতে অনুগ্রহ করে আপনার পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ/রকেট) জানিয়ে দিন।`
         } else {
-          reply = `Sure! ${namesAndPrices} are both available. Total comes to ৳${totalPrice.toLocaleString()}. Please share your delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad) to confirm your order!`
+          reply = `Sure! ${namesAndPrices} are both available. Total comes to ৳${totalPrice.toLocaleString()}. Please share your delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad/Rocket) to confirm your order!`
         }
       }
     } else {
@@ -614,20 +647,20 @@ export function buildOfflineReply({
           }
         } else {
           if (detectedLang === 'banglish') {
-            reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Subscription order korte kindly apnar Phone number, je email e subscription ti nite chan shei Email address ebong bKash/Nagad payment confirm korben please.`
+            reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. Subscription order korte kindly apnar Phone number, je email e subscription ti nite chan shei Email address ebong bKash/Nagad/Rocket payment confirm korben please.`
           } else if (detectedLang === 'bn') {
-            reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। সাবস্ক্রিপশন অর্ডার করতে অনুগ্রহ করে আপনার ফোন নম্বর, যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেস এবং বিকাশ/নগদে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
+            reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। সাবস্ক্রিপশন অর্ডার করতে অনুগ্রহ করে আপনার ফোন নম্বর, যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান সেই ইমেইল অ্যাড্রেস এবং বিকাশ/নগদ/রকেটে পেমেন্ট মাধ্যমটি নিশ্চিত করুন।`
           } else {
-            reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. To place your subscription order, please provide your phone number, the email address where you want to receive the subscription, and your bKash/Nagad payment confirmation!`
+            reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. To place your subscription order, please provide your phone number, the email address where you want to receive the subscription, and your bKash/Nagad/Rocket payment confirmation!`
           }
         }
       } else {
         if (detectedLang === 'banglish') {
-          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Order confirm korte kindly apnar Delivery Name, delivery address, phone number ebong payment method (COD naki bKash/Nagad) janaben please.`
+          reply = `${matchedProduct.name} er dam ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'Stock e ache!' : 'Ekhon stock e nei.'} Order confirm korte kindly apnar Delivery Name, delivery address, phone number ebong payment method (COD naki bKash/Nagad/Rocket) janaben please.`
         } else if (detectedLang === 'bn') {
-          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} অর্ডার নিশ্চিত করতে অনুগ্রহ করে আপনার নাম (Delivery Name), পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+          reply = `${matchedProduct.name}-এর মূল্য ৳${matchedProduct.price}। ${matchedProduct.is_in_stock ? 'স্টকে আছে!' : 'বর্তমানে স্টকে নেই।'} অর্ডার নিশ্চিত করতে অনুগ্রহ করে আপনার নাম (Delivery Name), পূর্ণাঙ্গ ডেলিভারি ঠিকানা, ফোন নম্বর এবং পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ/রকেট) জানিয়ে দিন।`
         } else {
-          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} To confirm your order, please provide your Name, delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad)!`
+          reply = `${matchedProduct.name} is priced at ৳${matchedProduct.price}. ${matchedProduct.is_in_stock ? 'In stock!' : 'Out of stock.'} To confirm your order, please provide your Name, delivery address, phone number, and preferred payment method (Cash on Delivery or bKash/Nagad/Rocket)!`
         }
       }
     }
@@ -801,7 +834,7 @@ export function buildOfflineReply({
   else {
     intent = 'general_faq'
     const isGratitude = isGratitudeMessage(messageText)
-    const isGreeting = /^(hi|hello|hey|salam|slm|assalamu alaikum|hlw|হাই|হ্যালো|সালাম)[\s!.]*$/i.test(textLower)
+    const isGreeting = isGreetingMessage(messageText)
 
     if (isGratitude) {
       if (detectedLang === 'banglish') {
@@ -814,13 +847,17 @@ export function buildOfflineReply({
         const titleEn = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
         reply = `You're most welcome${titleEn}! Please let us know if you need anything else. Have a wonderful day! ❤️`
       }
-    } else if (isGreeting && !conversationHistoryText) {
+    } else if (isGreeting) {
+      const titleBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+      const titleBanglish = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+      const titleEn = customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+
       if (detectedLang === 'banglish') {
-        reply = `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+        reply = `Hello${titleBanglish}! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
       } else if (detectedLang === 'bn') {
-        reply = `আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+        reply = `আসসালামু আলাইকুম${titleBn}! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
       } else {
-        reply = `Hello! How can we assist you today? Are you looking for any particular product or service?`
+        reply = `Hello${titleEn}! How can we assist you today? Are you looking for any particular product or service?`
       }
     } else {
       if (detectedLang === 'banglish') {
@@ -1557,6 +1594,14 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
    - NO canned repetitive welcomes ("Thank you for reaching out to [Store]! How can we assist you today?").
    - Greet briefly and naturally if starting a conversation, or jump straight into the answer if conversation is already underway.
 
+4b. GREETINGS & CASUAL MESSAGES ARE NEVER ORDER CONFIRMATIONS (CRITICAL MANDATE):
+   - When the customer sends a greeting (e.g. "hi", "hello", "hey", "salam", "assalamu alaikum", "hlw", "kemon achen", "vai", "apu", "bhaiya"):
+     * YOU MUST NEVER output an order confirmation summary!
+     * YOU MUST NEVER confirm an order, recap past items, or repeat delivery details from past chat history!
+     * Greet the customer warmly and politely ask how you can help them today!
+     * Set "order": null (or "is_order": false).
+   - Past orders in RECENT CONVERSATION HISTORY are already completed. NEVER re-confirm or re-announce past orders upon a greeting or casual chat!
+
 5. STRICT ORDER CAPTURE REQUIREMENTS (PHYSICAL VS DIGITAL - MANDATORY):
    You MUST determine whether the CURRENT product being ordered is PHYSICAL or DIGITAL:
 
@@ -1722,6 +1767,8 @@ Return ONLY a valid JSON object. No explanation, no markdown text outside the JS
   }
 }
 Note on "order":
+- For Greetings ("hi", "hello", "hey", "salam", etc.) or Casual Conversation: Set "order": null! NEVER return an order object for greetings or casual messages!
+- If an order was ALREADY placed/confirmed in the conversation history: Do NOT confirm or recreate it again! The past order is already complete. Only create an order if the customer explicitly requests to buy a new product or place a new order.
 - For Cancellation: Set "action": "cancel", "is_cancelled": true, "is_order": false. DO NOT CREATE AN ORDER!
 - For Product Switch/Change: Set "action": "update_items", "is_order": true, with the new product in "items".
 - For New Order: Set "is_order": true ONLY when ALL required information has been provided:
@@ -2051,6 +2098,15 @@ Set "order": null if the customer is merely asking a question without ordering o
   const msgLower = messageText.toLowerCase()
   const histLower = combinedHistory.toLowerCase()
 
+  const isGreeting = isGreetingMessage(messageText)
+  const isCustomerSendingGratitude = isGratitudeMessage(messageText)
+
+  if (isGreeting || isCustomerSendingGratitude) {
+    if (llmOrderData) {
+      llmOrderData.is_order = false
+    }
+  }
+
   // 1. Resolve Active Product & Type (Physical vs Digital) for the CURRENT turn
   // A. Check if messageText explicitly mentions a product in catalog:
   const sortedProducts = [...products].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0))
@@ -2106,7 +2162,8 @@ Set "order": null if the customer is merely asking a question without ordering o
     (/\b(?:canva\b[^.]*\b(?:free|giveaway|ফ্রি|বিনামূল্যে|gift)|(?:free|ফ্রি|বিনামূল্যে|gift|giveaway)[^.]*\bcanva)\b/i.test(knowledgeSourcesText) ||
       hasCanvaFreeInCatalog)
 
-  const orderConfirmationPhrases = /(?:order\s*(?:has\s*been|is)?\s*(?:successfully)?\s*(?:placed|confirmed|booked)|অর্ডার(?:টি)?\s*(?:সফলভাবে)?\s*(?:কনফার্ম|গৃহীত|নিশ্চিত|প্লেস|হয়েছে)|order\s*(?:confirm|place)\s*(?:kora\s*hoyeche|hoyeche))/i
+  const orderConfirmationPhrases = ORDER_CONFIRMATION_PHRASES_REGEX
+  const orderIntentKeywords = /\b(?:order\s*(?:korte|korbo|kori|confirm|place|din|den|korun|dite|kora|chai|lagbe)|অর্ডার\s*(?:করতে|করব|করবো|দিন|কনফার্ম|করুন|চাই|নিব|নেব)|nite\s*chai|kinbo|kinte\s*chai|buy|purchase|place\s*order|want\s*to\s*buy|i\s*want\s*to\s*order|send\s*me|need\s*this|confirm\s*order)\b/i
 
   // Separate conversation history into previous orders vs active order session:
   // If an order was previously confirmed in chat history, any details prior to that belong to the past order!
@@ -2125,6 +2182,14 @@ Set "order": null if the customer is merely asking a question without ordering o
 
   const activeSessionHistoryText = activeSessionLines.join('\n')
   const currentSessionText = `${activeSessionHistoryText}\n${messageText}`.trim()
+
+  // Filter active session lines to only customer messages so AI text never contaminates payment/address detection:
+  const customerSessionLines = activeSessionLines
+    .filter((l) => !/^\s*(?:\[[^\]]+\]\s*)?(?:Salesman|Bot|Assistant|Agent|Shop|AI)\s*:/i.test(l))
+    .map((l) => l.replace(/^\s*(?:\[[^\]]+\]\s*)?(?:Customer|User)\s*:\s*/i, '').trim())
+    .filter(Boolean)
+  const customerSessionText = customerSessionLines.concat(messageText.trim()).filter(Boolean).join('\n')
+  const customerSessionLower = customerSessionText.toLowerCase()
 
   const extractedInfo = extractCustomerInfoFromMessage(messageText)
   const sessionExtractedInfo = extractCustomerInfoFromMessage(currentSessionText)
@@ -2154,28 +2219,53 @@ Set "order": null if the customer is merely asking a question without ordering o
     return isValidHumanCustomerName(n)
   }
 
+  // Check if customer explicitly confirms reusing saved / previous delivery details:
+  const explicitReusePhrases = /\b(?:ager\s*(?:address|thikana|moto|details)|same\s*(?:address|thikana|details|place)|previous\s*(?:address|details)|purber\s*(?:thikana|address)|আগের\s*(?:ঠিকানা|ঠিকানায়|মতে|মতো|ডিটেইলস)|একই\s*(?:ঠিকানা|ঠিকানায়)|পূর্বের\s*(?:ঠিকানা|ঠিকানায়))\b/i
+  const shortAffirmationPhrases = /^(?:ha|haa|ji|jee|yes|yeah|yup|ok|okay|thik\s*ache|confirm|sure|proceed|হাঁ|হ্যাঁ|জি|জী|ঠিক\s*আছে|কনফার্ম|করুন|পাঠান|দিয়ে\s*দিন|দেন)[.!]?$/i
+
+  const lastAssistantLine = activeSessionLines
+    .filter((l) => /^\s*(?:\[[^\]]+\]\s*)?(?:Salesman|Bot|Assistant|Agent|Shop|AI)\s*:/i.test(l))
+    .pop() || ''
+  const didAssistantAskForConfirmation = /\b(?:পূর্বের\s*ঠিকানা|ager\s*address|previous\s*address|confirm\s*korte|কনফার্ম\s*করতে|ঠিকানায়\s*পাঠাতে\s*চাইলে)\b/i.test(lastAssistantLine)
+
+  const isCustomerExplicitlyConfirmingSavedDetails =
+    explicitReusePhrases.test(messageText) ||
+    (didAssistantAskForConfirmation && shortAffirmationPhrases.test(messageText.trim()))
+
+  const previousAddress =
+    (contactDbAddress && isDetailedDeliveryAddress(contactDbAddress) ? contactDbAddress : null) ||
+    (histExtractedInfo.address && isDetailedDeliveryAddress(histExtractedInfo.address) ? histExtractedInfo.address : null) ||
+    null
+
+  const previousPhone =
+    (contactDbPhone && !isFacebookPsid(contactDbPhone) && contactDbPhone.length >= 10 ? contactDbPhone : null) ||
+    (histExtractedInfo.phone && histExtractedInfo.phone.length >= 10 ? histExtractedInfo.phone : null) ||
+    null
+
+  // Detect whether the customer is initiating a new order intent turn without providing delivery details:
+  const isOrderIntentMessage = orderIntentKeywords.test(messageText) && !/\b(?:\?|ki|koto|dam\s*koto|kivabe|details|sure)\b/i.test(messageText)
+  const isStartingNewOrderWithoutDetails = isOrderIntentMessage && !extractedInfo.address && !isCustomerExplicitlyConfirmingSavedDetails
+
   // CURRENT ORDER SPECIFIC DETAILS:
-  // Must be provided in this order session / message! We do NOT take old contactDb rows to satisfy
-  // new order requirements so repeated customers are asked their delivery name, address, phone, and payment method!
+  // Must be provided or confirmed for this specific order!
   const currentOrderName =
-    (isValidHumanName(extractedInfo.name) ? extractedInfo.name : null) ||
-    (isValidHumanName(sessionExtractedInfo.name) ? sessionExtractedInfo.name : null) ||
-    (isValidHumanName(llmOrderData?.customer_name) ? llmOrderData.customer_name : null) ||
-    (isValidHumanName(candidateCustomerName) ? candidateCustomerName : null) ||
-    (isValidHumanName(contactDbName) ? contactDbName : null) ||
+    (isValidHumanName(extractedInfo.name) ? cleanCustomerName(extractedInfo.name) : null) ||
+    (isValidHumanName(sessionExtractedInfo.name) ? cleanCustomerName(sessionExtractedInfo.name) : null) ||
+    (isValidHumanName(candidateCustomerName) ? cleanCustomerName(candidateCustomerName) : null) ||
+    (isValidHumanName(contactDbName) ? cleanCustomerName(contactDbName) : null) ||
     null
 
-  const currentOrderPhone =
-    extractedInfo.phone ||
-    sessionExtractedInfo.phone ||
-    (llmOrderData?.customer_phone && !isFacebookPsid(llmOrderData.customer_phone) ? llmOrderData.customer_phone : null) ||
-    null
+  const currentOrderPhone = isStartingNewOrderWithoutDetails
+    ? (extractedInfo.phone || null)
+    : isCustomerExplicitlyConfirmingSavedDetails
+    ? (previousPhone || extractedInfo.phone || sessionExtractedInfo.phone || null)
+    : (extractedInfo.phone || sessionExtractedInfo.phone || null)
 
-  const currentOrderAddress =
-    extractedInfo.address ||
-    sessionExtractedInfo.address ||
-    (llmOrderData?.customer_address && llmOrderData.customer_address.length >= 5 ? llmOrderData.customer_address : null) ||
-    null
+  const currentOrderAddress = isStartingNewOrderWithoutDetails
+    ? null
+    : isCustomerExplicitlyConfirmingSavedDetails
+    ? (previousAddress || extractedInfo.address || sessionExtractedInfo.address || null)
+    : (extractedInfo.address || (sessionExtractedInfo.address && isDetailedDeliveryAddress(sessionExtractedInfo.address) ? sessionExtractedInfo.address : null) || null)
 
   const currentOrderEmail =
     extractedInfo.email ||
@@ -2183,7 +2273,7 @@ Set "order": null if the customer is merely asking a question without ordering o
     llmOrderData?.customer_email ||
     (currentSessionText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || null)
 
-  const effectiveName = currentOrderName || (isValidHumanName(contactDbName) ? contactDbName : null)
+  const effectiveName = currentOrderName || (isValidHumanName(contactDbName) ? cleanCustomerName(contactDbName) : null)
   const effectivePhone = currentOrderPhone || (contactDbPhone && !isFacebookPsid(contactDbPhone) ? contactDbPhone : null)
   const effectiveAddress = currentOrderAddress || contactDbAddress
   const effectiveEmail = currentOrderEmail || contactDbEmail
@@ -2273,25 +2363,36 @@ Set "order": null if the customer is merely asking a question without ordering o
       llmOrderData.delivery_charge = 0
     }
   } else {
-    // Check for explicit COD
-    if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে|delivery\s*te\s*taka|হাতে\s*পেয়ে|হাতে\s*টাকা)\b/i.test(msgLower) || /\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি)\b/i.test(currentSessionLower)) {
-      explicitPaymentMethod = 'cod'
-      isPaymentConfirmed = true
+    // 1. Check messageText (msgLower) FIRST for explicit payment method chosen in THIS turn:
+    if (/\b(?:rocket|রকেট)\b/i.test(msgLower)) {
+      explicitPaymentMethod = 'rocket'
       isOrderDigital = false
     } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'bkash'
     } else if (/\b(?:nagad|নগদ)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'nagad'
-    } else if (/\b(?:rocket|রকেট)\b/i.test(msgLower)) {
-      explicitPaymentMethod = 'rocket'
     } else if (/\b(?:online\s*payment|online\s*e|অনলাইন\s*পেমেন্ট|অনলাইনে)\b/i.test(msgLower)) {
       explicitPaymentMethod = 'online'
-    } else if (/\b(?:bkash|nagad|rocket)\b/i.test(currentSessionLower)) {
-      explicitPaymentMethod = currentSessionLower.match(/\b(bkash|nagad|rocket)\b/i)?.[0].toLowerCase() || 'bkash'
+    } else if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|ক্যাশ|ক্যাশে|delivery\s*te\s*taka|হাতে\s*পেয়ে|হাতে\s*টাকা)\b/i.test(msgLower)) {
+      explicitPaymentMethod = 'cod'
+      isPaymentConfirmed = true
+      isOrderDigital = false
+    } else if (/\b(?:rocket|রকেট)\b/i.test(customerSessionLower)) {
+      explicitPaymentMethod = 'rocket'
+      isOrderDigital = false
+    } else if (/\b(?:bkash|b-kash|বিকাশ)\b/i.test(customerSessionLower)) {
+      explicitPaymentMethod = 'bkash'
+    } else if (/\b(?:nagad|নগদ)\b/i.test(customerSessionLower)) {
+      explicitPaymentMethod = 'nagad'
+    } else if (/\b(?:cod|cash\s*on\s*delivery|ক্যাশ\s*অন\s*ডেলিভারি|হাতে\s*পেয়ে)\b/i.test(customerSessionLower)) {
+      explicitPaymentMethod = 'cod'
+      isPaymentConfirmed = true
+      isOrderDigital = false
     } else if (llmOrderData?.payment_method) {
       const pm = String(llmOrderData.payment_method).toLowerCase()
-      if (['bkash', 'nagad', 'rocket', 'online'].includes(pm)) explicitPaymentMethod = pm
-      else if (pm === 'cod') {
+      if (['bkash', 'nagad', 'rocket', 'online'].includes(pm)) {
+        explicitPaymentMethod = pm
+      } else if (pm === 'cod') {
         explicitPaymentMethod = 'cod'
         isPaymentConfirmed = true
         isOrderDigital = false
@@ -2355,28 +2456,48 @@ Set "order": null if the customer is merely asking a question without ordering o
   }
 
   // Detect if customer is actively attempting to place an order or provided checkout data
-  const orderIntentKeywords = /\b(?:order\s*(?:korte|korbo|kori|confirm|place|din|den|korun|dite|kora|chai|lagbe)|অর্ডার\s*(?:করতে|করব|করবো|দিন|কনফার্ম|করুন|চাই|নিব|নেব)|nite\s*chai|kinbo|kinte\s*chai|buy|purchase|place\s*order|want\s*to\s*buy|i\s*want\s*to\s*order|send\s*me|need\s*this|confirm\s*order)\b/i
   const isQuestionOrInquiry = /\b(?:\?|ki|koto|dam\s*koto|kivabe|details|sure|is\s*it|are\s*you\s*sure|free\s*naki\s*paid|paid\s*naki\s*free|free\s*or\s*paid|paid\s*or\s*free|কত|কী|কি|নাকি|পেইড|ফ্রি\s*নাকি)\b/i.test(messageText)
 
-  const isCustomerSendingGratitude = isGratitudeMessage(messageText)
-
-  const customerProvidedCheckoutDetails = Boolean(
-    (!isOrderDigital && currentOrderAddress && currentOrderPhone && !isCustomerSendingGratitude) ||
-    (isOrderDigital && currentOrderEmail && currentOrderPhone && !isCustomerSendingGratitude) ||
+  // Customer provided fresh checkout details in this message:
+  const hasFreshCheckoutInMessage = Boolean(
+    extractedInfo.phone ||
+    extractedInfo.address ||
+    extractedInfo.email ||
     hasTrx ||
     hasPaymentSent
   )
 
+  const customerProvidedCheckoutDetails = Boolean(
+    !isCustomerSendingGratitude &&
+    !isGreeting &&
+    !isCancelRequest &&
+    (
+      hasFreshCheckoutInMessage ||
+      (!isOrderDigital && currentOrderAddress && currentOrderPhone && sessionExtractedInfo.phone) ||
+      (isOrderDigital && currentOrderEmail && currentOrderPhone && sessionExtractedInfo.phone) ||
+      hasTrx ||
+      hasPaymentSent
+    )
+  )
+
   const isCustomerAttemptingOrder =
-    !isCustomerSendingGratitude && (
+    !isCustomerSendingGratitude &&
+    !isGreeting &&
+    !isCancelRequest &&
+    (
       (orderIntentKeywords.test(messageText) && !isQuestionOrInquiry) ||
-      customerProvidedCheckoutDetails ||
-      Boolean(llmOrderData?.is_order && orderIntentKeywords.test(currentSessionText) && !isQuestionOrInquiry)
+      (customerProvidedCheckoutDetails && !isQuestionOrInquiry && hasFreshCheckoutInMessage) ||
+      Boolean(
+        llmOrderData?.is_order &&
+        orderIntentKeywords.test(currentSessionText) &&
+        !isQuestionOrInquiry &&
+        (hasFreshCheckoutInMessage || orderIntentKeywords.test(messageText))
+      )
     )
 
-  // Invalidate order if customer is sending gratitude, order is incomplete, or asking an informational question
-  if (isCustomerSendingGratitude || !isOrderFullyComplete || !isCustomerAttemptingOrder) {
-    if (llmOrderData && (isCustomerSendingGratitude || !customerProvidedCheckoutDetails)) {
+  // Invalidate order if customer is sending gratitude, greeting, cancellation, order is incomplete, or not attempting order
+  if (isCustomerSendingGratitude || isGreeting || isCancelRequest || !isOrderFullyComplete || !isCustomerAttemptingOrder) {
+    if (llmOrderData) {
       llmOrderData.is_order = false
     }
   }
@@ -2385,11 +2506,18 @@ Set "order": null if the customer is merely asking a question without ordering o
   // 1. The AI falsely claimed an order was placed/confirmed without having full details, OR
   // 2. The customer is actively attempting to place an order and missing required checkout fields
   const shouldSanitizeMissingOrderInfo =
+    !isGreeting &&
+    !isCustomerSendingGratitude &&
+    !isCancelRequest &&
     !isOrderFullyComplete &&
     (aiClaimsOrderPlaced || isCustomerAttemptingOrder)
 
   if (shouldSanitizeMissingOrderInfo) {
-    const bKashNumber = account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+    const paymentSettings = account?.payment_settings as any
+    const bkashNumber = paymentSettings?.bkash?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+    const nagadNumber = paymentSettings?.nagad?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+    const rocketNumber = paymentSettings?.rocket?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+    const bKashNumber = bkashNumber
     const targetProductName = activeProduct?.name || llmOrderData?.items?.[0]?.product_name || (isOrderDigital ? 'Digital Product' : 'Product')
 
     if (isOrderDigital) {
@@ -2413,12 +2541,17 @@ Set "order": null if the customer is merely asking a question without ordering o
           }
         }
       } else if (missingRequirements.includes('online_payment_pending')) {
+        const pmNameBn = explicitPaymentMethod === 'rocket' ? 'রকেট' : explicitPaymentMethod === 'nagad' ? 'নগদ' : explicitPaymentMethod === 'bkash' ? 'বিকাশ' : 'বিকাশ/নগদ/রকেট'
+        const pmNameBanglish = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
+        const pmNameEn = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
+        const targetNumber = explicitPaymentMethod === 'rocket' ? rocketNumber : explicitPaymentMethod === 'nagad' ? nagadNumber : bkashNumber
+
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName}-এর সাবস্ক্রিপশন কনফার্ম করতে অনুগ্রহ করে বিকাশ/নগদে (${bKashNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশনটি শেয়ার করুন।`
+          aiReply = `ধন্যবাদ! ${targetProductName}-এর সাবস্ক্রিপশন কনফার্ম করতে অনুগ্রহ করে ${pmNameBn}-এ (${targetNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশনটি শেয়ার করুন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} er subscription confirm korte bKash/Nagad e (${bKashNumber}) payment kore TrxID ba confirmation share korun please.`
+          aiReply = `Dhonnobad! ${targetProductName} er subscription confirm korte ${pmNameBanglish} e (${targetNumber}) payment kore TrxID ba confirmation share korun please.`
         } else {
-          aiReply = `Thank you! To complete your digital subscription for ${targetProductName}, please send payment via bKash/Nagad to ${bKashNumber} and share the TrxID or confirmation.`
+          aiReply = `Thank you! To complete your digital subscription for ${targetProductName}, please send payment via ${pmNameEn} to ${targetNumber} and share the TrxID or confirmation.`
         }
       } else if (missingRequirements.includes('email')) {
         if (detectedLang === 'bn') {
@@ -2440,28 +2573,44 @@ Set "order": null if the customer is merely asking a question without ordering o
     } else {
       // PHYSICAL ORDER PROMPTS (Name, Delivery Address, Delivery Number, Payment Method)
       if (missingRequirements.length >= 2 || (missingRequirements.includes('name') && missingRequirements.includes('address'))) {
+        const hasSavedDetails = Boolean(previousAddress && previousPhone)
+        const savedDetailsPromptBn = hasSavedDetails
+          ? `\n👉 আপনার পূর্বের ঠিকানা: "${previousAddress}" এবং ফোন নম্বর: "${previousPhone}"-এ পাঠাতে চাইলে অনুগ্রহ করে 'হ্যাঁ/কনফার্ম' বা 'আগের ঠিকানায় পাঠান' লিখে জানান।`
+          : ''
+        const savedDetailsPromptBanglish = hasSavedDetails
+          ? `\n👉 Apnar ager address: "${previousAddress}" ebong phone: "${previousPhone}" e delivery nite chaile kindly 'ha/confirm' ba 'ager address e pathan' likhe janan.`
+          : ''
+        const savedDetailsPromptEn = hasSavedDetails
+          ? `\n👉 If you would like to use your previous address: "${previousAddress}" and phone: "${previousPhone}", please reply with "confirm" or "use same address".`
+          : ''
+
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName} এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ৪টি তথ্য জানিয়ে দিন:\n১. আপনার নাম (Delivery Name)\n২. পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা)\n৩. ফোন নম্বর\n৪. পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ)।`
+          aiReply = `ধন্যবাদ! ${targetProductName} এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ৪টি তথ্য জানিয়ে দিন:\n১. আপনার নাম (Delivery Name)\n২. পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা)\n৩. ফোন নম্বর\n৪. পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ/রকেট)।${savedDetailsPromptBn}`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} available ache. Order confirm korte kindly apnar:\n1. Delivery Name\n2. Delivery Address (basha/road, thana, district)\n3. Phone Number\n4. Payment Method (Cash on Delivery naki bKash/Nagad) janaben please.`
+          aiReply = `Dhonnobad! ${targetProductName} available ache. Order confirm korte kindly apnar:\n1. Delivery Name\n2. Delivery Address (basha/road, thana, district)\n3. Phone Number\n4. Payment Method (Cash on Delivery naki bKash/Nagad/Rocket) janaben please.${savedDetailsPromptBanglish}`
         } else {
-          aiReply = `Great choice! ${targetProductName} is available. To confirm your delivery, please provide:\n1. Your Name (Delivery Name)\n2. Full Delivery Address (house/road, area, city/district)\n3. Phone Number\n4. Preferred Payment Method (Cash on Delivery or bKash/Nagad).`
+          aiReply = `Great choice! ${targetProductName} is available. To confirm your delivery, please provide:\n1. Your Name (Delivery Name)\n2. Full Delivery Address (house/road, area, city/district)\n3. Phone Number\n4. Preferred Payment Method (Cash on Delivery or bKash/Nagad/Rocket).${savedDetailsPromptEn}`
         }
       } else if (missingRequirements.includes('online_payment_pending')) {
+        const pmNameBn = explicitPaymentMethod === 'rocket' ? 'রকেট' : explicitPaymentMethod === 'nagad' ? 'নগদ' : explicitPaymentMethod === 'bkash' ? 'বিকাশ' : 'বিকাশ/নগদ/রকেট'
+        const pmNameBanglish = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
+        const pmNameEn = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
+        const targetNumber = explicitPaymentMethod === 'rocket' ? rocketNumber : explicitPaymentMethod === 'nagad' ? nagadNumber : bkashNumber
+
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! আমাদের বিকাশ/নগদ নম্বর: ${bKashNumber}। অনুগ্রহ করে পেমেন্ট সম্পন্ন করে ট্রানজেকশন আইডি (TrxID) বা কনফার্মেশন শেয়ার করুন যাতে আমরা অর্ডারটি কনফার্ম করতে পারি।`
+          aiReply = `ধন্যবাদ! আমাদের ${pmNameBn} নম্বর: ${targetNumber}। অনুগ্রহ করে পেমেন্ট সম্পন্ন করে ট্রানজেকশন আইডি (TrxID) বা কনফার্মেশন শেয়ার করুন যাতে আমরা অর্ডারটি কনফার্ম করতে পারি।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Amader bKash/Nagad number: ${bKashNumber}. Kindly payment kore TrxID ba confirmation share korun jate amra order confirm korte pari.`
+          aiReply = `Dhonnobad! Amader ${pmNameBanglish} number: ${targetNumber}. Kindly payment kore TrxID ba confirmation share korun jate amra order confirm korte pari.`
         } else {
-          aiReply = `Thank you! Our bKash/Nagad account number is ${bKashNumber}. Please send your payment and share the TrxID or confirmation so we can confirm your order.`
+          aiReply = `Thank you! Our ${pmNameEn} account number is ${targetNumber}. Please send your payment and share the TrxID or confirmation so we can confirm your order.`
         }
       } else if (missingRequirements.includes('payment_method')) {
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! আমরা আপনার ডেলিভারি তথ্য পেয়েছি। অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ) জানিয়ে দিন।`
+          aiReply = `ধন্যবাদ! আমরা আপনার ডেলিভারি তথ্য পেয়েছি। অর্ডারটি কনফার্ম করতে অনুগ্রহ করে আপনার পছন্দের পেমেন্ট মাধ্যমটি (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ/রকেট) জানিয়ে দিন।`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Amra apnar delivery details peyechi. Order confirm korte apnar payment method (Cash on Delivery naki bKash/Nagad) janaben please?`
+          aiReply = `Dhonnobad! Amra apnar delivery details peyechi. Order confirm korte apnar payment method (Cash on Delivery naki bKash/Nagad/Rocket) janaben please?`
         } else {
-          aiReply = `Thank you! We have received your delivery details. To complete your order, please specify your preferred payment method: Cash on Delivery (COD) or bKash/Nagad?`
+          aiReply = `Thank you! We have received your delivery details. To complete your order, please specify your preferred payment method: Cash on Delivery (COD) or bKash/Nagad/Rocket?`
         }
       } else if (missingRequirements.includes('address')) {
         const shortAddrNotice = currentOrderAddress ? `আপনার দেওয়া ঠিকানাটি (${currentOrderAddress}) পার্সেল ডেলিভারির জন্য পর্যাপ্ত নয়। ` : ''
@@ -2492,7 +2641,7 @@ Set "order": null if the customer is merely asking a question without ordering o
         }
       }
     }
-  } else if (isOrderFullyComplete && isCustomerAttemptingOrder && !isCancelRequest) {
+  } else if (isOrderFullyComplete && isCustomerAttemptingOrder && !isCancelRequest && !isGreeting && !isCustomerSendingGratitude) {
     // 1. Resolve strict gender consistency target
     let targetConsistencyGender = addressedCustomer.gender
     if (targetConsistencyGender === 'unknown' && currentOrderName) {
@@ -2602,12 +2751,70 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
 
+  if (isGreeting) {
+    const honorificBn = targetConsistencyGender === 'female' ? 'আপু' : targetConsistencyGender === 'male' ? 'ভাইয়া' : ''
+    const honorificBanglish = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+    const honorificEn = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+    const cleanCustomerGreetingName = cleanCustomerName(candidateCustomerName || currentOrderName || customerContactName)
+
+    const displayNameBn = cleanCustomerGreetingName ? (honorificBn ? `${cleanCustomerGreetingName} ${honorificBn}` : cleanCustomerGreetingName) : (honorificBn ? honorificBn : '')
+    const displayNameBanglish = cleanCustomerGreetingName ? (honorificBanglish ? `${cleanCustomerGreetingName}${honorificBanglish}` : cleanCustomerGreetingName) : (honorificBanglish ? honorificBanglish.trim() : '')
+    const displayNameEn = cleanCustomerGreetingName ? (honorificEn ? `${cleanCustomerGreetingName}${honorificEn}` : cleanCustomerGreetingName) : (honorificEn ? honorificEn.trim() : '')
+
+    const hasOrderConfirmationLeak =
+      orderConfirmationPhrases.test(aiReply) ||
+      /\b(?:প্রাপকের\s*নাম|Recipient\s*Name|ডেলিভারি\s*তথ্য|Order\s*Summary|ডেলিভারি\s*চার্জ|অর্ডার\s*বিবরণী|সকল\s*তথ্য\s*সফলভাবে\s*গ্রহণ|সাবস্ক্রিপশন\s*বিবরণী|পার্সেল\s*পাঠিয়ে\s*দেবে)\b/i.test(aiReply) ||
+      /\b(?:পূর্ণাঙ্গ\s*ডেলিভারি\s*ঠিকানা|অর্ডারটি\s*কনফার্ম\s*করতে\s*অনুগ্রহ\s*করে|বিকাশ\/নগদ\s*নম্বর)\b/i.test(aiReply) ||
+      !/\b(?:hello|hi|hey|salam|assalamu|kivabe|shahajjo|help|assist|স্বাগতম|সালাম|হ্যালো|হাই|সাহায্য|কেমন)\b/i.test(aiReply)
+
+    if (hasOrderConfirmationLeak) {
+      if (detectedLang === 'bn') {
+        aiReply = displayNameBn
+          ? `আসসালামু আলাইকুম, ${displayNameBn}! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+          : `আসসালামু আলাইকুম! কীভাবে সাহায্য করতে পারি? কোনো পণ্য বা সার্ভিস সম্পর্কে জানতে চান?`
+      } else if (detectedLang === 'banglish') {
+        aiReply = displayNameBanglish
+          ? `Hello, ${displayNameBanglish}! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+          : `Hello! Kivabe shahajjo korte pari? Kono product ba service somporke jante chan?`
+      } else {
+        aiReply = displayNameEn
+          ? `Hello, ${displayNameEn}! How can we assist you today? Are you looking for any particular product or service?`
+          : `Hello! How can we assist you today? Are you looking for any particular product or service?`
+      }
+    }
+  }
+
+  // General guardrail: If customer is NOT actively attempting an order,
+  // aiReply must NEVER leak an order confirmation summary or order details!
+  if (!isCustomerAttemptingOrder && !isCancelRequest) {
+    const leakDetected =
+      orderConfirmationPhrases.test(aiReply) ||
+      /\b(?:প্রাপকের\s*নাম|Recipient\s*Name|ডেলিভারি\s*তথ্য|Order\s*Summary|ডেলিভারি\s*চার্জ|অর্ডার\s*বিবরণী|সকল\s*তথ্য\s*সফলভাবে\s*গ্রহণ|সাবস্ক্রিপশন\s*বিবরণী|পার্সেল\s*পাঠিয়ে\s*দেবে)\b/i.test(aiReply)
+
+    if (leakDetected) {
+      if (!isGreeting && !isCustomerSendingGratitude) {
+        const honorificBn = targetConsistencyGender === 'female' ? 'আপু' : targetConsistencyGender === 'male' ? 'ভাইয়া' : ''
+        const titleBn = honorificBn ? `, ${honorificBn}` : ''
+        const titleBanglish = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+        const titleEn = targetConsistencyGender === 'female' ? ' Apu' : targetConsistencyGender === 'male' ? ' Bhaiya' : ''
+
+        if (detectedLang === 'bn') {
+          aiReply = `জি${titleBn}! কীভাবে সাহায্য করতে পারি বলুন? কোনো পণ্য সম্পর্কে জানতে চাইলে বিস্তারিত জানান।`
+        } else if (detectedLang === 'banglish') {
+          aiReply = `Ji${titleBanglish}! Kivabe shahajjo korte pari bolun? Kono product somporke jante chaile janan please.`
+        } else {
+          aiReply = `Hello${titleEn}! How can we assist you today? Please let us know which product you'd like to learn more about.`
+        }
+      }
+    }
+  }
+
   if (detectedLang === 'banglish') {
     aiReply = normalizeBanglishSpelling(aiReply)
   }
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
-  if (!isCustomerSendingGratitude) {
+  if (isOrderFullyComplete && isCustomerAttemptingOrder && !isCustomerSendingGratitude && !isGreeting && !isCancelRequest) {
     try {
       const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
         ? resolveDeliveryCharge({

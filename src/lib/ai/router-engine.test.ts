@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { detectLanguage, buildOfflineReply, formatRelativeMessageTime, buildOrderConfirmationMessage } from './router-engine'
-import { isDetailedDeliveryAddress } from '../contacts/extract-info'
+import { isDetailedDeliveryAddress, isGreetingMessage } from '../contacts/extract-info'
+import { ORDER_CONFIRMATION_PHRASES_REGEX } from '../orders/auto-create-order'
 
 describe('router-engine language detection', () => {
   it('detects explicit request for Bengali even if written in Latin characters', () => {
@@ -581,5 +582,146 @@ describe('router-engine Banglish reply spelling and quality', () => {
 
     expect(confirmation).toContain('ধন্যবাদ, Rifat আপু! 🎉')
     expect(confirmation).toContain('• প্রাপকের নাম: Rifat')
+  })
+
+  it('correctly identifies greeting messages across English, Bengali, and Banglish', () => {
+    expect(isGreetingMessage('hi')).toBe(true)
+    expect(isGreetingMessage('Hi')).toBe(true)
+    expect(isGreetingMessage('HI')).toBe(true)
+    expect(isGreetingMessage('hiiii')).toBe(true)
+    expect(isGreetingMessage('hello')).toBe(true)
+    expect(isGreetingMessage('hey')).toBe(true)
+    expect(isGreetingMessage('hlw')).toBe(true)
+    expect(isGreetingMessage('hi apu')).toBe(true)
+    expect(isGreetingMessage('hello bhaiya')).toBe(true)
+    expect(isGreetingMessage('salam')).toBe(true)
+    expect(isGreetingMessage('assalamu alaikum')).toBe(true)
+    expect(isGreetingMessage('হাই')).toBe(true)
+    expect(isGreetingMessage('হ্যালো')).toBe(true)
+    expect(isGreetingMessage('সালাম')).toBe(true)
+    expect(isGreetingMessage('কেমন আছেন?')).toBe(true)
+    expect(isGreetingMessage('kemon achen?')).toBe(true)
+
+    // Negative tests: actual order attempts or inquiries should NOT be classified as pure greetings
+    expect(isGreetingMessage('hi, boots vitamin c nibo')).toBe(false)
+    expect(isGreetingMessage('order korte chai')).toBe(false)
+    expect(isGreetingMessage('boots vitamin C er dam koto?')).toBe(false)
+  })
+
+  it('ORDER_CONFIRMATION_PHRASES_REGEX accurately detects order completion messages in chat history', () => {
+    const confirmationBn = `ধন্যবাদ, RI F AT আপু! 🎉
+আপনার অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে। 📦 অর্ডার বিবরণী:
+• পণ্য: boots vitamin C
+• পরিমাণ: 1 টি
+• সর্বমোট প্রদেয়: ৳1880`
+
+    const lines = confirmationBn.split('\n')
+    expect(lines.some((l) => ORDER_CONFIRMATION_PHRASES_REGEX.test(l))).toBe(true)
+
+    const confirmationEn = `Thank you, RI F AT Apu! 🎉
+All details for your order have been successfully received.
+
+📦 Order Summary:
+• Product: boots vitamin C`
+    const linesEn = confirmationEn.split('\n')
+    expect(linesEn.some((l) => ORDER_CONFIRMATION_PHRASES_REGEX.test(l))).toBe(true)
+
+    const cancelBn = `আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে।`
+    expect(ORDER_CONFIRMATION_PHRASES_REGEX.test(cancelBn)).toBe(true)
+  })
+
+  it('replies with a proper greeting when customer says hi after a completed order', () => {
+    const pastOrderHistory = `Customer: boots vitamin C er dam koto?
+Bot: boots vitamin C er dam ৳1800.
+Customer: ami order korbo
+Customer: Name: RI F AT, Phone: 01326596251, Address: Mirpur 14
+Customer: COD
+Bot: ধন্যবাদ, RI F AT আপু! 🎉
+আপনার অর্ডারের সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে। 📦 অর্ডার বিবরণী:
+• পণ্য: boots vitamin C
+• পরিমাণ: 1 টি
+• পণ্যের মূল্য: ৳1800
+• ডেলিভারি চার্জ: ৳80 (ঢাকার ভিতরে)
+• সর্বমোট প্রদেয়: ৳1880
+• পেমেন্ট মেথড: ক্যাশ অন ডেলিভারি (Cash on Delivery)`
+
+    const reply = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'hi',
+      conversationHistoryText: pastOrderHistory,
+      customerGender: 'female',
+    })
+
+    // Must be a proper greeting!
+    expect(reply.reply).toMatch(/(?:আসসালামু আলাইকুম|সাহায্য)/)
+    // Must NEVER replay the previous order confirmation or order summary!
+    expect(reply.reply).not.toContain('অর্ডার বিবরণী')
+    expect(reply.reply).not.toContain('boots vitamin C')
+    expect(reply.reply).not.toContain('সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে')
+    expect(reply.reply).not.toContain('সর্বমোট প্রদেয়')
+  })
+
+  it('correctly formats Rocket payment method in buildOrderConfirmationMessage', () => {
+    const confirmationBn = buildOrderConfirmationMessage({
+      detectedLang: 'bn',
+      customerName: 'Rifat',
+      customerGender: 'female',
+      targetProductName: 'boots vitamin C',
+      unitPrice: 350,
+      quantity: 2,
+      productTotal: 700,
+      deliveryCharge: 80,
+      isInsideDhaka: true,
+      totalAmount: 780,
+      paymentMethod: 'rocket',
+      customerPhone: '01326596251',
+      customerAddress: 'Mirpur 14 Muktijoddha sorok Master goli CB-204/A',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    })
+
+    expect(confirmationBn).toContain('• পেমেন্ট মেথড: রকেট (Rocket)')
+    expect(confirmationBn).not.toContain('ক্যাশ অন ডেলিভারি')
+
+    const confirmationEn = buildOrderConfirmationMessage({
+      detectedLang: 'en',
+      customerName: 'Rifat',
+      customerGender: 'female',
+      targetProductName: 'boots vitamin C',
+      unitPrice: 350,
+      quantity: 2,
+      productTotal: 700,
+      deliveryCharge: 80,
+      isInsideDhaka: true,
+      totalAmount: 780,
+      paymentMethod: 'rocket',
+      customerPhone: '01326596251',
+      customerAddress: 'Mirpur 14 Muktijoddha sorok Master goli CB-204/A',
+      isOrderDigital: false,
+      isFreeOrder: false,
+    })
+
+    expect(confirmationEn).toContain('• Payment Method: Rocket')
+    expect(confirmationEn).not.toContain('Cash on Delivery')
+  })
+
+  it('requires delivery details and offers bKash/Nagad/Rocket when ordering product in buildOfflineReply', () => {
+    const products = [
+      { id: '1', name: 'boots vitamin C', price: 350, is_in_stock: true },
+    ]
+    const reply = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'boots vitamin C 2 ta order korte chai',
+      products,
+      customerGender: 'female',
+    })
+
+    // Must ask for delivery info and payment method
+    expect(reply.reply).toContain('পূর্ণাঙ্গ ডেলিভারি ঠিকানা')
+    expect(reply.reply).toContain('ফোন নম্বর')
+    expect(reply.reply).toMatch(/(?:বিকাশ\/নগদ\/রকেট|রকেট)/)
+    // Must NOT claim order is already placed
+    expect(reply.reply).not.toContain('সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে')
+    expect(reply.reply).not.toContain('পার্সেলটি পাঠিয়ে দেবে')
   })
 });

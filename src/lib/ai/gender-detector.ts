@@ -22,8 +22,11 @@ const NON_NAME_PATTERNS = [
   /^(?:welcome|you(?:'re|\s*are)?\s*welcome|ok|okay|okk|okie|sure|alright|done|got\s*it)$/i,
   /^(?:thik\s*(?:ache|ase)|acha|accha|achha|ji|haan|ha|haa|yes|no|na|nah|nope)$/i,
   /^(?:bye|goodbye|tata|salam|slm|assalamu(?:\s*alaikum)?|hi|hello|hey|hlw)$/i,
-  /^(?:kemon\s*achen|bhalo|valo|fine|good|nice|great|wow)$/i,
   /^(?:bhaiya|apu|appu|didi|dada|sir|madam|bro|sis)$/i,
+  /^[\u0981-\u0983\u09BC-\u09CD\u09D7]/, // Bengali combining vowel diacritics / virama
+  /(?:^|\s|[^\u0980-\u09FF])(?:নাম|ঠিকানা|ফোন|নম্বর|মোবাইল|কাস্টমার|গ্রাহক|প্রাপক|ডেলিভারি|অর্ডার)(?:$|\s|[^\u0980-\u09FF])/i,
+  /\b(?:name|address|phone|number|customer|recipient|order|summary)\b/i,
+  /^(?:ের\s*নাম|এর\s*নাম)$/i,
 ]
 
 // Common Female Name Tokens (Latin / English script)

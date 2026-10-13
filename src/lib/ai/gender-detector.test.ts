@@ -19,6 +19,12 @@ describe('gender-detector name classification', () => {
     expect(cleanCustomerName('ধন্যবাদ')).toBe('')
     expect(cleanCustomerName('welcome')).toBe('')
     expect(cleanCustomerName('ok')).toBe('')
+    expect(cleanCustomerName('ের নাম')).toBe('')
+    expect(cleanCustomerName('এর নাম')).toBe('')
+    expect(cleanCustomerName('প্রাপকের নাম')).toBe('')
+    expect(cleanCustomerName('কাস্টমারের নাম')).toBe('')
+    expect(cleanCustomerName('Recipient Name')).toBe('')
+    expect(cleanCustomerName('Customer Name')).toBe('')
     expect(cleanCustomerName('Md. Tanvir Hasan')).toBe('Md. Tanvir Hasan')
   })
 

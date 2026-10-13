@@ -1009,24 +1009,7 @@ export function MessageThread({
     [conversation, onAssignChange, t],
   );
 
-  // Empty state — only show when no conversation is selected
-  if (!conversation) {
-    return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", CHAT_CANVAS_CLASSES)}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <MessageSquare className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
-          {t("selectConversation")}
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("selectConversationHint")}
-        </p>
-      </div>
-    );
-  }
-
-  const effectiveContact: Contact = contact || {
+  const effectiveContact: Contact | null = contact || (conversation ? {
     id: conversation.contact_id || conversation.id,
     user_id: conversation.user_id || "",
     account_id: conversation.account_id || "",
@@ -1035,29 +1018,11 @@ export function MessageThread({
     created_at: conversation.created_at,
     updated_at: conversation.updated_at,
     company: isMessenger ? "Facebook Messenger" : undefined,
-  };
-
-  const displayName =
-    effectiveContact.name && effectiveContact.name !== "Unknown"
-      ? effectiveContact.name
-      : isMessenger
-      ? `Messenger User (${effectiveContact.phone?.slice(-4) || conversation.id.slice(-4)})`
-      : effectiveContact.phone || contactHandle(effectiveContact);
-  const initials = displayName.charAt(0).toUpperCase();
-
-  const messageGroups = groupMessagesByDate(messages);
-  const currentStatus = STATUS_OPTIONS.find(
-    (s) => s.value === conversation.status
-  );
-  const assignedAgentId = conversation.assigned_agent_id ?? null;
-  const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
-  const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? t("assigned"))
-    : t("assign");
+  } : null);
 
   const threadAvatarSrc =
-    effectiveContact.avatar_url ||
-    (effectiveContact.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
+    effectiveContact?.avatar_url ||
+    (effectiveContact?.id ? `/api/contacts/${effectiveContact.id}/avatar` : null);
   const [threadAvatarFailed, setThreadAvatarFailed] = useState(false);
 
   useEffect(() => {
@@ -1129,6 +1094,41 @@ export function MessageThread({
       setVerifyingTrx(false);
     }
   };
+
+  // Empty state — only show when no conversation is selected
+  if (!conversation || !effectiveContact) {
+    return (
+      <div className={cn("flex flex-1 flex-col items-center justify-center", CHAT_CANVAS_CLASSES)}>
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+          <MessageSquare className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
+          {t("selectConversation")}
+        </h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("selectConversationHint")}
+        </p>
+      </div>
+    );
+  }
+
+  const displayName =
+    effectiveContact.name && effectiveContact.name !== "Unknown"
+      ? effectiveContact.name
+      : isMessenger
+      ? `Messenger User (${effectiveContact.phone?.slice(-4) || conversation.id.slice(-4)})`
+      : effectiveContact.phone || contactHandle(effectiveContact);
+  const initials = displayName.charAt(0).toUpperCase();
+
+  const messageGroups = groupMessagesByDate(messages);
+  const currentStatus = STATUS_OPTIONS.find(
+    (s) => s.value === conversation.status
+  );
+  const assignedAgentId = conversation.assigned_agent_id ?? null;
+  const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
+  const assignLabel = assignedAgentId
+    ? (currentAssignee?.full_name ?? t("assigned"))
+    : t("assign");
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
