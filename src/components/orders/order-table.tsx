@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone, Truck } from 'lucide-react'
+import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone, Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
@@ -189,6 +189,19 @@ export function OrderTable({
                       <span className="italic text-[10px] text-muted-foreground/80">No phone</span>
                     )}
                   </div>
+                  {order.risk_level === 'blacklisted' ? (
+                    <span className="inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30">
+                      <Ban className="size-2.5" /> Blacklisted
+                    </span>
+                  ) : order.risk_level === 'high' ? (
+                    <span className="inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/30">
+                      <ShieldAlert className="size-2.5" /> High Risk {order.delivery_ratio !== undefined && order.delivery_ratio !== null ? `(${order.delivery_ratio}%)` : ''}
+                    </span>
+                  ) : order.risk_level === 'medium' ? (
+                    <span className="inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                      Med Risk {order.delivery_ratio !== undefined && order.delivery_ratio !== null ? `(${order.delivery_ratio}%)` : ''}
+                    </span>
+                  ) : null}
                 </td>
 
                 {/* Products (Clean Preview with Item Count Badge) */}

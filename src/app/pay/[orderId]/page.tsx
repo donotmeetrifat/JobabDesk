@@ -189,6 +189,12 @@ export default function PublicPaymentPage({
 
   useEffect(() => {
     fetchOrderData()
+    if (typeof window !== 'undefined') {
+      const type = new URLSearchParams(window.location.search).get('type')
+      if (type === 'delivery_advance') {
+        setPaymentType('delivery_advance')
+      }
+    }
   }, [orderId])
 
   const handleLookupSubmit = (e: React.FormEvent) => {

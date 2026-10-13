@@ -30,13 +30,19 @@ import {
   Globe,
   Building2,
   Edit3,
+  ShieldAlert,
+  ShieldX,
+  RefreshCw,
+  AlertTriangle,
+  Ban,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
-import type { Order, OrderStatus, PaymentMethod, PaymentStatus, PaymentRequest, CourierProvider, CourierSettings } from '@/types/orders'
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus, PaymentRequest, CourierProvider, CourierSettings, RiskLevel, RiskDetails } from '@/types/orders'
 import { PRESET_COURIERS, buildTrackingUrl } from '@/lib/courier/types'
+import type { CustomerRiskAssessment } from '@/lib/fraud-shield/types'
 
 interface OrderDetailDialogProps {
   open: boolean
@@ -112,6 +118,11 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
   const [bookingCourier, setBookingCourier] = useState(false)
   const [isEditingCourier, setIsEditingCourier] = useState(false)
 
+  // Anti-RTO / Risk Assessment State (Phase 6B)
+  const [riskAssessment, setRiskAssessment] = useState<CustomerRiskAssessment | null>(null)
+  const [checkingRisk, setCheckingRisk] = useState(false)
+  const [togglingBlacklist, setTogglingBlacklist] = useState(false)
+
   useEffect(() => {
     if (!open || !order?.id) return
     setLiveRequests(order.payment_requests || [])
@@ -120,6 +131,29 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
     setTrackingUrlInput(order.tracking_url || '')
     setSelectedCourier(order.courier_name || 'Sundarban Courier')
     setCustomCourierName('')
+
+    // Initialize initial risk assessment from order if available
+    if (order.risk_details || order.risk_level) {
+      setRiskAssessment({
+        phone: order.customer_phone || '',
+        phone_normalized: (order.customer_phone || '').replace(/\D/g, ''),
+        risk_level: order.risk_level || 'low',
+        delivery_ratio: Number(order.delivery_ratio ?? order.risk_details?.delivery_ratio ?? 100),
+        total_parcels: order.risk_details?.total_parcels || 0,
+        delivered_parcels: order.risk_details?.delivered_parcels || 0,
+        cancelled_parcels: order.risk_details?.cancelled_parcels || 0,
+        is_blacklisted: order.risk_level === 'blacklisted' || Boolean(order.risk_details?.is_blacklisted),
+        blacklist_reason: order.risk_details?.blacklist_reason || null,
+        source: (order.risk_details?.source as any) || 'internal',
+        summary: order.risk_level === 'blacklisted' ? '🚫 Blacklisted Customer' : `${order.risk_level || 'low'} return risk`,
+        summaryBn: order.risk_level === 'blacklisted' ? '🚫 ব্ল্যাকলিস্টেড গ্রাহক' : `ডেলিভারি অনুপাত`,
+        recommendation: '',
+        recommendationBn: '',
+        reasons: order.risk_details?.reasons || [],
+      })
+    } else {
+      setRiskAssessment(null)
+    }
 
     let isMounted = true
     const fetchRequests = async () => {
@@ -158,12 +192,42 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
       }
     }
 
+    const fetchRiskAssessment = async () => {
+      if (!order.customer_phone) return
+      try {
+        setCheckingRisk(true)
+        const res = await fetch(
+          `/api/fraud-shield/check?phone=${encodeURIComponent(order.customer_phone)}&orderId=${order.id}`
+        )
+        if (!res.ok) return
+        const data = await res.json()
+        if (isMounted && data.assessment) {
+          setRiskAssessment(data.assessment)
+        }
+      } catch {
+        // silent fallback
+      } finally {
+        if (isMounted) setCheckingRisk(false)
+      }
+    }
+
     fetchRequests()
     fetchCourierSettings()
+    fetchRiskAssessment()
     return () => {
       isMounted = false
     }
-  }, [open, order?.id, order?.payment_requests, order?.courier_name, order?.tracking_code, order?.tracking_url])
+  }, [
+    open,
+    order?.id,
+    order?.payment_requests,
+    order?.courier_name,
+    order?.tracking_code,
+    order?.tracking_url,
+    order?.customer_phone,
+    order?.risk_level,
+    order?.delivery_ratio,
+  ])
 
   if (!open || !order) return null
 
@@ -269,6 +333,79 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
     } finally {
       setBookingCourier(false)
     }
+  }
+
+  const handleCheckRisk = async () => {
+    if (!order?.customer_phone) {
+      toast.error('No customer phone number available to verify.')
+      return
+    }
+    setCheckingRisk(true)
+    try {
+      const res = await fetch(
+        `/api/fraud-shield/check?phone=${encodeURIComponent(order.customer_phone)}&orderId=${order.id}`
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to check risk')
+      setRiskAssessment(data.assessment)
+      toast.success('Customer delivery ratio refreshed!')
+      onStatusUpdated()
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to check customer delivery ratio')
+    } finally {
+      setCheckingRisk(false)
+    }
+  }
+
+  const handleToggleBlacklist = async () => {
+    if (!order?.customer_phone) return
+    const isCurrentlyBlacklisted =
+      riskAssessment?.is_blacklisted || order.risk_level === 'blacklisted'
+    setTogglingBlacklist(true)
+    try {
+      if (isCurrentlyBlacklisted) {
+        const res = await fetch('/api/fraud-shield/blacklist', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: order.customer_phone }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to remove from blacklist')
+        toast.success('Customer removed from store blacklist')
+      } else {
+        const reason = window.prompt(
+          'Enter reason for blacklisting customer (e.g. Chronic RTO / Fake Order):',
+          'Chronic RTO / Fake Order'
+        )
+        if (reason === null) {
+          setTogglingBlacklist(false)
+          return
+        }
+        const res = await fetch('/api/fraud-shield/blacklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: order.customer_phone,
+            reason: reason.trim() || 'Chronic RTO / Fake Order',
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to blacklist customer')
+        toast.success('Customer added to store blacklist')
+      }
+      await handleCheckRisk()
+      onStatusUpdated()
+    } catch (e: any) {
+      toast.error(e?.message || 'Blacklist action failed')
+    } finally {
+      setTogglingBlacklist(false)
+    }
+  }
+
+  const handleCopyAdvancePayLink = () => {
+    const payUrl = `${window.location.origin}/pay/${order.order_number || order.id}?type=delivery_advance`
+    navigator.clipboard.writeText(payUrl)
+    toast.success('Copied Advance Delivery Fee Link! Send this to customer to collect ৳150 upfront.')
   }
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
@@ -646,6 +783,162 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                       <p className="text-muted-foreground italic">No delivery address provided yet.</p>
                     )}
                   </div>
+                </div>
+
+                {/* Anti-RTO / Fake Order & Delivery Ratio Shield (Phase 6B) */}
+                <div className="pt-2.5 border-t border-border/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      {riskAssessment?.risk_level === 'blacklisted' ? (
+                        <ShieldX className="size-3.5 text-rose-500" />
+                      ) : riskAssessment?.risk_level === 'high' ? (
+                        <ShieldAlert className="size-3.5 text-red-500 animate-pulse" />
+                      ) : riskAssessment?.risk_level === 'medium' ? (
+                        <AlertTriangle className="size-3.5 text-amber-500" />
+                      ) : (
+                        <ShieldCheck className="size-3.5 text-emerald-500" />
+                      )}
+                      <span className="text-xs font-bold text-foreground">Anti-RTO Delivery Shield</span>
+                      {riskAssessment?.source && (
+                        <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                          {riskAssessment.source === 'steadfast'
+                            ? 'Steadfast Network'
+                            : riskAssessment.source === 'combined'
+                            ? 'Steadfast + Store'
+                            : riskAssessment.source === 'internal'
+                            ? 'Store History'
+                            : 'New Customer'}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={checkingRisk || !order.customer_phone}
+                      onClick={handleCheckRisk}
+                      title="Re-check delivery success ratio"
+                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted p-1 rounded transition-colors"
+                    >
+                      <RefreshCw className={`size-3 ${checkingRisk ? 'animate-spin text-primary' : ''}`} />
+                      <span className="text-[10px] font-medium">{checkingRisk ? 'Checking...' : 'Check'}</span>
+                    </button>
+                  </div>
+
+                  {checkingRisk && !riskAssessment ? (
+                    <div className="rounded-lg bg-muted/30 border border-dashed border-border p-3 text-center">
+                      <Loader2 className="size-4 animate-spin mx-auto text-primary mb-1" />
+                      <p className="text-[11px] text-muted-foreground">Checking courier delivery history...</p>
+                    </div>
+                  ) : !order.customer_phone ? (
+                    <div className="rounded-lg bg-muted/20 border border-border/40 p-2.5 text-[11px] text-muted-foreground italic">
+                      Customer phone number required for Anti-RTO ratio check.
+                    </div>
+                  ) : (
+                    <div
+                      className={`rounded-lg p-2.5 border transition-all text-xs space-y-2 ${
+                        riskAssessment?.risk_level === 'blacklisted'
+                          ? 'bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200'
+                          : riskAssessment?.risk_level === 'high'
+                          ? 'bg-red-500/10 border-red-500/30 text-red-900 dark:text-red-200'
+                          : riskAssessment?.risk_level === 'medium'
+                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200'
+                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200'
+                      }`}
+                    >
+                      {/* Status header with Badge and Delivery Ratio */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-bold">
+                          {riskAssessment?.risk_level === 'blacklisted' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-rose-600 text-white font-bold">
+                              <Ban className="size-3" /> 🚫 Blacklisted
+                            </span>
+                          ) : riskAssessment?.risk_level === 'high' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-red-600 text-white font-bold">
+                              <ShieldAlert className="size-3" /> 🔴 High Return Risk
+                            </span>
+                          ) : riskAssessment?.risk_level === 'medium' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-amber-600 text-white font-bold">
+                              <AlertTriangle className="size-3" /> 🟡 Medium Risk
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-emerald-600 text-white font-bold">
+                              <ShieldCheck className="size-3" /> 🟢 Low Risk (Safe COD)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Ratio Pill */}
+                        <div className="text-right">
+                          <span className="font-mono font-black text-sm">
+                            {riskAssessment ? `${riskAssessment.delivery_ratio}%` : '—'}
+                          </span>
+                          <span className="text-[10px] opacity-80 block font-medium">Success Rate</span>
+                        </div>
+                      </div>
+
+                      {/* Parcel breakdown metric mini-grid */}
+                      <div className="grid grid-cols-3 gap-1.5 text-center pt-1 border-t border-current/15">
+                        <div className="bg-background/50 backdrop-blur-xs rounded p-1">
+                          <span className="block text-[10px] opacity-75">Total Parcels</span>
+                          <span className="font-mono font-bold text-xs">{riskAssessment?.total_parcels ?? 0}</span>
+                        </div>
+                        <div className="bg-background/50 backdrop-blur-xs rounded p-1">
+                          <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Delivered</span>
+                          <span className="font-mono font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                            {riskAssessment?.delivered_parcels ?? 0}
+                          </span>
+                        </div>
+                        <div className="bg-background/50 backdrop-blur-xs rounded p-1">
+                          <span className="block text-[10px] text-red-600 dark:text-red-400 font-medium">Cancelled/RTO</span>
+                          <span className="font-mono font-bold text-xs text-red-600 dark:text-red-400">
+                            {riskAssessment?.cancelled_parcels ?? 0}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Summary & Recommendation Alert Text */}
+                      {riskAssessment?.recommendation && (
+                        <p className="text-[11px] leading-relaxed font-medium pt-0.5">
+                          {riskAssessment.recommendation}
+                        </p>
+                      )}
+
+                      {/* Quick Action Buttons */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-current/15">
+                        {/* 1-click Require ৳150 Advance Delivery Fee */}
+                        <button
+                          type="button"
+                          onClick={handleCopyAdvancePayLink}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-background hover:bg-background/90 text-foreground text-[11px] font-bold border border-border shadow-2xs transition-transform active:scale-95"
+                          title="Copy link to collect ৳150 delivery charge upfront before dispatch"
+                        >
+                          <CreditCard className="size-3 text-primary" />
+                          <span>💳 Require ৳150 Advance Delivery Fee</span>
+                        </button>
+
+                        {/* Store Blacklist Toggle */}
+                        <button
+                          type="button"
+                          disabled={togglingBlacklist}
+                          onClick={handleToggleBlacklist}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                            riskAssessment?.is_blacklisted
+                              ? 'bg-rose-600/20 hover:bg-rose-600/30 text-rose-700 dark:text-rose-300 border-rose-500/40'
+                              : 'bg-background hover:bg-muted text-muted-foreground hover:text-foreground border-border'
+                          }`}
+                        >
+                          <Ban className="size-3" />
+                          <span>
+                            {togglingBlacklist
+                              ? 'Updating...'
+                              : riskAssessment?.is_blacklisted
+                              ? 'Remove Blacklist'
+                              : 'Blacklist'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

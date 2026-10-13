@@ -45,8 +45,10 @@ function PayPortalContent() {
       searchParams.get('orderId') ||
       searchParams.get('phone')
 
+    const typeParam = searchParams.get('type')
     if (paramRef && paramRef.trim()) {
-      router.replace(`/pay/${encodeURIComponent(paramRef.trim())}`)
+      const target = `/pay/${encodeURIComponent(paramRef.trim())}${typeParam ? `?type=${encodeURIComponent(typeParam)}` : ''}`
+      router.replace(target)
       return
     }
 

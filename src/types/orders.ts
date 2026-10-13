@@ -95,6 +95,33 @@ export interface Order {
   tracking_url?: string | null
   courier_consignment_id?: string | null
   courier_booking_status?: CourierBookingStatus | null
+  // Anti-RTO & Fraud Shield (Phase 6B)
+  risk_level?: RiskLevel
+  delivery_ratio?: number | null
+  risk_details?: RiskDetails | null
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'blacklisted'
+
+export interface RiskDetails {
+  total_parcels: number
+  delivered_parcels: number
+  cancelled_parcels: number
+  delivery_ratio: number
+  source: 'steadfast' | 'internal' | 'combined'
+  is_blacklisted?: boolean
+  blacklist_reason?: string | null
+  reasons: string[]
+}
+
+export interface CustomerBlacklistEntry {
+  id: string
+  account_id: string
+  phone: string
+  phone_normalized: string
+  reason: string
+  created_by?: string | null
+  created_at: string
 }
 
 export type CourierBookingStatus =
