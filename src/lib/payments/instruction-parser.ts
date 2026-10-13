@@ -45,9 +45,82 @@ export function cleanBdPhoneNumber(raw: string): string {
 }
 
 /**
- * Extracts phone numbers and account types for bKash, Nagad, and Rocket
- * directly from the merchant's free-text 'special_instructions' entered in
- * https://jobabdesk.vercel.app/agents (Business Setup -> Accepted Payment Channels & Checkout Instructions).
+ * Extracts bank account, card information, or payment deposit details
+ * from free-text instructions entered by the merchant.
+ */
+export function extractBankAndCardDetails(text?: string | null): string {
+  if (!text || typeof text !== 'string') return ''
+  const normalized = normalizeBengaliDigits(text)
+  const lines = normalized.split(/\r?\n/)
+
+  const cardBankKeywords =
+    /\b(?:card|cards|visa|mastercard|amex|nexus|npsb|beftn|bank|banking|branch|routing|swift|a\/c|account)\b|কার্ড|ব্যাংক|শাখা|রাউটিং|একাউন্ট|হিসাব/i
+
+  const mobileOnlyRegex =
+    /^(?:b?kash|bikash|nagad|nogod|rocket|roket|dbbl|বিকাশ|নগদ|রকেট)\s*[:\-\/]/i
+
+  const matchedLines: string[] = []
+  let capturingBlock = false
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) {
+      if (capturingBlock && matchedLines.length > 0) {
+        capturingBlock = false
+      }
+      continue
+    }
+
+    // Skip lines that are strictly mobile banking numbers without bank/card info
+    if (mobileOnlyRegex.test(line) && !cardBankKeywords.test(line)) {
+      capturingBlock = false
+      continue
+    }
+
+    if (cardBankKeywords.test(line)) {
+      let cleanLine = line
+      if (cleanLine.includes('|')) {
+        const segments = cleanLine.split('|').map((s) => s.trim())
+        const relevant = segments.filter(
+          (s) => cardBankKeywords.test(s) && !mobileOnlyRegex.test(s)
+        )
+        if (relevant.length > 0) {
+          cleanLine = relevant.join(' | ')
+        }
+      }
+      matchedLines.push(cleanLine)
+      capturingBlock = true
+    } else if (capturingBlock) {
+      if (!/^(?:delivery|refund|return|terms|note|faq|শর্ত|ডেলিভারি)/i.test(line)) {
+        matchedLines.push(line)
+      } else {
+        capturingBlock = false
+      }
+    }
+  }
+
+  if (matchedLines.length > 0) {
+    return matchedLines.join('\n').trim()
+  }
+
+  // Fallback for single-line inline descriptions
+  const inlineMatch = normalized.match(
+    /(?:card|cards|কার্ড|bank|ব্যাংক|visa|mastercard|npsb|a\/c|account\s*no)[^:\n]{0,30}:?\s*([^\n|;]{5,250})/i
+  )
+  if (inlineMatch && inlineMatch[0]) {
+    const candidate = inlineMatch[0].trim()
+    if (!/^(?:bkash|nagad|rocket|01[3-9])/i.test(candidate)) {
+      return candidate
+    }
+  }
+
+  return ''
+}
+
+/**
+ * Extracts phone numbers and account types for bKash, Nagad, and Rocket,
+ * as well as card and bank details directly from the merchant's free-text
+ * 'special_instructions' or guideline fields entered in /agents.
  */
 export function parsePaymentInstructions(text?: string | null): Partial<MergedPaymentSettings> {
   if (!text || typeof text !== 'string') return {}
@@ -56,16 +129,18 @@ export function parsePaymentInstructions(text?: string | null): Partial<MergedPa
   const result: Partial<MergedPaymentSettings> = {}
 
   function extractForProvider(providerRegex: string): { number: string; type: 'personal' | 'merchant' | 'agent'; fullMatch: string } | null {
+    const isRocket = /rocket|রকেট|roket|dbbl/i.test(providerRegex)
+
     // 1. Forward match: Provider followed by BD number (013..019)
     const forwardRegex = new RegExp(
-      '(?:' + providerRegex + ')[^0-9+]{0,45}((?:\\+?88)?01[3-9][0-9\\-\\s]{7,13}[0-9])',
+      '(?:' + providerRegex + ')[^0-9+]{0,60}((?:\\+?88)?01[3-9][0-9\\-\\s]{7,14}[0-9])',
       'i'
     )
     const fMatch = normalized.match(forwardRegex)
     if (fMatch) {
       const full = fMatch[0]
       const cleanNum = cleanBdPhoneNumber(fMatch[1])
-      if (cleanNum.length === 11) {
+      if (cleanNum.length === 11 || (isRocket && cleanNum.length === 12)) {
         let type: 'personal' | 'merchant' | 'agent' = 'personal'
         if (/merchant|মার্চেন্ট|payment|পেমেন্ট/i.test(full)) {
           type = 'merchant'
@@ -78,14 +153,14 @@ export function parsePaymentInstructions(text?: string | null): Partial<MergedPa
 
     // 2. Backward match: BD number followed by provider
     const backwardRegex = new RegExp(
-      '((?:\\+?88)?01[3-9][0-9\\-\\s]{7,13}[0-9])[^0-9+]{0,45}(?:' + providerRegex + ')',
+      '((?:\\+?88)?01[3-9][0-9\\-\\s]{7,14}[0-9])[^0-9+]{0,60}(?:' + providerRegex + ')',
       'i'
     )
     const bMatch = normalized.match(backwardRegex)
     if (bMatch) {
       const full = bMatch[0]
       const cleanNum = cleanBdPhoneNumber(bMatch[1])
-      if (cleanNum.length === 11) {
+      if (cleanNum.length === 11 || (isRocket && cleanNum.length === 12)) {
         let type: 'personal' | 'merchant' | 'agent' = 'personal'
         if (/merchant|মার্চেন্ট|payment|পেমেন্ট/i.test(full)) {
           type = 'merchant'
@@ -103,7 +178,6 @@ export function parsePaymentInstructions(text?: string | null): Partial<MergedPa
   const bkash = extractForProvider('bkash|বিকাশ|bikash')
   if (bkash) {
     result.bkash = { number: bkash.number, type: bkash.type }
-    // Check if the match also combined nagad or rocket (e.g. "bKash, Nagad: 017...")
     if (/nagad|নগদ|nogod/i.test(bkash.fullMatch)) {
       result.nagad = { number: bkash.number, type: bkash.type }
     }
@@ -127,10 +201,10 @@ export function parsePaymentInstructions(text?: string | null): Partial<MergedPa
     result.rocket = { number: rocket.number, type: rocket.type }
   }
 
-  // 4. Bank account details
-  const bankMatch = normalized.match(/(?:bank|ব্যাংক|account|a\/c|ac\s*no)[^:\n]{0,20}:?\s*([^\n|;]{5,100})/i)
-  if (bankMatch && bankMatch[1] && !/^(?:bkash|nagad|rocket|01[3-9])/i.test(bankMatch[1].trim())) {
-    result.bank = { details: bankMatch[0].trim() }
+  // 4. Card & Bank details extraction
+  const bankAndCardDetails = extractBankAndCardDetails(text)
+  if (bankAndCardDetails) {
+    result.bank = { details: bankAndCardDetails }
   }
 
   // 5. Smart Fallback: If bkash is still missing, look for ANY 11-digit BD mobile number in the text
@@ -152,9 +226,8 @@ export function parsePaymentInstructions(text?: string | null): Partial<MergedPa
 
 /**
  * Resolves the final payment settings for a specific merchant account.
- * Prioritizes explicit payment_settings, but seamlessly falls back to
- * extracting the merchant's numbers from their /agents special_instructions
- * or extra business guideline fields.
+ * Seamlessly resolves merchant numbers and card details from their /agents
+ * special_instructions, business guidelines, or payment_settings table.
  */
 export function resolveMerchantPaymentSettings(
   paymentSettings?: any,
@@ -166,40 +239,33 @@ export function resolveMerchantPaymentSettings(
     .join('\n')
 
   const parsed = parsePaymentInstructions(combinedInstructions)
-
-  const defaultSettings: MergedPaymentSettings = {
-    bkash: { number: '', type: 'personal' },
-    nagad: { number: '', type: 'personal' },
-    rocket: { number: '', type: 'personal' },
-    bank: { details: '' },
-    allow_cod_advance: true,
-    cod_advance_amount: 150,
-  }
-
   const existing = paymentSettings || {}
 
+  // Prioritize explicit settings if present, otherwise fallback to parsed /agents instructions
+  const resolveMethod = (
+    methodKey: 'bkash' | 'nagad' | 'rocket'
+  ): PaymentAccountConfig => {
+    const parsedMethod = parsed[methodKey]
+    const existingMethod = existing[methodKey]
+
+    const number =
+      existingMethod?.number?.trim() || parsedMethod?.number?.trim() || ''
+
+    const type = existingMethod?.number?.trim()
+      ? existingMethod.type || 'personal'
+      : parsedMethod?.type || existingMethod?.type || 'personal'
+
+    return { number, type }
+  }
+
+  const bankDetails =
+    existing.bank?.details?.trim() || parsed.bank?.details?.trim() || ''
+
   return {
-    bkash: {
-      number: existing.bkash?.number?.trim() || parsed.bkash?.number || '',
-      type: existing.bkash?.number?.trim()
-        ? existing.bkash?.type || 'personal'
-        : parsed.bkash?.type || existing.bkash?.type || 'personal',
-    },
-    nagad: {
-      number: existing.nagad?.number?.trim() || parsed.nagad?.number || '',
-      type: existing.nagad?.number?.trim()
-        ? existing.nagad?.type || 'personal'
-        : parsed.nagad?.type || existing.nagad?.type || 'personal',
-    },
-    rocket: {
-      number: existing.rocket?.number?.trim() || parsed.rocket?.number || '',
-      type: existing.rocket?.number?.trim()
-        ? existing.rocket?.type || 'personal'
-        : parsed.rocket?.type || existing.rocket?.type || 'personal',
-    },
-    bank: {
-      details: existing.bank?.details?.trim() || parsed.bank?.details || '',
-    },
+    bkash: resolveMethod('bkash'),
+    nagad: resolveMethod('nagad'),
+    rocket: resolveMethod('rocket'),
+    bank: { details: bankDetails },
     allow_cod_advance: existing.allow_cod_advance ?? true,
     cod_advance_amount: existing.cod_advance_amount ?? 150,
     special_instructions: specialInstructions?.trim() || '',

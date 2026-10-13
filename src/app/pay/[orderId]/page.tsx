@@ -843,66 +843,100 @@ export default function PublicPaymentPage({
                               Merchant {currentMethodConfig.name} Number
                             </span>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className="font-mono text-lg sm:text-xl font-bold tracking-wider text-slate-900">
-                                {activeNumber || '01326596251'}
-                              </span>
-                              <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                                {activeType === 'merchant'
-                                  ? 'Merchant Account'
-                                  : activeType === 'agent'
-                                    ? 'Agent Account'
-                                    : 'Personal / Send Money'}
-                              </span>
+                              {activeNumber ? (
+                                <>
+                                  <span className="font-mono text-lg sm:text-xl font-bold tracking-wider text-slate-900">
+                                    {activeNumber}
+                                  </span>
+                                  <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                    {activeType === 'merchant'
+                                      ? 'Merchant Account'
+                                      : activeType === 'agent'
+                                        ? 'Agent Account'
+                                        : 'Personal / Send Money'}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-sm font-semibold text-slate-400 italic">
+                                    Not Configured by Merchant
+                                  </span>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                    Unavailable
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(activeNumber || '01326596251', activeMethod)
-                            }
-                            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white transition-all cursor-pointer shadow-xs active:scale-95"
-                            style={{ backgroundColor: currentMethodConfig.brandColor }}
-                          >
-                            {copiedKey === activeMethod ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Copied!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Number</span>
-                              </>
-                            )}
-                          </button>
+                          {activeNumber ? (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(activeNumber, activeMethod)}
+                              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white transition-all cursor-pointer shadow-xs active:scale-95"
+                              style={{ backgroundColor: currentMethodConfig.brandColor }}
+                            >
+                              {copiedKey === activeMethod ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>Copy Number</span>
+                                </>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-center">
+                              No Number Provided
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs mb-3.5">
-                          <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">
-                            Merchant Bank Account Details
-                          </span>
-                          <p className="font-mono text-xs text-slate-800 whitespace-pre-line leading-relaxed">
-                            {store?.payment_settings?.bank?.details ||
-                              fallbackSettings.bank?.details ||
-                              'Please contact merchant for direct bank account details.'}
-                          </p>
-                          {(store?.payment_settings?.bank?.details || fallbackSettings.bank?.details) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                copyToClipboard(
-                                  store?.payment_settings?.bank?.details ||
-                                    fallbackSettings.bank?.details ||
-                                    '',
-                                  'bank'
-                                )
-                              }
-                              className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>{copiedKey === 'bank' ? 'Copied Details' : 'Copy Details'}</span>
-                            </button>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                              Merchant Card / Bank Transfer Details
+                            </span>
+                            {(store?.payment_settings?.bank?.details || fallbackSettings.bank?.details) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyToClipboard(
+                                    store?.payment_settings?.bank?.details ||
+                                      fallbackSettings.bank?.details ||
+                                      '',
+                                    'bank'
+                                  )
+                                }
+                                className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                {copiedKey === 'bank' ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-600">Copied Details</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Copy Details</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          {store?.payment_settings?.bank?.details || fallbackSettings.bank?.details ? (
+                            <div className="bg-slate-50/80 rounded-lg p-3 border border-slate-200/80">
+                              <p className="font-mono text-xs text-slate-800 whitespace-pre-line leading-relaxed">
+                                {store?.payment_settings?.bank?.details || fallbackSettings.bank?.details}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic py-1">
+                              Direct Card or Bank Transfer details have not been configured by the merchant yet. Please select bKash, Nagad, or Rocket.
+                            </p>
                           )}
                         </div>
                       )}
@@ -914,19 +948,31 @@ export default function PublicPaymentPage({
                             1
                           </span>
                           <p>
-                            Open <strong>{currentMethodConfig.name} App</strong>{' '}
-                            {activeMethod === 'bkash'
-                              ? '(or dial *247#)'
-                              : activeMethod === 'nagad'
-                                ? '(or dial *167#)'
-                                : activeMethod === 'rocket'
-                                  ? '(or dial *322#)'
-                                  : ''}{' '}
-                            and select{' '}
-                            <strong className="text-slate-900">
-                              {activeType === 'merchant' ? 'Payment' : 'Send Money'}
-                            </strong>
-                            .
+                            {activeMethod === 'bank' ? (
+                              <>
+                                Transfer via <strong>Card (Visa / MasterCard / NPSB) or Bank App</strong> to the merchant account above.
+                              </>
+                            ) : activeNumber ? (
+                              <>
+                                Open <strong>{currentMethodConfig.name} App</strong>{' '}
+                                {activeMethod === 'bkash'
+                                  ? '(or dial *247#)'
+                                  : activeMethod === 'nagad'
+                                    ? '(or dial *167#)'
+                                    : activeMethod === 'rocket'
+                                      ? '(or dial *322#)'
+                                      : ''}{' '}
+                                and select{' '}
+                                <strong className="text-slate-900">
+                                  {activeType === 'merchant' ? 'Payment' : 'Send Money'}
+                                </strong>
+                                .
+                              </>
+                            ) : (
+                              <>
+                                This merchant has not configured a {currentMethodConfig.name} number yet. Please choose an active payment method.
+                              </>
+                            )}
                           </p>
                         </div>
                         <div className="flex items-start gap-2">
@@ -934,10 +980,21 @@ export default function PublicPaymentPage({
                             2
                           </span>
                           <p>
-                            Enter merchant number and send exact amount:{' '}
-                            <strong className="text-emerald-700 font-mono font-bold text-sm">
-                              ৳{payableAmount.toLocaleString()}
-                            </strong>
+                            {activeMethod === 'bank' ? (
+                              <>
+                                Transfer exact payable amount:{' '}
+                                <strong className="text-emerald-700 font-mono font-bold text-sm">
+                                  ৳{payableAmount.toLocaleString()}
+                                </strong>
+                              </>
+                            ) : (
+                              <>
+                                Enter merchant number and send exact amount:{' '}
+                                <strong className="text-emerald-700 font-mono font-bold text-sm">
+                                  ৳{payableAmount.toLocaleString()}
+                                </strong>
+                              </>
+                            )}
                           </p>
                         </div>
                         <div className="flex items-start gap-2">
@@ -945,7 +1002,7 @@ export default function PublicPaymentPage({
                             3
                           </span>
                           <p>
-                            Copy the <strong>Transaction ID (TrxID)</strong> received in the SMS confirmation and enter below.
+                            Copy the <strong>Transaction ID (TrxID) / Bank Reference</strong> received in the SMS confirmation and enter below.
                           </p>
                         </div>
                       </div>

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { resolveMerchantPaymentSettings } from '@/lib/payments/instruction-parser'
+import {
+  resolveMerchantPaymentSettings,
+  parsePaymentInstructions,
+} from '@/lib/payments/instruction-parser'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,12 +109,30 @@ export async function PATCH(req: Request) {
           : currentAcc?.special_instructions || ''
       const targetExtra = `${body.ai_store_instructions !== undefined ? body.ai_store_instructions : currentAcc?.ai_store_instructions || ''} ${body.ai_business_description !== undefined ? body.ai_business_description : currentAcc?.ai_business_description || ''}`
 
-      const resolved = resolveMerchantPaymentSettings(
-        currentAcc?.payment_settings,
-        targetSpecial,
-        targetExtra
-      )
-      updates['payment_settings'] = resolved
+      const parsed = parsePaymentInstructions(`${targetSpecial}\n${targetExtra}`)
+      const currentPs = currentAcc?.payment_settings || {}
+
+      const updatedPs = {
+        ...currentPs,
+        bkash: {
+          number: parsed.bkash?.number || currentPs.bkash?.number || '',
+          type: parsed.bkash?.type || currentPs.bkash?.type || 'personal',
+        },
+        nagad: {
+          number: parsed.nagad?.number || currentPs.nagad?.number || '',
+          type: parsed.nagad?.type || currentPs.nagad?.type || 'personal',
+        },
+        rocket: {
+          number: parsed.rocket?.number || currentPs.rocket?.number || '',
+          type: parsed.rocket?.type || currentPs.rocket?.type || 'personal',
+        },
+        bank: {
+          details: parsed.bank?.details || currentPs.bank?.details || '',
+        },
+        allow_cod_advance: currentPs.allow_cod_advance ?? true,
+        cod_advance_amount: currentPs.cod_advance_amount ?? 150,
+      }
+      updates['payment_settings'] = updatedPs
     }
 
     if (Object.keys(updates).length === 0) {

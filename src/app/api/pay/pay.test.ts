@@ -280,6 +280,59 @@ describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
       mockStoreAccount.payment_settings = originalSettings
       delete (mockStoreAccount as any).special_instructions
     })
+
+    it('parses Card and Bank instructions entered in /agents special_instructions', async () => {
+      const originalSettings = { ...mockStoreAccount.payment_settings }
+      mockStoreAccount.payment_settings = {
+        bkash: { number: '', type: 'personal' },
+        nagad: { number: '', type: 'personal' },
+        rocket: { number: '', type: 'personal' },
+        bank: { details: '' },
+        allow_cod_advance: true,
+        cod_advance_amount: 150,
+      } as any
+      ;(mockStoreAccount as any).special_instructions =
+        'bKash: 01711223344\nCard / Bank Details:\nBank: City Bank Ltd\nA/C Name: Jobab Merchant Shop\nA/C: 1234567890\nBranch: Gulshan 2\nRouting: 225272635'
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.payment_settings.bkash.number).toBe('01711223344')
+      expect(data.store.payment_settings.bank.details).toContain('City Bank Ltd')
+      expect(data.store.payment_settings.bank.details).toContain('1234567890')
+      expect(data.store.payment_settings.bank.details).toContain('Gulshan 2')
+
+      mockStoreAccount.payment_settings = originalSettings
+      delete (mockStoreAccount as any).special_instructions
+    })
+
+    it('enforces multi-user tenant isolation without leaking other accounts', async () => {
+      // An order belonging to a specific account only receives that account's information
+      const originalSettings = { ...mockStoreAccount.payment_settings }
+      mockStoreAccount.payment_settings = {
+        bkash: { number: '01311223344', type: 'merchant' },
+        nagad: { number: '01411223344', type: 'personal' },
+        rocket: { number: '01511223344', type: 'personal' },
+        bank: { details: 'Custom Bank Info' },
+        allow_cod_advance: true,
+        cod_advance_amount: 150,
+      } as any
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.payment_settings.bkash.number).toBe('01311223344')
+      expect(data.store.payment_settings.bkash.type).toBe('merchant')
+      expect(data.store.payment_settings.nagad.number).toBe('01411223344')
+
+      mockStoreAccount.payment_settings = originalSettings
+    })
   })
 
   describe('POST /api/pay/[orderId] (Anti-Fraud & Submission)', () => {

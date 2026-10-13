@@ -1682,7 +1682,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
 
      * PAYMENT METHOD RULES FOR PHYSICAL:
        - When the customer wants Cash on Delivery (COD): That is strictly Cash on Delivery (COD)! NEVER call it online payment!
-       - When the customer selects Online Payment: Provide our bKash/Nagad account number (01326596251) and ask them to send the payment and share their TrxID or confirmation.
+       - When the customer selects Online Payment: Provide our bKash/Nagad account number (${dynamicPaymentChannels}) and ask them to send the payment and share their TrxID or confirmation.
        - If payment method is not specified: Ask whether they prefer Cash on Delivery (COD) or Online Payment (bKash/Nagad).
 
      * UNTIL ALL FOUR (4) PIECES OF INFORMATION ARE KNOWN (INCLUDING DETAILED ADDRESS):
@@ -1722,7 +1722,7 @@ ${knowledgeBaseContext || 'No additional knowledge base documents uploaded.'}
          Ask all 3 questions clearly:
          1. Phone Number (ফোন নম্বর)
          2. Email Address in which they want the subscription (যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান)
-         3. Payment confirmation (bKash/Nagad: 01326596251 with TrxID) or Free confirmation if price ৳0!
+         3. Payment confirmation (${dynamicPaymentChannels} with TrxID) or Free confirmation if price ৳0!
 
      * UNTIL ALL THREE (3) PIECES OF INFORMATION ARE KNOWN:
        - DO NOT confirm the order. Ask politely for whatever is missing among the 3 items.
@@ -2359,7 +2359,7 @@ Set "order": null if the customer is merely asking a question without ordering o
 
   // Deterministic Sanitizer for Hallucinated Discounts & Free Canva Pro / Free Digital Offers
   if (isCanvaFreeInStore || (isFreeOrder && isOrderDigital)) {
-    const hasDiscountOrPriceOrCOD = /\b(?:10%|20%|45|৳45|dam\s*porbe|payment\s*method|bkash\/nagad\/cod|bKash\s*merchant|01326596251|send\s*৳?45|delivery\s*details|ক্যাশ\s*অন\s*ডেলিভারি|পেমেন্ট\s*মেথড)\b/i.test(aiReply)
+    const hasDiscountOrPriceOrCOD = /\b(?:10%|20%|45|৳45|dam\s*porbe|payment\s*method|bkash\/nagad\/cod|bKash\s*merchant|send\s*৳?45|delivery\s*details|ক্যাশ\s*অন\s*ডেলিভারি|পেমেন্ট\s*মেথড)\b/i.test(aiReply)
     const asksForPayment = /\b(?:payment|bKash|Nagad|COD|TrxID|টাকা\s*পাঠান|পেমেন্ট)\b/i.test(aiReply) && !/\b(?:free|৳0|ফ্রি|বিনামূল্যে)\b/i.test(aiReply)
 
     if (hasDiscountOrPriceOrCOD || asksForPayment) {
@@ -2497,7 +2497,7 @@ Set "order": null if the customer is merely asking a question without ordering o
       llmOrderData.is_cancelled = true
     }
 
-    if (aiClaimsOrderPlaced || /\b(?:trx(?:id)?|payment|bkash|nagad|send\s*(?:the)?\s*payment|টাকা|পেমেন্ট|address|ঠিকানা|ইমেইল|email|01326596251)\b/i.test(aiReply) || !/\b(?:cancel|বাতিল|ক্যানসেল)\b/i.test(aiReply)) {
+    if (aiClaimsOrderPlaced || /\b(?:trx(?:id)?|payment|bkash|nagad|send\s*(?:the)?\s*payment|টাকা|পেমেন্ট|address|ঠিকানা|ইমেইল|email)\b/i.test(aiReply) || !/\b(?:cancel|বাতিল|ক্যানসেল)\b/i.test(aiReply)) {
       if (detectedLang === 'bn') {
         aiReply = `আপনার অনুরোধ অনুযায়ী অর্ডারটি সফলভাবে বাতিল করা হয়েছে। ভবিষ্যতে যেকোনো প্রয়োজনে আমরা আপনার পাশে আছি। ধন্যবাদ!`
       } else if (detectedLang === 'banglish') {
@@ -2569,9 +2569,10 @@ Set "order": null if the customer is merely asking a question without ordering o
 
   if (shouldSanitizeMissingOrderInfo) {
     const paymentSettings = account?.payment_settings as any
-    const bkashNumber = paymentSettings?.bkash?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
-    const nagadNumber = paymentSettings?.nagad?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
-    const rocketNumber = paymentSettings?.rocket?.number || account?.special_instructions?.match(/01[3-9]\d{8}/)?.[0] || '01326596251'
+    const resolvedPaymentsForSanitize = resolveMerchantPaymentSettings(paymentSettings, account?.special_instructions)
+    const bkashNumber = resolvedPaymentsForSanitize.bkash?.number || ''
+    const nagadNumber = resolvedPaymentsForSanitize.nagad?.number || ''
+    const rocketNumber = resolvedPaymentsForSanitize.rocket?.number || ''
     const bKashNumber = bkashNumber
     const targetProductName = activeProduct?.name || llmOrderData?.items?.[0]?.product_name || (isOrderDigital ? 'Digital Product' : 'Product')
 
