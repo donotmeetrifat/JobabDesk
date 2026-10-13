@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai'
 import { createClient } from '@supabase/supabase-js'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat, ORDER_CONFIRMATION_PHRASES_REGEX } from '@/lib/orders/auto-create-order'
+import { resolveMerchantPaymentSettings } from '@/lib/payments/instruction-parser'
 import { isDigitalProduct, checkIsDigitalOrder, isDigitalText } from '@/lib/products/product-type'
 import {
   extractCustomerInfoFromMessage,
@@ -750,16 +751,53 @@ export function buildOfflineReply({
     textLower.includes('পেমেন্ট')
   ) {
     intent = 'general_faq'
-    const paymentInfo = account?.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jobabdesk.vercel.app'
+    const activeOrderRef = recentOrders?.[0]?.order_number || recentOrders?.[0]?.id || ''
+    const payUrl = activeOrderRef ? `${siteUrl}/pay/${activeOrderRef}` : `${siteUrl}/pay`
+    const resolvedPayments = resolveMerchantPaymentSettings(account?.payment_settings, account?.special_instructions)
+
+    const isSpecificRocket = /(?:rocket|রকেট(?:ে)?)/i.test(textLower)
+    const isSpecificNagad = /(?:nagad|নগদ(?:ে)?)/i.test(textLower)
+    const isSpecificBkash = /(?:bkash|bikas|বিকাশ(?:ে)?)/i.test(textLower)
+    const isPaymentAction =
+      /\b(?:payment\s*(?:korbo|korte|link|দিন|দেন|চাই)|taka\s*(?:pathabo|dibo)|pay\s*korbo|pay\s*via|pay\s*by|link\s*din|link\s*den|link\s*chai|পেমেন্ট\s*করব|পেমেন্ট\s*লিংক)\b/i.test(textLower) ||
+      isSpecificRocket ||
+      isSpecificNagad ||
+      isSpecificBkash
+
     const honorificBanglish =
       customerGender === 'female' ? ', Apu' : customerGender === 'male' ? ', Bhaiya' : ''
-    if (detectedLang === 'banglish') {
-      reply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan${honorificBanglish}?`
-    } else if (detectedLang === 'bn') {
-      const honorificBn = customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
-      reply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান${honorificBn}?`
+    const honorificBn =
+      customerGender === 'female' ? ', আপু' : customerGender === 'male' ? ', ভাইয়া' : ''
+    const honorificEn =
+      customerGender === 'female' ? ' Apu' : customerGender === 'male' ? ' Bhaiya' : ''
+
+    if (isPaymentAction && (isSpecificRocket || isSpecificNagad || isSpecificBkash)) {
+      const pmNameBn = isSpecificRocket ? 'রকেট' : isSpecificNagad ? 'নগদ' : 'বিকাশ'
+      const pmNameBanglish = isSpecificRocket ? 'Rocket' : isSpecificNagad ? 'Nagad' : 'bKash'
+      const pmNameEn = isSpecificRocket ? 'Rocket' : isSpecificNagad ? 'Nagad' : 'bKash'
+      const targetNumber = isSpecificRocket
+        ? resolvedPayments.rocket?.number || '01900-000000'
+        : isSpecificNagad
+        ? resolvedPayments.nagad?.number || '01800-000000'
+        : resolvedPayments.bkash?.number || '01700-000000'
+
+      if (detectedLang === 'banglish') {
+        reply = `Aboshshoi${honorificBanglish}! Amader ${pmNameBanglish} number: ${targetNumber}.\n💳 Payment Link: ${payUrl}\nApni uporer link e giye payment complete korte paren ba ei number e payment kore TrxID ti ekhane share korte paren.`
+      } else if (detectedLang === 'bn') {
+        reply = `অবশ্যই${honorificBn}! আমাদের ${pmNameBn} নম্বর: ${targetNumber}।\n💳 পেমেন্ট লিংক: ${payUrl}\nআপনি ওপরের লিংকে গিয়ে সরাসরি পেমেন্ট সম্পন্ন করতে পারেন অথবা এই নম্বরে টাকা পাঠিয়ে TrxID এখানে জানাতে পারেন।`
+      } else {
+        reply = `Certainly${honorificEn}! Our ${pmNameEn} number is ${targetNumber}.\n💳 Payment Link: ${payUrl}\nYou can complete your payment via the link above or send payment to the number and share your TrxID here.`
+      }
     } else {
-      reply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
+      const paymentInfo = account?.special_instructions || 'Cash on Delivery (COD), bKash, and Nagad'
+      if (detectedLang === 'banglish') {
+        reply = `Amader payment options holo: ${paymentInfo}. Apni ki kono product order korte chan${honorificBanglish}?`
+      } else if (detectedLang === 'bn') {
+        reply = `আমাদের পেমেন্ট মেথড: ${paymentInfo}। আপনি কি কোনো পণ্য অর্ডার করতে চান${honorificBn}?`
+      } else {
+        reply = `We accept: ${paymentInfo}. Would you like to proceed with placing an order?`
+      }
     }
   }
   // 3. Delivery Rates & Shipping Policy
@@ -1379,7 +1417,7 @@ export async function handleIncomingCustomerMessage({
       const targetAccountId = account?.id || accountId
       let oQuery = client
         .from('orders')
-        .select('order_number, status, payment_status, total, created_at')
+        .select('id, order_number, status, payment_status, total, created_at, payment_method, customer_phone, customer_address, customer_name')
         .eq('account_id', targetAccountId)
 
       if (contactId) {
@@ -1524,6 +1562,20 @@ export async function handleIncomingCustomerMessage({
     account.name ||
     'Our Store'
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jobabdesk.vercel.app'
+  const merchantPayments = resolveMerchantPaymentSettings(
+    account?.payment_settings,
+    account?.special_instructions
+  )
+  const activeOrderRef = recentOrders?.[0]?.order_number || recentOrders?.[0]?.id || ''
+  const paymentLinkPrompt = activeOrderRef ? `${siteUrl}/pay/${activeOrderRef}` : `${siteUrl}/pay`
+
+  const dynamicPaymentChannels = [
+    merchantPayments.bkash?.number ? `bKash: ${merchantPayments.bkash.number}` : null,
+    merchantPayments.rocket?.number ? `Rocket: ${merchantPayments.rocket.number}` : null,
+    merchantPayments.nagad?.number ? `Nagad: ${merchantPayments.nagad.number}` : null,
+  ].filter(Boolean).join(' | ') || (account.special_instructions || 'Cash on Delivery, bKash, Nagad, Rocket')
+
   const businessContext = `
 Store Name: ${resolvedStoreName}
 Tagline: ${account.business_tagline || 'N/A'}
@@ -1534,7 +1586,8 @@ Target Customer Profile: ${account.target_audience || 'Customers in Bangladesh'}
 Customer Communication Style: ${communicationGuidance}
 Delivery Rates & Policy: ${account.delivery_policy || account.ai_delivery_policy || 'Inside Dhaka ৳80, Outside Dhaka ৳150'}
 Return Policy: ${account.return_policy || account.ai_return_policy || 'Standard exchange policy'}
-Payment Info: ${account.special_instructions || 'Cash on Delivery, bKash, Nagad'}
+Payment Info: ${dynamicPaymentChannels}. Cash on Delivery (COD) accepted nationwide.
+Official Customer Payment Link: ${paymentLinkPrompt}
 ${account.simulated_persona_preview ? `Sample Greeting / Persona Style: ${account.simulated_persona_preview}` : ''}
 `.trim()
 
@@ -2505,6 +2558,8 @@ Set "order": null if the customer is merely asking a question without ordering o
   // Only hijack/sanitize aiReply if:
   // 1. The AI falsely claimed an order was placed/confirmed without having full details, OR
   // 2. The customer is actively attempting to place an order and missing required checkout fields
+  let capturedOrder: any = null
+
   const shouldSanitizeMissingOrderInfo =
     !isGreeting &&
     !isCustomerSendingGratitude &&
@@ -2539,70 +2594,57 @@ Set "order": null if the customer is merely asking a question without ordering o
           } else {
             aiReply = `Thank you! To receive your ${targetProductName} digital subscription, please provide:\n1. Phone Number\n2. Email address where you want to receive the subscription\n3. Payment confirmation (bKash/Nagad: ${bKashNumber} with TrxID).`
           }
-        }
-      } else if (missingRequirements.includes('online_payment_pending')) {
+        }      } else if (missingRequirements.includes('online_payment_pending')) {
         const pmNameBn = explicitPaymentMethod === 'rocket' ? 'রকেট' : explicitPaymentMethod === 'nagad' ? 'নগদ' : explicitPaymentMethod === 'bkash' ? 'বিকাশ' : 'বিকাশ/নগদ/রকেট'
         const pmNameBanglish = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
         const pmNameEn = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
         const targetNumber = explicitPaymentMethod === 'rocket' ? rocketNumber : explicitPaymentMethod === 'nagad' ? nagadNumber : bkashNumber
 
-        if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName}-এর সাবস্ক্রিপশন কনফার্ম করতে অনুগ্রহ করে ${pmNameBn}-এ (${targetNumber}) পেমেন্ট পাঠিয়ে TrxID বা কনফার্মেশনটি শেয়ার করুন।`
-        } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} er subscription confirm korte ${pmNameBanglish} e (${targetNumber}) payment kore TrxID ba confirmation share korun please.`
-        } else {
-          aiReply = `Thank you! To complete your digital subscription for ${targetProductName}, please send payment via ${pmNameEn} to ${targetNumber} and share the TrxID or confirmation.`
+        // Pre-capture order into DB so an official unpaid order and order_number exist
+        if (!capturedOrder) {
+          try {
+            const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
+              ? resolveDeliveryCharge({
+                  address: currentOrderAddress,
+                  policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
+                  isDigital: isOrderDigital,
+                  isFree: isFreeOrder,
+                  explicitDeliveryCharge: llmOrderData?.delivery_charge,
+                }).deliveryCharge
+              : 0
+
+            capturedOrder = await detectAndCreateOrderFromChat({
+              accountId: account?.id || accountId,
+              contactId: contactId || null,
+              conversationId: convId || null,
+              channel,
+              customerName: currentOrderName || null,
+              customerPhone: currentOrderPhone || null,
+              customerAddress: currentOrderAddress || null,
+              customerEmail: currentOrderEmail || null,
+              messageText,
+              conversationHistoryText,
+              llmOrderData: {
+                ...llmOrderData,
+                delivery_charge: finalOrderDeliveryCharge,
+              },
+              storeProducts: products,
+              supabase: client,
+            })
+          } catch (captureErr) {
+            console.warn('[AI Router Engine] Failed to pre-capture order for online payment:', captureErr)
+          }
         }
-      } else if (missingRequirements.includes('email')) {
-        if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! আপনি যে ইমেইলে সাবস্ক্রিপশনটি নিতে চান, অনুগ্রহ করে সেই ইমেইল অ্যাড্রেসটি শেয়ার করুন।`
-        } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Apni je email e digital subscription ti nite chan, kindly shei Email address ti share korun please.`
-        } else {
-          aiReply = `Thank you! Please share the email address where you would like to receive your subscription.`
-        }
-      } else if (missingRequirements.includes('phone')) {
-        if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! সাবস্ক্রিপশন অর্ডারটি সম্পন্ন করতে অনুগ্রহ করে আপনার যোগাযোগের ফোন নম্বরটি দিন।`
-        } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Subscription order ti complete korte apnar contact phone number ti din please.`
-        } else {
-          aiReply = `Thank you! Could you please share a contact phone number to complete your subscription order?`
-        }
-      }
-    } else {
-      // PHYSICAL ORDER PROMPTS (Name, Delivery Address, Delivery Number, Payment Method)
-      if (missingRequirements.length >= 2 || (missingRequirements.includes('name') && missingRequirements.includes('address'))) {
-        const hasSavedDetails = Boolean(previousAddress && previousPhone)
-        const savedDetailsPromptBn = hasSavedDetails
-          ? `\n👉 আপনার পূর্বের ঠিকানা: "${previousAddress}" এবং ফোন নম্বর: "${previousPhone}"-এ পাঠাতে চাইলে অনুগ্রহ করে 'হ্যাঁ/কনফার্ম' বা 'আগের ঠিকানায় পাঠান' লিখে জানান।`
-          : ''
-        const savedDetailsPromptBanglish = hasSavedDetails
-          ? `\n👉 Apnar ager address: "${previousAddress}" ebong phone: "${previousPhone}" e delivery nite chaile kindly 'ha/confirm' ba 'ager address e pathan' likhe janan.`
-          : ''
-        const savedDetailsPromptEn = hasSavedDetails
-          ? `\n👉 If you would like to use your previous address: "${previousAddress}" and phone: "${previousPhone}", please reply with "confirm" or "use same address".`
-          : ''
+
+        const effectivePayRef = capturedOrder?.order_number || capturedOrder?.id || recentOrders?.[0]?.order_number || recentOrders?.[0]?.id || ''
+        const effectivePayUrl = effectivePayRef ? `${siteUrl}/pay/${effectivePayRef}` : `${siteUrl}/pay`
 
         if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! ${targetProductName} এভেইলেবল আছে। আপনার অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ৪টি তথ্য জানিয়ে দিন:\n১. আপনার নাম (Delivery Name)\n২. পূর্ণাঙ্গ ডেলিভারি ঠিকানা (বাসা/রোড, থানা, জেলা)\n৩. ফোন নম্বর\n৪. পেমেন্ট মাধ্যম (ক্যাশ অন ডেলিভারি নাকি বিকাশ/নগদ/রকেট)।${savedDetailsPromptBn}`
+          aiReply = `ধন্যবাদ! আমাদের ${pmNameBn} নম্বর: ${targetNumber}।\n\n💳 পেমেন্ট লিংক: ${effectivePayUrl}\n\nঅনুগ্রহ করে ওপরের লিংকে গিয়ে অথবা সরাসরি ${pmNameBn}-এ পেমেন্ট সম্পন্ন করে TrxID বা কনফার্মেশন শেয়ার করুন, আমরা আপনার অর্ডারটি কনফার্ম করে দিচ্ছি!`
         } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! ${targetProductName} available ache. Order confirm korte kindly apnar:\n1. Delivery Name\n2. Delivery Address (basha/road, thana, district)\n3. Phone Number\n4. Payment Method (Cash on Delivery naki bKash/Nagad/Rocket) janaben please.${savedDetailsPromptBanglish}`
+          aiReply = `Dhonnobad! Amader ${pmNameBanglish} number: ${targetNumber}.\n\n💳 Payment Link: ${effectivePayUrl}\n\nKindly uporer link theke ba ${pmNameBanglish} e payment kore TrxID ba confirmation share korun please, amra apnar order confirm kore dicchi!`
         } else {
-          aiReply = `Great choice! ${targetProductName} is available. To confirm your delivery, please provide:\n1. Your Name (Delivery Name)\n2. Full Delivery Address (house/road, area, city/district)\n3. Phone Number\n4. Preferred Payment Method (Cash on Delivery or bKash/Nagad/Rocket).${savedDetailsPromptEn}`
-        }
-      } else if (missingRequirements.includes('online_payment_pending')) {
-        const pmNameBn = explicitPaymentMethod === 'rocket' ? 'রকেট' : explicitPaymentMethod === 'nagad' ? 'নগদ' : explicitPaymentMethod === 'bkash' ? 'বিকাশ' : 'বিকাশ/নগদ/রকেট'
-        const pmNameBanglish = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
-        const pmNameEn = explicitPaymentMethod === 'rocket' ? 'Rocket' : explicitPaymentMethod === 'nagad' ? 'Nagad' : explicitPaymentMethod === 'bkash' ? 'bKash' : 'bKash/Nagad/Rocket'
-        const targetNumber = explicitPaymentMethod === 'rocket' ? rocketNumber : explicitPaymentMethod === 'nagad' ? nagadNumber : bkashNumber
-
-        if (detectedLang === 'bn') {
-          aiReply = `ধন্যবাদ! আমাদের ${pmNameBn} নম্বর: ${targetNumber}। অনুগ্রহ করে পেমেন্ট সম্পন্ন করে ট্রানজেকশন আইডি (TrxID) বা কনফার্মেশন শেয়ার করুন যাতে আমরা অর্ডারটি কনফার্ম করতে পারি।`
-        } else if (detectedLang === 'banglish') {
-          aiReply = `Dhonnobad! Amader ${pmNameBanglish} number: ${targetNumber}. Kindly payment kore TrxID ba confirmation share korun jate amra order confirm korte pari.`
-        } else {
-          aiReply = `Thank you! Our ${pmNameEn} account number is ${targetNumber}. Please send your payment and share the TrxID or confirmation so we can confirm your order.`
+          aiReply = `Thank you! Our ${pmNameEn} account number is ${targetNumber}.\n\n💳 Payment Link: ${effectivePayUrl}\n\nPlease complete payment via the link above or send payment to our ${pmNameEn} number and share the TrxID or confirmation so we can confirm your order!`
         }
       } else if (missingRequirements.includes('payment_method')) {
         if (detectedLang === 'bn') {
@@ -2809,12 +2851,67 @@ Set "order": null if the customer is merely asking a question without ordering o
     }
   }
 
+  // Guaranteed Payment Link injection: If customer selected Rocket/bKash/Nagad or online payment and no link in reply yet
+  const customerWantsOnlinePay =
+    (explicitPaymentMethod && explicitPaymentMethod !== 'cod' && !isPaymentConfirmed) ||
+    /\b(?:rocket|রকেট|bkash|বিকাশ|nagad|নগদ|online\s*payment|payment\s*link|পেমেন্ট\s*লিংক)\b/i.test(messageText)
+
+  if (customerWantsOnlinePay && !aiReply.includes('/pay') && !isGreeting && !isCancelRequest && !isCustomerSendingGratitude) {
+    if (!capturedOrder && (isOrderFullyComplete || (missingRequirements.length === 1 && missingRequirements.includes('online_payment_pending')))) {
+      try {
+        const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
+          ? resolveDeliveryCharge({
+              address: currentOrderAddress,
+              policyString: `${account?.delivery_policy || ''} ${account?.ai_delivery_policy || ''}`,
+              isDigital: isOrderDigital,
+              isFree: isFreeOrder,
+              explicitDeliveryCharge: llmOrderData?.delivery_charge,
+            }).deliveryCharge
+          : 0
+
+        capturedOrder = await detectAndCreateOrderFromChat({
+          accountId: account?.id || accountId,
+          contactId: contactId || null,
+          conversationId: convId || null,
+          channel,
+          customerName: currentOrderName || null,
+          customerPhone: currentOrderPhone || null,
+          customerAddress: currentOrderAddress || null,
+          customerEmail: currentOrderEmail || null,
+          messageText,
+          conversationHistoryText,
+          llmOrderData: {
+            ...llmOrderData,
+            delivery_charge: finalOrderDeliveryCharge,
+          },
+          storeProducts: products,
+          supabase: client,
+        })
+      } catch (err) {
+        console.warn('[AI Router Engine] Post-capture order error:', err)
+      }
+    }
+
+    const activeOrderRef = capturedOrder?.order_number || capturedOrder?.id || recentOrders?.[0]?.order_number || recentOrders?.[0]?.id || ''
+    const payUrl = activeOrderRef ? `${siteUrl}/pay/${activeOrderRef}` : `${siteUrl}/pay`
+    const linkLabel = detectedLang === 'bn' ? 'পেমেন্ট লিংক' : 'Payment Link'
+    aiReply = `${aiReply.trim()}\n\n💳 ${linkLabel}: ${payUrl}`
+  }
+
   if (detectedLang === 'banglish') {
     aiReply = normalizeBanglishSpelling(aiReply)
   }
 
   // 4. Automatic Order Capture to 'orders' table (sets status 'new' for shop owner review)
-  if (isOrderFullyComplete && isCustomerAttemptingOrder && !isCustomerSendingGratitude && !isGreeting && !isCancelRequest) {
+  const isEligibleForFinalCapture =
+    !capturedOrder &&
+    (isOrderFullyComplete || (missingRequirements.length === 1 && missingRequirements.includes('online_payment_pending'))) &&
+    isCustomerAttemptingOrder &&
+    !isCustomerSendingGratitude &&
+    !isGreeting &&
+    !isCancelRequest
+
+  if (isEligibleForFinalCapture) {
     try {
       const finalOrderDeliveryCharge = !isOrderDigital && !isFreeOrder
         ? resolveDeliveryCharge({

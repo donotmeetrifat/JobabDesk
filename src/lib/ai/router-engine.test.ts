@@ -724,4 +724,58 @@ Bot: ধন্যবাদ, RI F AT আপু! 🎉
     expect(reply.reply).not.toContain('সকল তথ্য সফলভাবে গ্রহণ করা হয়েছে')
     expect(reply.reply).not.toContain('পার্সেলটি পাঠিয়ে দেবে')
   })
+  it('provides the Rocket number AND payment link when customer wants to pay via Rocket in buildOfflineReply', () => {
+    const products = [
+      { id: '1', name: 'boots vitamin C', price: 350, is_in_stock: true },
+    ]
+    const account = {
+      special_instructions: 'bKash: 01700-000000\nRocket: 01900-000000\nNagad: 01800-000000',
+      payment_settings: {
+        rocket: { number: '01900-000000' },
+      },
+    }
+    const recentOrders = [
+      { order_number: 'ORD-ROCKET-99', id: 'ord-uuid-1', status: 'new', payment_status: 'unpaid' },
+    ]
+
+    const reply = buildOfflineReply({
+      detectedLang: 'banglish',
+      messageText: 'ami rocket a payment korbo',
+      products,
+      account: account as any,
+      recentOrders: recentOrders as any,
+      customerGender: 'female',
+    })
+
+    expect(reply.reply).toContain('01900-000000')
+    expect(reply.reply).toContain('💳 Payment Link:')
+    expect(reply.reply).toContain('/pay/ORD-ROCKET-99')
+  })
+
+  it('provides the Rocket number and payment link in Bengali when asked in Bengali in buildOfflineReply', () => {
+    const products = [
+      { id: '1', name: 'boots vitamin C', price: 350, is_in_stock: true },
+    ]
+    const account = {
+      payment_settings: {
+        rocket: { number: '01900-000000' },
+      },
+    }
+    const recentOrders = [
+      { order_number: 'ORD-BN-123', id: 'ord-uuid-2', status: 'new', payment_status: 'unpaid' },
+    ]
+
+    const reply = buildOfflineReply({
+      detectedLang: 'bn',
+      messageText: 'রকেটে পেমেন্ট করব লিংক দেন',
+      products,
+      account: account as any,
+      recentOrders: recentOrders as any,
+      customerGender: 'female',
+    })
+
+    expect(reply.reply).toContain('01900-000000')
+    expect(reply.reply).toContain('💳 পেমেন্ট লিংক:')
+    expect(reply.reply).toContain('/pay/ORD-BN-123')
+  })
 });

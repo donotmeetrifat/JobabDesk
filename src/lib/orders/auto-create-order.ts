@@ -131,7 +131,8 @@ export async function detectAndCreateOrderFromChat({
     .join('\n')
   const historyExtracted = extractCustomerInfoFromMessage(customerOnlyHistoryText)
 
-  const explicitReusePhrases = /\b(?:ager\s*(?:address|thikana|moto|details)|same\s*(?:address|thikana|details|place)|previous\s*(?:address|details)|purber\s*(?:thikana|address)|আগের\s*(?:ঠিকানা|ঠিকানায়|মতে|মতো|ডিটেইলস)|একই\s*(?:ঠিকানা|ঠিকানায়)|পূর্বের\s*(?:ঠিকানা|ঠিকানায়))\b/i
+  const explicitReusePhrases =
+    /\b(?:ager\s*(?:same\s*)?(?:address|thikana|moto|details|info|information|tothyo)|same\s*(?:address|thikana|details|place|info|information)|previous\s*(?:address|details|info|information)|purber\s*(?:thikana|address|tothyo)|আগের\s*(?:একই\s*)?(?:ঠিকানা|ঠিকানায়|তথ্য|মতে|মতো|ডিটেইলস)|একই\s*(?:ঠিকানা|ঠিকানায়|তথ্য)|পূর্বের\s*(?:ঠিকানা|ঠিকানায়|তথ্য))\b/i
   const shortAffirmationPhrases = /^(?:ha|haa|ji|jee|yes|yeah|yup|ok|okay|thik\s*ache|confirm|sure|proceed|হাঁ|হ্যাঁ|জি|জী|ঠিক\s*আছে|কনফার্ম|করুন|পাঠান|দিয়ে\s*দিন|দেন)[.!]?$/i
 
   const lastAssistantLine = activeHistoryLines
@@ -578,10 +579,10 @@ export async function detectAndCreateOrderFromChat({
     // DIGITAL PRODUCT: 3 items (Phone, Email, Payment Method)
     if (!hasPhone) missingRequirements.push('phone')
     if (!hasEmail) missingRequirements.push('email')
-    if (!isFreeOrder && (!explicitPaymentMethod || explicitPaymentMethod === 'cod' || !isPaymentConfirmed)) {
-      missingRequirements.push('payment_confirmation')
+    if (!isFreeOrder && (!explicitPaymentMethod || explicitPaymentMethod === 'cod')) {
+      missingRequirements.push('payment_method')
     }
-    isOrderComplete = hasPhone && hasEmail && (isFreeOrder || (isPaymentConfirmed && Boolean(explicitPaymentMethod) && explicitPaymentMethod !== 'cod'))
+    isOrderComplete = hasPhone && hasEmail && (isFreeOrder || Boolean(explicitPaymentMethod))
   } else {
     // PHYSICAL PRODUCT: 4 items (Name, Delivery Address, Delivery Phone, Payment Method)
     if (!hasName) missingRequirements.push('name')
@@ -589,15 +590,13 @@ export async function detectAndCreateOrderFromChat({
     if (!hasPhone) missingRequirements.push('delivery_number')
     if (!isFreeOrder && !explicitPaymentMethod) {
       missingRequirements.push('payment_method')
-    } else if (!isFreeOrder && explicitPaymentMethod !== 'cod' && !isPaymentConfirmed) {
-      missingRequirements.push('payment_confirmation')
     }
 
     isOrderComplete =
       hasName &&
       hasAddress &&
       hasPhone &&
-      (isFreeOrder || (explicitPaymentMethod === 'cod') || (Boolean(explicitPaymentMethod) && isPaymentConfirmed))
+      (isFreeOrder || Boolean(explicitPaymentMethod))
   }
 
   // Update contact information in CRM even if order is not fully complete yet (address/phone/email)
