@@ -109,6 +109,11 @@ export function SettingsOverview({
       subtitle: `${defaultCurrency} — ${currencyLabel}`,
     },
     {
+      section: 'courier',
+      loading: false,
+      subtitle: 'Manual tracking & Steadfast / Pathao APIs',
+    },
+    {
       section: 'appearance',
       loading: false,
       subtitle: t('appearance', { mode: cap(mode), theme: themeName }),

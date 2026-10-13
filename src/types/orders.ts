@@ -89,6 +89,42 @@ export interface Order {
     name: string
     phone?: string | null
   } | null
+  // Courier & Delivery Tracking (Phase 6A)
+  courier_name?: string | null
+  tracking_code?: string | null
+  tracking_url?: string | null
+  courier_consignment_id?: string | null
+  courier_booking_status?: CourierBookingStatus | null
+}
+
+export type CourierBookingStatus =
+  | 'unbooked'
+  | 'booked'
+  | 'in_transit'
+  | 'delivered'
+  | 'returned'
+
+export type CourierProvider = 'manual' | 'steadfast' | 'pathao'
+
+export interface SteadfastSettings {
+  enabled: boolean
+  api_key: string
+  secret_key: string
+}
+
+export interface PathaoSettings {
+  enabled: boolean
+  client_id: string
+  client_secret: string
+  username: string
+  password: string
+  store_id: string
+}
+
+export interface CourierSettings {
+  default_provider: CourierProvider
+  steadfast: SteadfastSettings
+  pathao: PathaoSettings
 }
 
 export interface OrderStats {

@@ -36,14 +36,17 @@ export async function POST(
       return NextResponse.json({ error: error?.message ?? 'Order not found' }, { status: 404 })
     }
 
-    // Automatically notify customer via chat when order is confirmed or cancelled
-    if (status === 'confirmed' || status === 'cancelled') {
+    // Automatically notify customer via chat when order is confirmed, cancelled, or shipped
+    if (status === 'confirmed' || status === 'cancelled' || status === 'shipped') {
       try {
         await sendOrderStatusNotification({
           order: updatedOrder,
-          newStatus: status,
+          newStatus: status as 'confirmed' | 'cancelled' | 'shipped',
           supabase,
           accountId,
+          courierName: updatedOrder.courier_name,
+          trackingCode: updatedOrder.tracking_code,
+          trackingUrl: updatedOrder.tracking_url,
         })
       } catch (notifyErr) {
         console.warn('[api/orders/[id]/status] Notification warning:', notifyErr)

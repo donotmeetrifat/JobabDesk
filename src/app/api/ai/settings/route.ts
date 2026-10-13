@@ -80,6 +80,7 @@ export async function PATCH(req: Request) {
       'messenger_status',
       'playground_chat_history',
       'payment_settings',
+      'courier_settings',
     ]
 
     const updates: Record<string, unknown> = {}

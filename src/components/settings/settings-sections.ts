@@ -3,6 +3,7 @@ import {
   CreditCard,
   LayoutGrid,
   Palette,
+  Truck,
   User,
   UsersRound,
   type LucideIcon,
@@ -16,6 +17,7 @@ export const SETTINGS_SECTIONS = [
   'profile',
   'appearance',
   'payment',
+  'courier',
   'deals',
   'members',
 ] as const;
@@ -37,6 +39,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
   appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
   payment: { id: 'payment', label: 'Payment methods', icon: CreditCard, group: 'workspace' },
+  courier: { id: 'courier', label: 'Courier & Delivery', icon: Truck, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
 };

@@ -26,12 +26,17 @@ import {
   RotateCcw,
   Link2,
   Loader2,
+  Zap,
+  Globe,
+  Building2,
+  Edit3,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
-import type { Order, OrderStatus, PaymentMethod, PaymentStatus, PaymentRequest } from '@/types/orders'
+import type { Order, OrderStatus, PaymentMethod, PaymentStatus, PaymentRequest, CourierProvider, CourierSettings } from '@/types/orders'
+import { PRESET_COURIERS, buildTrackingUrl } from '@/lib/courier/types'
 
 interface OrderDetailDialogProps {
   open: boolean
@@ -93,9 +98,28 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
   const [liveRequests, setLiveRequests] = useState<PaymentRequest[]>(order?.payment_requests || [])
   const [loadingRequests, setLoadingRequests] = useState(false)
 
+  // Courier & Delivery Tracking State (Phase 6A)
+  const [courierSettings, setCourierSettings] = useState<{
+    settings: CourierSettings
+    has_steadfast: boolean
+    has_pathao: boolean
+  } | null>(null)
+  const [loadingCourierSettings, setLoadingCourierSettings] = useState(false)
+  const [selectedCourier, setSelectedCourier] = useState('Sundarban Courier')
+  const [customCourierName, setCustomCourierName] = useState('')
+  const [trackingCodeInput, setTrackingCodeInput] = useState('')
+  const [trackingUrlInput, setTrackingUrlInput] = useState('')
+  const [bookingCourier, setBookingCourier] = useState(false)
+  const [isEditingCourier, setIsEditingCourier] = useState(false)
+
   useEffect(() => {
     if (!open || !order?.id) return
     setLiveRequests(order.payment_requests || [])
+    setIsEditingCourier(false)
+    setTrackingCodeInput(order.tracking_code || '')
+    setTrackingUrlInput(order.tracking_url || '')
+    setSelectedCourier(order.courier_name || 'Sundarban Courier')
+    setCustomCourierName('')
 
     let isMounted = true
     const fetchRequests = async () => {
@@ -114,11 +138,32 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
       }
     }
 
+    const fetchCourierSettings = async () => {
+      try {
+        setLoadingCourierSettings(true)
+        const res = await fetch('/api/courier/settings')
+        if (!res.ok) return
+        const data = await res.json()
+        if (isMounted && data.settings) {
+          setCourierSettings(data)
+          if (!order.courier_name) {
+            if (data.settings.default_provider === 'steadfast') setSelectedCourier('Steadfast Courier')
+            else if (data.settings.default_provider === 'pathao') setSelectedCourier('Pathao Courier')
+          }
+        }
+      } catch {
+        // silent fallback
+      } finally {
+        if (isMounted) setLoadingCourierSettings(false)
+      }
+    }
+
     fetchRequests()
+    fetchCourierSettings()
     return () => {
       isMounted = false
     }
-  }, [open, order?.id, order?.payment_requests])
+  }, [open, order?.id, order?.payment_requests, order?.courier_name, order?.tracking_code, order?.tracking_url])
 
   if (!open || !order) return null
 
@@ -165,6 +210,65 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
     setCopiedField(field)
     toast.success(`Copied ${field}`)
     setTimeout(() => setCopiedField(null), 1500)
+  }
+
+  const handleTrackingCodeChange = (code: string) => {
+    setTrackingCodeInput(code)
+    const effectiveCourier = selectedCourier === 'Other' ? customCourierName : selectedCourier
+    const autoUrl = buildTrackingUrl(effectiveCourier, code)
+    if (autoUrl) {
+      setTrackingUrlInput(autoUrl)
+    }
+  }
+
+  const handleCourierSelectChange = (courierName: string) => {
+    setSelectedCourier(courierName)
+    const effectiveCourier = courierName === 'Other' ? customCourierName : courierName
+    const autoUrl = buildTrackingUrl(effectiveCourier, trackingCodeInput)
+    if (autoUrl) {
+      setTrackingUrlInput(autoUrl)
+    }
+  }
+
+  const handleBookCourier = async (provider: CourierProvider) => {
+    if (!order) return
+    const effectiveCourier = selectedCourier === 'Other' ? customCourierName : selectedCourier
+    if (provider === 'manual' && !trackingCodeInput.trim()) {
+      toast.error('Please enter a tracking / consignment / memo number.')
+      return
+    }
+
+    setBookingCourier(true)
+    try {
+      const res = await fetch('/api/courier/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          provider,
+          manualCourierName: effectiveCourier,
+          manualTrackingCode: trackingCodeInput.trim(),
+          manualTrackingUrl: trackingUrlInput.trim(),
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to book courier parcel')
+      }
+
+      toast.success(
+        provider === 'manual'
+          ? 'Tracking details saved & marked as Shipped!'
+          : `Parcel successfully booked with ${data.booking?.courier_name || provider}!`
+      )
+      setIsEditingCourier(false)
+      onStatusUpdated()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Courier booking failed')
+    } finally {
+      setBookingCourier(false)
+    }
   }
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
@@ -761,6 +865,332 @@ export function OrderDetailDialog({ open, order, onClose, onStatusUpdated }: Ord
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Courier & Delivery Tracking (Phase 6A: Manual First + 1-Click Steadfast & Pathao APIs) */}
+          <div className="rounded-xl border bg-card p-4 sm:p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                  <Truck className="size-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                    <span>Courier &amp; Delivery Tracking</span>
+                    <span className="text-[10px] text-muted-foreground font-normal lowercase tracking-normal">
+                      (Manual First &bull; 0 API Setup)
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground">
+                    Assign any courier memo or 1-click book via automated Steadfast/Pathao APIs
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {order.tracking_code ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[11px] font-bold text-purple-600 dark:text-purple-400">
+                    <Truck className="size-3" />
+                    {order.courier_booking_status === 'booked' ? 'Booked' : order.courier_booking_status || 'Shipped'}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    Unbooked
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Display Active Tracking Card when order has tracking code and not editing */}
+            {order.tracking_code && !isEditingCourier ? (
+              <div className="rounded-lg border bg-gradient-to-r from-purple-500/5 via-primary/5 to-transparent p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Courier Provider
+                    </span>
+                    <div className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <Building2 className="size-3.5 text-primary" />
+                      <span>{order.courier_name || 'Courier Service'}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Tracking / Memo Code
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-sm font-bold text-primary tracking-wider">
+                        {order.tracking_code}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(order.tracking_code!, 'Tracking Code')}
+                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                        title="Copy tracking code"
+                      >
+                        {copiedField === 'Tracking Code' ? (
+                          <Check className="size-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {order.courier_consignment_id && (
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Consignment ID
+                      </span>
+                      <div className="font-mono text-xs font-semibold text-muted-foreground">
+                        #{order.courier_consignment_id}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1 sm:pt-0">
+                    {order.tracking_url ? (
+                      <a
+                        href={order.tracking_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 text-xs font-semibold transition-colors shadow-xs"
+                      >
+                        <Globe className="size-3.5" />
+                        <span>Track Parcel</span>
+                        <ExternalLink className="size-3" />
+                      </a>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingCourier(true)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
+                      title="Update tracking info"
+                    >
+                      <Edit3 className="size-3.5" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="size-3 text-emerald-500" />
+                    Customer was automatically notified with tracking details in chat.
+                  </span>
+                  <span>
+                    COD Amount:{' '}
+                    <strong className="font-mono text-foreground">
+                      {order.payment_status === 'paid' ? '৳0 (Paid)' : formatCurrency(Number(order.total) || 0, defaultCurrency)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* 1-Click Automated Courier API Section (Tier 2 Optional Enhancement) */}
+                {(courierSettings?.has_steadfast && courierSettings.settings.steadfast.enabled) ||
+                (courierSettings?.has_pathao && courierSettings.settings.pathao.enabled) ? (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                        <Zap className="size-3 text-amber-500" />
+                        Automated 1-Click Courier Booking
+                      </span>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
+                        API Connected
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {courierSettings?.has_steadfast && courierSettings.settings.steadfast.enabled && (
+                        <button
+                          type="button"
+                          disabled={bookingCourier}
+                          onClick={() => handleBookCourier('steadfast')}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-orange-500/40 bg-gradient-to-r from-orange-500/10 via-orange-500/5 to-transparent hover:from-orange-500/20 hover:to-orange-500/10 p-3 text-left transition-all group cursor-pointer shadow-xs active:scale-[0.99] disabled:opacity-50"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-lg bg-orange-500 text-white shadow-xs">
+                              {bookingCourier ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs text-foreground">Steadfast 1-Click</span>
+                                <span className="rounded bg-orange-500/20 text-orange-600 dark:text-orange-400 text-[9px] font-bold px-1.5 py-0.2 uppercase">Instant</span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                COD: {order.payment_status === 'paid' ? '৳0 (Paid)' : formatCurrency(Number(order.total) || 0, defaultCurrency)}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-orange-600 dark:text-orange-400 group-hover:translate-x-0.5 transition-transform">
+                            Book &rarr;
+                          </span>
+                        </button>
+                      )}
+
+                      {courierSettings?.has_pathao && courierSettings.settings.pathao.enabled && (
+                        <button
+                          type="button"
+                          disabled={bookingCourier}
+                          onClick={() => handleBookCourier('pathao')}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-gradient-to-r from-red-500/10 via-red-500/5 to-transparent hover:from-red-500/20 hover:to-red-500/10 p-3 text-left transition-all group cursor-pointer shadow-xs active:scale-[0.99] disabled:opacity-50"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-lg bg-red-500 text-white shadow-xs">
+                              {bookingCourier ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs text-foreground">Pathao 1-Click</span>
+                                <span className="rounded bg-red-500/20 text-red-600 dark:text-red-400 text-[9px] font-bold px-1.5 py-0.2 uppercase">Instant</span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                COD: {order.payment_status === 'paid' ? '৳0 (Paid)' : formatCurrency(Number(order.total) || 0, defaultCurrency)}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs font-bold text-red-600 dark:text-red-400 group-hover:translate-x-0.5 transition-transform">
+                            Book &rarr;
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="relative py-1 flex items-center justify-center">
+                      <div className="border-t border-border w-full" />
+                      <span className="bg-card px-2 text-[10px] uppercase font-bold text-muted-foreground absolute">
+                        or manual shipping tracking
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed p-3 bg-muted/20 flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-primary" />
+                        Want 1-Click Automated Courier Booking?
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Connect your Steadfast or Pathao merchant credentials in Settings &gt; Courier to book parcels directly without opening their websites.
+                      </p>
+                    </div>
+                    <Link
+                      href="/settings?tab=courier"
+                      target="_blank"
+                      className="shrink-0 text-xs text-primary font-semibold hover:underline flex items-center gap-1"
+                    >
+                      <span>Configure</span>
+                      <ExternalLink className="size-3" />
+                    </Link>
+                  </div>
+                )}
+
+                {/* Free Manual Delivery Tracking Form (Tier 1 Default) */}
+                <div className="rounded-lg border bg-muted/10 p-3.5 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Courier Preset Selector */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-muted-foreground">
+                        Courier Name
+                      </label>
+                      <select
+                        value={selectedCourier}
+                        onChange={(e) => handleCourierSelectChange(e.target.value)}
+                        className="w-full h-8.5 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-medium"
+                      >
+                        {PRESET_COURIERS.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name} ({c.nameBn})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Custom Courier Name Input (if Other selected) */}
+                    {selectedCourier.includes('Other') && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-muted-foreground">
+                          Custom Courier Name
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. In-House Rider or Local Van"
+                          value={customCourierName}
+                          onChange={(e) => setCustomCourierName(e.target.value)}
+                          className="w-full h-8.5 rounded-lg border border-input bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+
+                    {/* Tracking / Memo Number Input */}
+                    <div className={`space-y-1 ${selectedCourier.includes('Other') ? 'sm:col-span-1' : 'sm:col-span-2'}`}>
+                      <label className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
+                        <span>Tracking / Consignment / Memo #</span>
+                        <span className="text-[10px] text-primary font-normal">Required to ship</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 5241098 or CN-994827"
+                        value={trackingCodeInput}
+                        onChange={(e) => handleTrackingCodeChange(e.target.value)}
+                        className="w-full h-8.5 rounded-lg border border-input bg-background px-2.5 text-xs font-mono font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Optional Custom Tracking URL Input */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-muted-foreground flex items-center justify-between">
+                      <span>Tracking URL (Auto-generated for known couriers)</span>
+                      <span className="text-[10px] text-muted-foreground">Optional</span>
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://... (auto-filled if recognized)"
+                      value={trackingUrlInput}
+                      onChange={(e) => setTrackingUrlInput(e.target.value)}
+                      className="w-full h-8.5 rounded-lg border border-input bg-background px-2.5 text-xs font-mono text-muted-foreground focus:text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 gap-2">
+                    <p className="text-[11px] text-muted-foreground italic">
+                      Saving marks order as <strong>Shipped</strong> and sends tracking notice to customer.
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                      {isEditingCourier && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingCourier(false)}
+                          className="px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-muted text-muted-foreground transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={bookingCourier || !trackingCodeInput.trim()}
+                        onClick={() => handleBookCourier('manual')}
+                        className="flex items-center gap-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        {bookingCourier ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Truck className="size-3.5" />
+                        )}
+                        <span>Save &amp; Mark as Shipped</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Ordered Products Table */}

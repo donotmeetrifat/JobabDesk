@@ -5,9 +5,12 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 interface OrderNotificationParams {
   order: any
-  newStatus: 'confirmed' | 'cancelled'
+  newStatus: 'confirmed' | 'cancelled' | 'shipped'
   supabase: any
   accountId: string
+  courierName?: string
+  trackingCode?: string
+  trackingUrl?: string
 }
 
 function getAdminClient(fallbackClient?: any) {
@@ -27,6 +30,9 @@ export async function sendOrderStatusNotification({
   newStatus,
   supabase,
   accountId,
+  courierName,
+  trackingCode,
+  trackingUrl,
 }: OrderNotificationParams): Promise<{ success: boolean; reason?: string }> {
   try {
     if (!order || !accountId) return { success: false, reason: 'Missing order or account' }
@@ -164,6 +170,27 @@ ${itemListText}
 প্রিয় ${customerName},
 আপনার অর্ডার #${orderNum} বাতিল করা হয়েছে।
 কোনো প্রশ্ন থাকলে বা নতুন কোনো পণ্য অর্ডার করতে চাইলে আমাদের এখানে জানাতে পারেন। ধন্যবাদ!`
+    } else if (newStatus === 'shipped') {
+      const activeCourier = courierName || order.courier_name || 'কুরিয়ার সার্ভিস'
+      const activeTracking = trackingCode || order.tracking_code || 'শীঘ্রই প্রদান করা হবে'
+      const activeUrl = trackingUrl || order.tracking_url || ''
+      const codAmount = order.payment_status === 'paid' ? 'পরিশোধিত (পেইড)' : totalAmountDisplay
+
+      const trackingLine = activeUrl
+        ? `🌐 পার্সেল ট্র্যাক করুন: ${activeUrl}`
+        : ''
+
+      notificationText = `🚚 আপনার অর্ডারটি কুরিয়ারে বুকিং ও পাঠানো হয়েছে!
+
+প্রিয় ${customerName},
+আপনার অর্ডার #${orderNum} সফলভাবে প্যাকেজিং সম্পন্ন করে কুরিয়ার সার্ভিসে হ্যান্ডওভার করা হয়েছে।
+
+📦 কুরিয়ার সার্ভিস: ${activeCourier}
+🔖 ট্র্যাকিং / মেমো নম্বর: ${activeTracking}
+${trackingLine ? trackingLine + '\n' : ''}💰 কন্ডিশন / COD আদায়: ${codAmount}
+📍 ডেলিভারি ঠিকানা: ${order.customer_address || 'উল্লেখ নেই'}
+
+পার্সেলটি পৌঁছাতে ১-৩ কার্যদিবস লাগতে পারে। ডেলিভারি সংক্রান্ত যেকোনো তথ্যের জন্য এখানে নির্দ্বিধায় মেসেজ করতে পারেন। ধন্যবাদ!`
     } else {
       return { success: false, reason: 'Unsupported status notification' }
     }

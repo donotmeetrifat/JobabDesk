@@ -13,6 +13,7 @@ import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { PaymentSettingsTab } from '@/components/settings/payment-settings-tab';
+import { CourierSettingsTab } from '@/components/settings/courier-settings-tab';
 import {
   resolveSection,
   type SettingsSection,
@@ -65,6 +66,7 @@ function SettingsPageInner() {
     profile: <ProfileForm />,
     appearance: <AppearancePanel />,
     payment: <PaymentSettingsTab />,
+    courier: <CourierSettingsTab />,
     deals: <DealsSettings />,
     members: <MembersTab />,
   };

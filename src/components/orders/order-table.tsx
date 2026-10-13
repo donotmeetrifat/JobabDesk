@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone } from 'lucide-react'
+import { Eye, Edit, Trash2, CheckCircle2, Ban, MapPin, Package, User, ExternalLink, MessageSquare, Phone, Truck } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
@@ -263,9 +263,20 @@ export function OrderTable({
 
                 {/* Status */}
                 <td className="px-3 py-3 whitespace-nowrap">
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ${statusInfo.style}`}>
-                    {statusInfo.label}
-                  </span>
+                  <div className="flex flex-col gap-1 items-start">
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ${statusInfo.style}`}>
+                      {statusInfo.label}
+                    </span>
+                    {order.tracking_code && (
+                      <span
+                        className="inline-flex items-center gap-1 font-mono text-[10px] text-purple-600 dark:text-purple-400 bg-purple-500/10 border border-purple-500/20 px-1.5 py-0.2 rounded"
+                        title={`${order.courier_name || 'Courier'}: ${order.tracking_code}`}
+                      >
+                        <Truck className="size-2.5" />
+                        <span className="truncate max-w-[90px]">{order.tracking_code}</span>
+                      </span>
+                    )}
+                  </div>
                 </td>
 
                 {/* Date */}
