@@ -31,15 +31,13 @@ ON customer_blacklists(account_id, phone_normalized);
 -- Enable Row Level Security (RLS)
 ALTER TABLE customer_blacklists ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Account members can manage customer blacklists"
-ON customer_blacklists FOR ALL
-USING (
-  account_id IN (
-    SELECT account_id FROM account_members WHERE user_id = auth.uid()
-  )
-)
-WITH CHECK (
-  account_id IN (
-    SELECT account_id FROM account_members WHERE user_id = auth.uid()
-  )
-);
+DROP POLICY IF EXISTS "Account members can manage customer blacklists" ON customer_blacklists;
+DROP POLICY IF EXISTS "account_customer_blacklists" ON customer_blacklists;
+
+CREATE POLICY "account_customer_blacklists" ON customer_blacklists
+  FOR ALL USING (is_account_member(account_id, 'viewer'));
+
+-- 3. Grants and schema reload
+GRANT ALL ON TABLE customer_blacklists TO authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';
