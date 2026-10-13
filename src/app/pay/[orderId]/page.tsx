@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useEffect, useState, use } from 'react'
+import React, { useEffect, useState, useMemo, use } from 'react'
 import { useRouter } from 'next/navigation'
+import { parsePaymentInstructions } from '@/lib/payments/instruction-parser'
 import {
   ShieldCheck,
   Copy,
@@ -288,22 +289,26 @@ export default function PublicPaymentPage({
     store?.payment_settings?.cod_advance_amount ?? order.delivery_charge ?? 150
   const allowCodAdvance = store?.payment_settings?.allow_cod_advance ?? true
 
+  const fallbackSettings = useMemo(() => {
+    return parsePaymentInstructions(store?.special_instructions)
+  }, [store?.special_instructions])
+
   const activeNumber =
     activeMethod === 'bkash'
-      ? store?.payment_settings?.bkash?.number
+      ? store?.payment_settings?.bkash?.number || fallbackSettings.bkash?.number || ''
       : activeMethod === 'nagad'
-        ? store?.payment_settings?.nagad?.number
+        ? store?.payment_settings?.nagad?.number || fallbackSettings.nagad?.number || ''
         : activeMethod === 'rocket'
-          ? store?.payment_settings?.rocket?.number
+          ? store?.payment_settings?.rocket?.number || fallbackSettings.rocket?.number || ''
           : null
 
   const activeType =
     activeMethod === 'bkash'
-      ? store?.payment_settings?.bkash?.type || 'personal'
+      ? store?.payment_settings?.bkash?.type || fallbackSettings.bkash?.type || 'personal'
       : activeMethod === 'nagad'
-        ? store?.payment_settings?.nagad?.type || 'personal'
+        ? store?.payment_settings?.nagad?.type || fallbackSettings.nagad?.type || 'personal'
         : activeMethod === 'rocket'
-          ? store?.payment_settings?.rocket?.type || 'personal'
+          ? store?.payment_settings?.rocket?.type || fallbackSettings.rocket?.type || 'personal'
           : null
 
   const payableAmount = paymentType === 'delivery_advance' ? codAdvanceAmount : order.total

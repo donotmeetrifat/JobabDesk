@@ -88,16 +88,28 @@ export async function PATCH(req: Request) {
 
     // If merchant updated special_instructions (Accepted Payment Channels in /agents)
     // without explicitly overriding payment_settings, auto-sync parsed numbers!
-    if (body.special_instructions !== undefined && body.payment_settings === undefined) {
+    if (
+      body.payment_settings === undefined &&
+      (body.special_instructions !== undefined ||
+        body.ai_store_instructions !== undefined ||
+        body.ai_business_description !== undefined)
+    ) {
       const { data: currentAcc } = await db
         .from('accounts')
-        .select('payment_settings')
+        .select('payment_settings, special_instructions, ai_store_instructions, ai_business_description')
         .eq('id', accountId)
         .maybeSingle()
 
+      const targetSpecial =
+        body.special_instructions !== undefined
+          ? body.special_instructions
+          : currentAcc?.special_instructions || ''
+      const targetExtra = `${body.ai_store_instructions !== undefined ? body.ai_store_instructions : currentAcc?.ai_store_instructions || ''} ${body.ai_business_description !== undefined ? body.ai_business_description : currentAcc?.ai_business_description || ''}`
+
       const resolved = resolveMerchantPaymentSettings(
         currentAcc?.payment_settings,
-        body.special_instructions
+        targetSpecial,
+        targetExtra
       )
       updates['payment_settings'] = resolved
     }

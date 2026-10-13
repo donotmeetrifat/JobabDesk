@@ -97,6 +97,22 @@ export async function detectAndCreateOrderFromChat({
   storeProducts = [],
   supabase,
 }: AutoOrderPayload) {
+  const db = supabase || getAdminClient()
+
+  if (!accountId) {
+    try {
+      const { data: firstAcc } = await db
+        .from('accounts')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (firstAcc?.id) {
+        accountId = firstAcc.id
+      }
+    } catch {}
+  }
+
   if (!accountId) return null
 
   // Expressions of gratitude / thanks or greetings must NEVER trigger order creation
@@ -105,8 +121,6 @@ export async function detectAndCreateOrderFromChat({
   if (isGratitude || isGreeting) {
     return null
   }
-
-  const db = supabase || getAdminClient()
 
   // Separate conversation history into previous orders vs active order session:
   // If an order was previously confirmed in chat history, any details prior to that belong to the past order!

@@ -160,6 +160,135 @@ async function findOrder(admin: ReturnType<typeof getAdminClient>, rawOrderId: s
   return order
 }
 
+async function resolveStoreAccount(admin: ReturnType<typeof getAdminClient>, order: any) {
+  const accountSelect =
+    'id, name, logo_url, business_tagline, payment_settings, special_instructions, ai_store_instructions, ai_business_description, delivery_policy'
+
+  let storeAccount: any = null
+
+  // 1. Direct query by order.account_id if present
+  if (order.account_id) {
+    try {
+      const { data } = await admin
+        .from('accounts')
+        .select(accountSelect)
+        .eq('id', order.account_id)
+        .maybeSingle()
+      storeAccount = data
+    } catch {}
+  }
+
+  // Helper: check if account has phone numbers configured or custom special instructions
+  const isAccountFullyConfigured = (acc: any) => {
+    if (!acc) return false
+    const ps = acc.payment_settings
+    const hasNumbers = Boolean(
+      ps?.bkash?.number?.trim() ||
+      ps?.nagad?.number?.trim() ||
+      ps?.rocket?.number?.trim() ||
+      ps?.bank?.details?.trim()
+    )
+    const hasInstructions = Boolean(
+      acc.special_instructions?.trim() ||
+      acc.ai_store_instructions?.trim() ||
+      acc.ai_business_description?.trim()
+    )
+    return hasNumbers || hasInstructions
+  }
+
+  // If already found and has configured payments or instructions, return it immediately
+  if (storeAccount && isAccountFullyConfigured(storeAccount)) {
+    return storeAccount
+  }
+
+  // 2. Check if order.account_id matches an owner_user_id
+  if (order.account_id) {
+    try {
+      const { data: ownerAcc } = await admin
+        .from('accounts')
+        .select(accountSelect)
+        .eq('owner_user_id', order.account_id)
+        .maybeSingle()
+      if (ownerAcc && isAccountFullyConfigured(ownerAcc)) {
+        storeAccount = ownerAcc
+      }
+    } catch {}
+  }
+
+  // 3. Check conversation_id if present on the order
+  if (!isAccountFullyConfigured(storeAccount) && order.conversation_id) {
+    try {
+      const { data: conv } = await admin
+        .from('conversations')
+        .select('account_id')
+        .eq('id', order.conversation_id)
+        .maybeSingle()
+      if (conv?.account_id) {
+        const { data: convAcc } = await admin
+          .from('accounts')
+          .select(accountSelect)
+          .eq('id', conv.account_id)
+          .maybeSingle()
+        if (convAcc && isAccountFullyConfigured(convAcc)) {
+          storeAccount = convAcc
+        }
+      }
+    } catch {}
+  }
+
+  // 4. Query accounts ordered by updated_at desc to find configured account (merchant's active setup in /agents)
+  if (!isAccountFullyConfigured(storeAccount)) {
+    try {
+      const { data: accountsList } = await admin
+        .from('accounts')
+        .select(accountSelect)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+
+      if (accountsList && accountsList.length > 0) {
+        const configured = accountsList.find(isAccountFullyConfigured)
+        if (configured) {
+          storeAccount = configured
+        } else if (!storeAccount) {
+          // If no account had payment config, find one with a custom store name
+          const namedAcc = accountsList.find(
+            (a: any) => a.name && a.name !== 'My Store' && a.name !== 'Verified Merchant'
+          )
+          storeAccount = namedAcc || accountsList[0]
+        }
+      }
+    } catch {}
+  }
+
+  // 5. Ultimate fallback if DB has any account row
+  if (!storeAccount) {
+    try {
+      const { data: anyAcc } = await admin
+        .from('accounts')
+        .select(accountSelect)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (anyAcc) {
+        storeAccount = anyAcc
+      }
+    } catch {}
+  }
+
+  // Self-heal: If order had missing or outdated account_id, update order row in DB
+  if (storeAccount?.id && order.id && order.account_id !== storeAccount.id) {
+    order.account_id = storeAccount.id
+    try {
+      await admin
+        .from('orders')
+        .update({ account_id: storeAccount.id })
+        .eq('id', order.id)
+    } catch {}
+  }
+
+  return storeAccount
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ orderId: string }> }
@@ -177,16 +306,13 @@ export async function GET(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Fetch store branding and payment settings (including /agents special_instructions)
-    const { data: storeAccount } = await admin
-      .from('accounts')
-      .select('id, name, logo_url, business_tagline, payment_settings, special_instructions')
-      .eq('id', order.account_id)
-      .maybeSingle()
+    // Dynamically resolve the store account and merchant settings
+    const storeAccount = await resolveStoreAccount(admin, order)
 
     const resolvedPaymentSettings = resolveMerchantPaymentSettings(
       storeAccount?.payment_settings,
-      storeAccount?.special_instructions
+      storeAccount?.special_instructions,
+      `${storeAccount?.ai_store_instructions || ''} ${storeAccount?.ai_business_description || ''}`
     )
 
     // Fetch submitted / verified payment requests for this order
@@ -301,11 +427,15 @@ export async function POST(
       )
     }
 
+    // Dynamically resolve store account so account_id is valid and accurate
+    const storeAccount = await resolveStoreAccount(admin, order)
+    const effectiveAccountId = storeAccount?.id || order.account_id
+
     // 4. Anti-Fraud & Anti-Duplicate Shield
     const { data: existingTrx } = await admin
       .from('payment_requests')
       .select('id, order_id, status')
-      .eq('account_id', order.account_id)
+      .eq('account_id', effectiveAccountId)
       .eq('trx_id', cleanTrxId)
       .in('status', ['submitted', 'verified'])
       .maybeSingle()
@@ -321,17 +451,15 @@ export async function POST(
     }
 
     // 5. Calculate amount
-    const { data: storeAccount } = await admin
-      .from('accounts')
-      .select('payment_settings')
-      .eq('id', order.account_id)
-      .maybeSingle()
-
-    const settings = storeAccount?.payment_settings || {}
+    const resolvedSettings = resolveMerchantPaymentSettings(
+      storeAccount?.payment_settings,
+      storeAccount?.special_instructions,
+      `${storeAccount?.ai_store_instructions || ''} ${storeAccount?.ai_business_description || ''}`
+    )
     let amount = order.total || 0
 
     if (payment_type === 'delivery_advance') {
-      amount = settings.cod_advance_amount ?? order.delivery_charge ?? 150
+      amount = resolvedSettings.cod_advance_amount ?? order.delivery_charge ?? 150
     }
 
     // 6. Insert payment request
@@ -339,7 +467,7 @@ export async function POST(
       .from('payment_requests')
       .insert({
         order_id: order.id,
-        account_id: order.account_id,
+        account_id: effectiveAccountId,
         amount,
         payment_method,
         payment_type: payment_type === 'delivery_advance' ? 'delivery_advance' : 'full',
@@ -363,6 +491,7 @@ export async function POST(
     await admin
       .from('orders')
       .update({
+        account_id: effectiveAccountId,
         payment_status: 'payment_submitted',
         payment_method: payment_method,
         updated_at: new Date().toISOString(),

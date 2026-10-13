@@ -224,6 +224,62 @@ describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
       mockStoreAccount.payment_settings = originalSettings
       delete (mockStoreAccount as any).special_instructions
     })
+
+    it('parses Bengali numerals and shared payment providers from special_instructions', async () => {
+      const originalSettings = { ...mockStoreAccount.payment_settings }
+      mockStoreAccount.payment_settings = {
+        bkash: { number: '', type: 'personal' },
+        nagad: { number: '', type: 'personal' },
+        rocket: { number: '', type: 'personal' },
+        bank: { details: '' },
+        allow_cod_advance: true,
+        cod_advance_amount: 150,
+      } as any
+      ;(mockStoreAccount as any).special_instructions =
+        'বিকাশ (মার্চেন্ট): ০১৭০০-১১২২৩৩ | নগদ: ০১৮০০-৪৪৫৫৬৬ | রকেট: ০১৯০০-৭৭৮৮৯৯'
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.payment_settings.bkash.number).toBe('01700112233')
+      expect(data.store.payment_settings.bkash.type).toBe('merchant')
+      expect(data.store.payment_settings.nagad.number).toBe('01800445566')
+      expect(data.store.payment_settings.rocket.number).toBe('01900778899')
+
+      // Restore mockStoreAccount
+      mockStoreAccount.payment_settings = originalSettings
+      delete (mockStoreAccount as any).special_instructions
+    })
+
+    it('correctly maps shared multi-provider instructions like bKash, Nagad: 01712345678', async () => {
+      const originalSettings = { ...mockStoreAccount.payment_settings }
+      mockStoreAccount.payment_settings = {
+        bkash: { number: '', type: 'personal' },
+        nagad: { number: '', type: 'personal' },
+        rocket: { number: '', type: 'personal' },
+        bank: { details: '' },
+        allow_cod_advance: true,
+        cod_advance_amount: 150,
+      } as any
+      ;(mockStoreAccount as any).special_instructions =
+        'bKash, Nagad: 01712345678 (Personal Send Money)'
+
+      const res = await GET(new Request('http://localhost/api/pay/ORD-2026-0001'), {
+        params: Promise.resolve({ orderId: 'ORD-2026-0001' }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.store.payment_settings.bkash.number).toBe('01712345678')
+      expect(data.store.payment_settings.nagad.number).toBe('01712345678')
+
+      // Restore mockStoreAccount
+      mockStoreAccount.payment_settings = originalSettings
+      delete (mockStoreAccount as any).special_instructions
+    })
   })
 
   describe('POST /api/pay/[orderId] (Anti-Fraud & Submission)', () => {
