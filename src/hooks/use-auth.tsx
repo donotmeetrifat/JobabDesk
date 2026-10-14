@@ -45,6 +45,16 @@ interface AccountSummary {
   default_currency: string;
 }
 
+export interface WorkspaceItem {
+  id: string;
+  name: string;
+  businessTagline?: string | null;
+  logoUrl?: string | null;
+  role: AccountRole;
+  isActive: boolean;
+  createdAt?: string;
+}
+
 /**
  * Whether we managed to establish what this user may do.
  *
@@ -130,6 +140,23 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+
+  // ----------------------------------------------------------
+  // Multi-Workspace / Store Management
+  // ----------------------------------------------------------
+  /** All workspaces/stores this user belongs to or owns. */
+  workspaces: WorkspaceItem[];
+  /** Whether workspaces list is being fetched. */
+  workspacesLoading: boolean;
+  /** Instant 1-click workspace switcher. Atomically updates profile context. */
+  switchWorkspace: (accountId: string) => Promise<boolean>;
+  /** Create a new store workspace, add user as owner, and switch to it. */
+  createWorkspace: (
+    name: string,
+    businessTagline?: string
+  ) => Promise<{ id: string; name: string } | null>;
+  /** Re-fetch the user's workspaces list. */
+  refreshWorkspaces: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -173,10 +200,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // window they're in — see the type doc above.
   const [profileLoading, setProfileLoading] = useState(true);
 
+  // Multi-workspace state
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+
   // Tracks the user ID we've successfully initiated/completed fetching
   // a profile for. This prevents redundant re-fetches and toggling
   // profileLoading back to true on window focus events/token refresh.
   const lastFetchedUserIdRef = useRef<string | null>(null);
+
+  const fetchWorkspaces = useCallback(async () => {
+    setWorkspacesLoading(true);
+    try {
+      const res = await fetch("/api/workspaces");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.workspaces)) {
+          setWorkspaces(data.workspaces);
+        }
+      }
+    } catch (err) {
+      console.warn("[AuthProvider] fetchWorkspaces error:", err);
+    } finally {
+      setWorkspacesLoading(false);
+    }
+  }, []);
 
   // Shared across init, auth-state-change listener, and the exposed
   // refreshProfile() callback. Reads the current session's user id and
@@ -389,11 +437,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // profile enriches async. Callers that need to branch on
           // profile data gate on `profileLoading` instead.
           fetchProfile(currentUser.id);
+          fetchWorkspaces();
         } else {
           // No user → no profile to load. Flip profileLoading off so
           // pages that gate on it don't wait forever on the logged-out
           // path (the route guard or redirect should fire instead).
           setProfileLoading(false);
+          setWorkspaces([]);
         }
       } catch (err) {
         console.error("[AuthProvider] init threw:", err);
@@ -415,11 +465,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUser) {
         if (currentUser.id !== lastFetchedUserIdRef.current) {
           fetchProfile(currentUser.id);
+          fetchWorkspaces();
         }
       } else {
         lastFetchedUserIdRef.current = null;
         setProfile(null);
         setAccount(null);
+        setWorkspaces([]);
         setProfileLoading(false);
       }
 
@@ -431,7 +483,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, fetchWorkspaces]);
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
@@ -484,6 +536,88 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? "ready"
           : "unlinked";
 
+  const switchWorkspace = useCallback(
+    async (targetAccountId: string): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/workspaces/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId: targetAccountId }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          console.error("[AuthProvider] switchWorkspace failed:", errData?.error);
+          return false;
+        }
+
+        const data = await res.json();
+        if (data.success) {
+          // Optimistically update workspaces list
+          setWorkspaces((prev) =>
+            prev.map((w) => ({
+              ...w,
+              isActive: w.id === targetAccountId,
+            }))
+          );
+
+          // Update active profile and account
+          if (user?.id) {
+            await fetchProfile(user.id);
+          }
+
+          // Full reload to guarantee all in-memory client state and queries refresh
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.error("[AuthProvider] switchWorkspace error:", err);
+        return false;
+      }
+    },
+    [user?.id, fetchProfile]
+  );
+
+  const createWorkspace = useCallback(
+    async (
+      name: string,
+      businessTagline?: string
+    ): Promise<{ id: string; name: string } | null> => {
+      try {
+        const res = await fetch("/api/workspaces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, businessTagline }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          throw new Error(errData?.error || "Failed to create workspace");
+        }
+
+        const data = await res.json();
+        if (data.success && data.workspace?.id) {
+          await fetchWorkspaces();
+          if (user?.id) {
+            await fetchProfile(user.id);
+          }
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+          return { id: data.workspace.id, name: data.workspace.name };
+        }
+        return null;
+      } catch (err) {
+        console.error("[AuthProvider] createWorkspace error:", err);
+        throw err;
+      }
+    },
+    [fetchWorkspaces, fetchProfile, user?.id]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -497,6 +631,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         accountStatus,
         accountStatusDetail: statusDetail,
+        workspaces,
+        workspacesLoading,
+        switchWorkspace,
+        createWorkspace,
+        refreshWorkspaces: fetchWorkspaces,
         ...derived,
       }}
     >
@@ -540,6 +679,11 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      workspaces: [],
+      workspacesLoading: false,
+      switchWorkspace: async () => false,
+      createWorkspace: async () => null,
+      refreshWorkspaces: async () => {},
     };
   }
   return ctx;

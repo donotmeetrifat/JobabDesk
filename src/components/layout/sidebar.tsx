@@ -29,6 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -210,8 +211,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           </button>
         </div>
 
+        {/* 1-Click Multi-Workspace / Store Switcher */}
+        <WorkspaceSwitcher onSelect={onClose} />
+
         {/* Main navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
               const isActive =
