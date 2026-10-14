@@ -23,7 +23,7 @@ interface MetricCardProps {
 
 export function MetricCard({ title, value, icon: Icon, delta, subtitle }: MetricCardProps) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-xs transition-all duration-300 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5">
+    <div className="group relative overflow-hidden rounded-2xl glass-card glass-card-hover p-5 shadow-xs">
       {/* Ambient theme glow */}
       <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-primary/10 blur-2xl transition-all duration-500 group-hover:scale-125 group-hover:bg-primary/20" />
 

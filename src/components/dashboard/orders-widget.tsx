@@ -81,14 +81,14 @@ export function OrdersWidget({ currency }: { currency?: string } = {}) {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border/80 bg-card/80 p-5 animate-pulse space-y-4">
-        <div className="h-6 w-36 bg-muted rounded-md" />
+      <div className="rounded-2xl glass-card p-5 space-y-4">
+        <div className="h-6 w-36 skeleton-shimmer rounded-md" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="h-16 bg-muted rounded-xl" />
-          <div className="h-16 bg-muted rounded-xl" />
-          <div className="h-16 bg-muted rounded-xl" />
+          <div className="h-16 skeleton-shimmer rounded-xl" />
+          <div className="h-16 skeleton-shimmer rounded-xl" />
+          <div className="h-16 skeleton-shimmer rounded-xl" />
         </div>
-        <div className="h-36 bg-muted rounded-xl" />
+        <div className="h-36 skeleton-shimmer rounded-xl" />
       </div>
     )
   }
@@ -96,7 +96,7 @@ export function OrdersWidget({ currency }: { currency?: string } = {}) {
   if (!data) return null
 
   return (
-    <div className="rounded-2xl border border-border/80 bg-card/80 backdrop-blur-xs p-5 space-y-4 shadow-xs hover:shadow-md transition-shadow">
+    <div className="rounded-2xl glass-card p-5 space-y-4 shadow-xs hover:shadow-md transition-shadow duration-200">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
@@ -109,7 +109,7 @@ export function OrdersWidget({ currency }: { currency?: string } = {}) {
         </div>
         <Link
           href="/orders"
-          className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+          className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all btn-press"
         >
           <span>View all orders</span>
           <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />

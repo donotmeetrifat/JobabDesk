@@ -49,7 +49,7 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
   }, [data])
 
   return (
-    <section className="flex h-full flex-col rounded-2xl border border-border/80 bg-card/80 backdrop-blur-xs shadow-xs transition-shadow hover:shadow-md">
+    <section className="flex h-full flex-col rounded-2xl glass-card shadow-xs transition-shadow duration-200 hover:shadow-md">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div>
           <div className="flex items-center gap-2">
@@ -91,7 +91,7 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
                 type="button"
                 onClick={() => onRangeChange(r as RangeDays)}
                 className={cn(
-                  'rounded-lg px-3 py-1 text-xs font-medium transition-all duration-150',
+                  'rounded-lg px-3 py-1 text-xs font-medium transition-all duration-150 btn-press',
                   range === r
                     ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted',

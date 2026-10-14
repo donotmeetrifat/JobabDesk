@@ -247,3 +247,106 @@ html[data-mode="dark"] .inbox-chat-canvas {
   background-image: radial-gradient(oklch(0.8 0.01 260 / 0.07) 1px, transparent 1px);
   background-size: 20px 20px;
 }
+
+@layer utilities {
+  /* Premium Glassmorphism */
+  .glass-card {
+    background: hsl(var(--card) / 0.75);
+    background: color-mix(in oklch, var(--card) 75%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.6);
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  }
+
+  .glass-card-hover {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.2s ease;
+  }
+  .glass-card-hover:hover {
+    transform: translateY(-2px);
+    border-color: hsl(var(--primary) / 0.4);
+    border-color: color-mix(in oklch, var(--primary) 40%, transparent);
+    box-shadow: 0 10px 25px -5px color-mix(in oklch, var(--primary) 8%, transparent),
+                0 8px 10px -6px color-mix(in oklch, var(--primary) 4%, transparent);
+  }
+
+  /* Tactile Button Press Feedback */
+  .btn-press {
+    transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.12s ease;
+  }
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Smooth Message Bubble Entrance (60 FPS hardware accelerated) */
+  @keyframes messageSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .animate-message-enter {
+    animation: messageSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Shimmer Gradient Wave for Skeletons */
+  @keyframes shimmerWave {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted) / 0.5) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      color-mix(in oklch, var(--muted) 50%, transparent) 50%,
+      var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmerWave 1.8s infinite ease-in-out;
+  }
+
+  /* Celebratory Pulse Glow */
+  @keyframes pulseGlow {
+    0%, 100% {
+      box-shadow: 0 0 15px -3px rgba(16, 185, 129, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 30px 2px rgba(16, 185, 129, 0.6);
+    }
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 2.5s infinite ease-in-out;
+  }
+
+  /* Accessibility: Respect prefers-reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    .glass-card-hover,
+    .btn-press,
+    .animate-message-enter,
+    .skeleton-shimmer,
+    .animate-pulse-glow {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+}

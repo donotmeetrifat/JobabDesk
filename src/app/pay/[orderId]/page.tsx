@@ -633,7 +633,7 @@ export default function PublicPaymentPage({
               <div>
                 {/* Already Paid Banner */}
                 {order.payment_status === 'paid' ? (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3 animate-pulse-glow">
                     <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                       <CheckCircle2 className="w-7 h-7" />
                     </div>

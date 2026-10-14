@@ -50,7 +50,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
     i === 0 || totalLoaded > PAGE_SIZES[i - 1]
 
   return (
-    <section className="flex h-full flex-col rounded-2xl border border-border/80 bg-card/80 backdrop-blur-xs shadow-xs hover:shadow-md transition-shadow">
+    <section className="flex h-full flex-col rounded-2xl glass-card shadow-xs hover:shadow-md transition-shadow duration-200">
       <header className="flex items-center justify-between border-b border-border/70 px-5 py-4">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
@@ -63,7 +63,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
         </div>
         <Link
           href="/inbox"
-          className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+          className="group inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all btn-press"
         >
           <span>{t('viewAll')}</span>
           <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform" />
@@ -140,7 +140,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
                   onClick={() => setPageSize(size)}
                   disabled={disabled}
                   className={cn(
-                    'rounded-lg px-2.5 py-1 text-xs font-medium tabular-nums transition-all',
+                    'rounded-lg px-2.5 py-1 text-xs font-medium tabular-nums transition-all btn-press',
                     pageSize === size
                       ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',

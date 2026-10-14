@@ -257,7 +257,7 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex flex-col transition-all duration-150 ease-out animate-in fade-in-50 slide-in-from-bottom-1",
+        "flex flex-col animate-message-enter",
         isAgent ? "items-end" : "items-start",
       )}
     >
