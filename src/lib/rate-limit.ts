@@ -38,12 +38,12 @@ export interface RateLimitResult {
   limit: number;
 }
 
-interface Entry {
-  count: number;
-  resetAt: number;
+interface SlidingEntry {
+  timestamps: number[];
+  windowMs: number;
 }
 
-const buckets = new Map<string, Entry>();
+const buckets = new Map<string, SlidingEntry>();
 
 // Opportunistic cleanup. Running a sweep on every call would be
 // quadratic; running it 1-in-N lets the Map self-drain without a
@@ -53,8 +53,23 @@ let callsSinceSweep = 0;
 
 function sweepExpired(now: number) {
   for (const [k, v] of buckets) {
-    if (v.resetAt <= now) buckets.delete(k);
+    const windowStart = now - v.windowMs;
+    v.timestamps = v.timestamps.filter((t) => t > windowStart);
+    if (v.timestamps.length === 0) buckets.delete(k);
   }
+}
+
+/**
+ * Best-effort client IP extraction.
+ * Takes the leftmost IP from `x-forwarded-for` (original client behind proxies)
+ * or `x-real-ip`, falling back to 'unknown'.
+ */
+export function getClientIp(request: Request): string {
+  const xff = request.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0].trim();
+  const xri = request.headers.get('x-real-ip');
+  if (xri) return xri.trim();
+  return 'unknown';
 }
 
 export function checkRateLimit(
@@ -69,22 +84,32 @@ export function checkRateLimit(
     sweepExpired(now);
   }
 
-  const entry = buckets.get(key);
+  const windowStart = now - windowMs;
+  let entry = buckets.get(key);
 
-  if (!entry || entry.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
+  if (!entry) {
+    buckets.set(key, { timestamps: [now], windowMs });
     return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
   }
 
-  if (entry.count >= limit) {
-    return { success: false, remaining: 0, reset: entry.resetAt, limit };
+  // Sliding window: filter out timestamps older than current window
+  const validTimestamps = entry.timestamps.filter((t) => t > windowStart);
+  entry.timestamps = validTimestamps;
+  entry.windowMs = windowMs;
+
+  const resetTime = validTimestamps.length > 0
+    ? validTimestamps[0] + windowMs
+    : now + windowMs;
+
+  if (validTimestamps.length >= limit) {
+    return { success: false, remaining: 0, reset: resetTime, limit };
   }
 
-  entry.count += 1;
+  validTimestamps.push(now);
   return {
     success: true,
-    remaining: limit - entry.count,
-    reset: entry.resetAt,
+    remaining: limit - validTimestamps.length,
+    reset: resetTime,
     limit,
   };
 }
@@ -173,6 +198,12 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Payment TrxID submission (public, per order+IP).
+   *  10/min protects against brute-force guessing and spamming payment submissions. */
+  paymentSubmit: { limit: 10, windowMs: 60_000 },
+  /** Auth routes (public callback/exchange, per IP).
+   *  20/min prevents automated credential attacks and token-enumeration attempts. */
+  auth: { limit: 20, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

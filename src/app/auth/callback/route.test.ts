@@ -13,6 +13,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
 }));
 
+import { __resetRateLimitForTests } from '@/lib/rate-limit';
 import { GET } from './route';
 
 function request(query: string): Request {
@@ -20,6 +21,7 @@ function request(query: string): Request {
 }
 
 beforeEach(() => {
+  __resetRateLimitForTests();
   mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
   mocks.verifyOtp.mockResolvedValue({ error: null });
   mocks.createClient.mockResolvedValue({
@@ -102,5 +104,24 @@ describe('GET /auth/callback', () => {
     const res = await GET(request('code=abc&next=%2Fjoin%2Ftoken-1'));
     expect(res.headers.get('location')).toBe('/join/token-1');
     expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('rejects rapid repeated attacks with 429 Rate Limit Exceeded', async () => {
+    const attackReq = () =>
+      new Request('http://localhost:3000/auth/callback?code=bruteforce', {
+        headers: { 'x-forwarded-for': '198.51.100.99' },
+      });
+
+    // Budget is 20 requests per minute
+    for (let i = 0; i < 20; i++) {
+      const res = await GET(attackReq());
+      expect(res.status).toBe(303);
+    }
+
+    // 21st attempt from same IP must be rate limited
+    const blockedRes = await GET(attackReq());
+    expect(blockedRes.status).toBe(429);
+    const body = (await blockedRes.json()) as { error: string };
+    expect(body.error).toMatch(/rate limit/i);
   });
 });

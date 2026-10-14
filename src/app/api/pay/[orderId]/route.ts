@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 import { resolveMerchantPaymentSettings } from '@/lib/payments/instruction-parser'
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+  RATE_LIMITS,
+} from '@/lib/rate-limit'
+import { sanitizeText, sanitizeTrxId } from '@/lib/security/sanitize'
 
 export const dynamic = 'force-dynamic'
 
@@ -413,6 +420,13 @@ export async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // Rate limiting: Anti-Brute-Force & TrxID guessing protection
+    const ip = getClientIp(req)
+    const limit = checkRateLimit(`pay:submit:${order.id}:${ip}`, RATE_LIMITS.paymentSubmit)
+    if (!limit.success) {
+      return rateLimitResponse(limit)
+    }
+
     const body = await req.json()
     const { payment_method, sender_number, trx_id, payment_type = 'full', notes } = body
 
@@ -425,15 +439,16 @@ export async function POST(
       )
     }
 
-    // 2. Sender number validation
+    // 2. Sender number validation and sanitization
     if (!sender_number || typeof sender_number !== 'string' || sender_number.trim().length < 6) {
       return NextResponse.json(
         { error: 'Valid sender phone number or account is required' },
         { status: 400 }
       )
     }
+    const cleanSender = sanitizeText(sender_number)
 
-    // 3. TrxID formatting and validation
+    // 3. TrxID formatting, sanitization, and validation
     if (!trx_id || typeof trx_id !== 'string') {
       return NextResponse.json(
         { error: 'Transaction ID (TrxID) is required' },
@@ -441,7 +456,7 @@ export async function POST(
       )
     }
 
-    const cleanTrxId = trx_id.trim().toUpperCase()
+    const cleanTrxId = sanitizeTrxId(trx_id)
     if (cleanTrxId.length < 8) {
       return NextResponse.json(
         { error: 'Transaction ID must be at least 8 alphanumeric characters' },
@@ -509,9 +524,9 @@ export async function POST(
         amount,
         payment_method,
         payment_type: payment_type === 'delivery_advance' ? 'delivery_advance' : 'full',
-        sender_number: sender_number.trim(),
+        sender_number: cleanSender,
         trx_id: cleanTrxId,
-        notes: notes?.trim() || null,
+        notes: notes ? sanitizeText(notes) : null,
         status: 'submitted',
       })
       .select()

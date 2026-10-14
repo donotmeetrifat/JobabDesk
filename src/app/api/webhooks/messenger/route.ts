@@ -4,6 +4,7 @@ import { handleIncomingCustomerMessage } from '@/lib/ai/router-engine'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
 import { fetchMetaUserProfile } from '@/lib/messenger/profile'
+import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mvkcheckaxfimlzjqvyz.supabase.co'
@@ -181,7 +182,22 @@ async function logWebhookDebug(db: any, entry: {
 // Meta Messenger Webhook Inbound POST
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    // Read raw body first for HMAC-SHA256 signature verification
+    const rawBody = await req.text()
+    const signature = req.headers.get('x-hub-signature-256')
+
+    if (process.env.META_APP_SECRET && !verifyMetaWebhookSignature(rawBody, signature)) {
+      console.warn('[webhook/messenger] rejected request with invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    let body: any = {}
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
     const db = getAdminClient()
 
     const entries = Array.isArray(body?.entry) ? body.entry : body?.entry ? [body.entry] : []

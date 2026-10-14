@@ -13,6 +13,7 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { extractCustomerInfoFromMessage, isFacebookPsid } from "@/lib/contacts/extract-info";
+import { reconcileOptimisticMessage } from "@/lib/inbox/optimistic-messages";
 import Link from "next/link";
 import { toast } from "sonner";
 import { RefreshCw, KeyRound, ExternalLink, X, MessageCircle, Trash2 } from "lucide-react";
@@ -658,15 +659,7 @@ function InboxPageInner() {
           activeConversation &&
           newMsg.conversation_id === activeConversation.id
         ) {
-          setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
-            const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
-            );
-            return [...withoutOptimistic, newMsg];
-          });
+          setMessages((prev) => reconcileOptimisticMessage(prev, newMsg));
 
           // If incoming message from customer contains phone/address, update contact immediately
           if (newMsg.sender_type === "customer" && newMsg.content_text) {

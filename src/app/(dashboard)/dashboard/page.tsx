@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
@@ -24,7 +24,7 @@ import type {
 } from '@/lib/dashboard/types'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
-import { SkeletonCard } from '@/components/dashboard/skeleton'
+import { Skeleton, SkeletonCard } from '@/components/dashboard/skeleton'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { OrdersWidget } from '@/components/dashboard/orders-widget'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
@@ -117,76 +117,132 @@ export default function DashboardPage() {
       </div>
 
       {/* Top 4 Key Performance Indicators */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            <MetricCard
-              title={t('activeConversations')}
-              value={metrics.activeConversations.current.toLocaleString()}
-              icon={MessageSquare}
-              delta={{
-                sign: metrics.activeConversations.previous,
-                label: deltaLabel(
-                  metrics.activeConversations.previous,
-                  t('newTodayVsYesterday'),
-                  t('noChange', { suffix: t('newTodayVsYesterday') }),
-                ),
-              }}
-            />
-            <MetricCard
-              title="Revenue Today"
-              value={formatCurrency(metrics.revenueToday ?? 0, defaultCurrency)}
-              icon={Banknote}
-              subtitle="Confirmed order gross sales"
-            />
-            <MetricCard
-              title="Orders Today"
-              value={(metrics.ordersTodayCount ?? 0).toLocaleString()}
-              icon={ShoppingBag}
-              subtitle={
-                (metrics.pendingOrdersCount ?? 0) > 0
-                  ? `${metrics.pendingOrdersCount} pending fulfillment`
-                  : 'All orders processed'
-              }
-            />
-            <MetricCard
-              title={t('messagesSentToday')}
-              value={metrics.messagesSentToday.current.toLocaleString()}
-              icon={Send}
-              delta={{
-                sign:
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                label: deltaLabel(
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                  t('vsYesterday'),
-                  t('noChange', { suffix: t('vsYesterday') }),
-                ),
-              }}
-            />
-          </>
-        )}
-      </div>
+      <Suspense fallback={<MetricsSkeleton />}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {metricsLoading || !metrics ? (
+            Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : (
+            <>
+              <MetricCard
+                title={t('activeConversations')}
+                value={metrics.activeConversations.current.toLocaleString()}
+                icon={MessageSquare}
+                delta={{
+                  sign: metrics.activeConversations.previous,
+                  label: deltaLabel(
+                    metrics.activeConversations.previous,
+                    t('newTodayVsYesterday'),
+                    t('noChange', { suffix: t('newTodayVsYesterday') }),
+                  ),
+                }}
+              />
+              <MetricCard
+                title="Revenue Today"
+                value={formatCurrency(metrics.revenueToday ?? 0, defaultCurrency)}
+                icon={Banknote}
+                subtitle="Confirmed order gross sales"
+              />
+              <MetricCard
+                title="Orders Today"
+                value={(metrics.ordersTodayCount ?? 0).toLocaleString()}
+                icon={ShoppingBag}
+                subtitle={
+                  (metrics.pendingOrdersCount ?? 0) > 0
+                    ? `${metrics.pendingOrdersCount} pending fulfillment`
+                    : 'All orders processed'
+                }
+              />
+              <MetricCard
+                title={t('messagesSentToday')}
+                value={metrics.messagesSentToday.current.toLocaleString()}
+                icon={Send}
+                delta={{
+                  sign:
+                    metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
+                  label: deltaLabel(
+                    metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
+                    t('vsYesterday'),
+                    t('noChange', { suffix: t('vsYesterday') }),
+                  ),
+                }}
+              />
+            </>
+          )}
+        </div>
+      </Suspense>
 
       {/* Centerpiece: Full-width Smooth Conversations Chart */}
-      <div className="w-full">
-        <ConversationsChart
-          series={series}
-          loading={seriesLoading}
-          range={range}
-          onRangeChange={handleRangeChange}
-        />
-      </div>
+      <Suspense fallback={<ChartSkeleton />}>
+        <div className="w-full">
+          <ConversationsChart
+            series={series}
+            loading={seriesLoading}
+            range={range}
+            onRangeChange={handleRangeChange}
+          />
+        </div>
+      </Suspense>
 
       {/* Operations & Feed Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <OrdersWidget currency={defaultCurrency} />
+          <Suspense fallback={<OrdersWidgetSkeleton />}>
+            <OrdersWidget currency={defaultCurrency} />
+          </Suspense>
         </div>
         <div className="lg:col-span-1">
-          <ActivityFeed items={activity} loading={activityLoading} />
+          <Suspense fallback={<ActivityFeedSkeleton />}>
+            <ActivityFeed items={activity} loading={activityLoading} />
+          </Suspense>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MetricsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
+  )
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="h-[380px] w-full rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-8 w-32 rounded-lg" />
+      </div>
+      <Skeleton className="mt-6 h-[260px] w-full rounded-xl" />
+    </div>
+  )
+}
+
+function OrdersWidgetSkeleton() {
+  return (
+    <div className="h-[420px] rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
+      <Skeleton className="h-6 w-40" />
+      <div className="mt-4 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-xl" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ActivityFeedSkeleton() {
+  return (
+    <div className="h-[420px] rounded-2xl border border-border/80 bg-card p-6 shadow-xs">
+      <Skeleton className="h-6 w-36" />
+      <div className="mt-4 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full rounded-lg" />
+        ))}
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { sendMetaWhatsAppMessage } from '@/lib/whatsapp/meta-cloud'
 import { sendWhapiMessage } from '@/lib/whatsapp/whapi-gateway'
 import { autoUpdateContactFromChatMessage } from '@/lib/contacts/auto-extract'
 import { detectAndCreateOrderFromChat } from '@/lib/orders/auto-create-order'
+import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { createClient } from '@supabase/supabase-js'
 
 function getAdminClient() {
@@ -39,7 +40,22 @@ export async function GET(req: Request) {
 // Meta WhatsApp Webhook Event Receiver (POST)
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}))
+    // Read raw body first for HMAC-SHA256 signature verification
+    const rawBody = await req.text()
+    const signature = req.headers.get('x-hub-signature-256')
+
+    if (process.env.META_APP_SECRET && !verifyMetaWebhookSignature(rawBody, signature)) {
+      console.warn('[webhook/whatsapp] rejected request with invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    let body: any = {}
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
     const { searchParams } = new URL(req.url)
     const queryAccountId = searchParams.get('account_id')
 

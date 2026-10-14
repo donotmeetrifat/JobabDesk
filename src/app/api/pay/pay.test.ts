@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { __resetRateLimitForTests } from '@/lib/rate-limit'
 import { GET, POST } from './[orderId]/route'
 import { POST as verifyPost } from './verify/route'
 
@@ -159,6 +160,7 @@ vi.mock('@supabase/supabase-js', () => ({
 
 describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
   beforeEach(() => {
+    __resetRateLimitForTests()
     existingPaymentRequests = []
     mockOrder.payment_status = 'unpaid'
     mockOrder.status = 'new'
@@ -445,6 +447,57 @@ describe('Phase 5D: Free Payment Link & TrxID Verification', () => {
       expect(res2.status).toBe(400)
       const data = await res2.json()
       expect(data.error).toMatch(/already been submitted or verified/i)
+    })
+
+    it('sanitizes malicious XSS script tags and characters in customer notes and sender number', async () => {
+      const res = await POST(
+        new Request('http://localhost/api/pay/' + mockOrder.id, {
+          method: 'POST',
+          body: JSON.stringify({
+            payment_method: 'bkash',
+            sender_number: '<script>alert(1)</script>01711223344',
+            trx_id: ' BJA830K29Y ',
+            payment_type: 'full',
+            notes: 'Paid via bKash App <img src=x onerror=steal()><b>urgent delivery</b>',
+          }),
+        }),
+        { params: Promise.resolve({ orderId: mockOrder.id }) }
+      )
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.payment_request.sender_number).toBe('01711223344')
+      expect(data.payment_request.trx_id).toBe('BJA830K29Y')
+      expect(data.payment_request.notes).toBe('Paid via bKash App urgent delivery')
+    })
+
+    it('enforces sliding-window rate limit (10 requests per minute) on payment submissions', async () => {
+      const makeReq = (trxId: string) =>
+        new Request('http://localhost/api/pay/' + mockOrder.id, {
+          method: 'POST',
+          headers: { 'x-forwarded-for': '203.0.113.88' },
+          body: JSON.stringify({
+            payment_method: 'bkash',
+            sender_number: '01711223344',
+            trx_id: trxId,
+          }),
+        })
+
+      // 10 submissions allowed
+      for (let i = 0; i < 10; i++) {
+        const res = await POST(makeReq(`BJA000000${i}`), {
+          params: Promise.resolve({ orderId: mockOrder.id }),
+        })
+        expect(res.status).toBe(200)
+      }
+
+      // 11th submission from same IP and order must be 429
+      const blockedRes = await POST(makeReq('BJA0000099'), {
+        params: Promise.resolve({ orderId: mockOrder.id }),
+      })
+      expect(blockedRes.status).toBe(429)
+      const data = await blockedRes.json()
+      expect(data.error).toMatch(/rate limit/i)
     })
   })
 

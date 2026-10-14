@@ -105,11 +105,37 @@ describe("RATE_LIMITS presets", () => {
   it("the broadcast budget carries a campaign's per-batch call pattern", async () => {
     __resetRateLimitForTests();
     const { RATE_LIMITS } = await import("./rate-limit");
-    // A campaign is NOT one call: the wizard posts a batch of 10
-    // recipients roughly every 1–2 s, so it needs ~45+ calls of headroom
-    // per minute. Sized below that, every batch past the cap comes back
-    // 429 and its recipients are written off as failed (issue #472).
     expect(RATE_LIMITS.broadcast.limit).toBeGreaterThanOrEqual(45);
+  });
+
+  it("defines paymentSubmit and auth rate limits for public endpoint protection", async () => {
+    const { RATE_LIMITS } = await import("./rate-limit");
+    expect(RATE_LIMITS.paymentSubmit).toEqual({ limit: 10, windowMs: 60_000 });
+    expect(RATE_LIMITS.auth).toEqual({ limit: 20, windowMs: 60_000 });
+  });
+});
+
+describe("getClientIp", () => {
+  it("extracts leftmost IP from x-forwarded-for", async () => {
+    const { getClientIp } = await import("./rate-limit");
+    const req = new Request("http://localhost", {
+      headers: { "x-forwarded-for": "203.0.113.195, 70.41.3.18, 150.172.238.178" },
+    });
+    expect(getClientIp(req)).toBe("203.0.113.195");
+  });
+
+  it("extracts IP from x-real-ip when x-forwarded-for is missing", async () => {
+    const { getClientIp } = await import("./rate-limit");
+    const req = new Request("http://localhost", {
+      headers: { "x-real-ip": "198.51.100.1" },
+    });
+    expect(getClientIp(req)).toBe("198.51.100.1");
+  });
+
+  it("returns unknown when no proxy headers are present", async () => {
+    const { getClientIp } = await import("./rate-limit");
+    const req = new Request("http://localhost");
+    expect(getClientIp(req)).toBe("unknown");
   });
 });
 

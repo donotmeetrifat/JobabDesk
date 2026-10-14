@@ -31,6 +31,12 @@
 
 import { createClient } from '@/lib/supabase/server';
 import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+  RATE_LIMITS,
+} from '@/lib/rate-limit';
+import {
   loginFailurePath,
   parseEmailLink,
   parseSupabaseError,
@@ -42,6 +48,13 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  // Rate-limit by client IP (anti-brute-force on token exchange)
+  const ip = getClientIp(request);
+  const limit = checkRateLimit(`auth:callback:${ip}`, RATE_LIMITS.auth);
+  if (!limit.success) {
+    return rateLimitResponse(limit);
+  }
+
   const { searchParams } = new URL(request.url);
   const next = safeNextPath(searchParams.get('next'));
 
