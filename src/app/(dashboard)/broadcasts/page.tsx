@@ -14,6 +14,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Radio,
   Plus,
   Loader2,
@@ -378,18 +385,24 @@ export default function BroadcastsPage() {
           </div>
 
           {/* Status Dropdown */}
-          <select
+          <Select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-9 rounded-lg bg-background border border-border px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            onValueChange={(val) => {
+              if (val) setStatusFilter(val);
+            }}
           >
-            <option value="all">All Statuses</option>
-            <option value="sending">Sending</option>
-            <option value="sent">Completed</option>
-            <option value="draft">Draft</option>
-            <option value="failed">Failed</option>
-            <option value="cancelled">Ended / Off</option>
-          </select>
+            <SelectTrigger className="w-[145px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[155px]">
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="sending">Sending</SelectItem>
+              <SelectItem value="sent">Completed</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="cancelled">Ended / Off</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

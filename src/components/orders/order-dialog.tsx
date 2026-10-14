@@ -5,6 +5,13 @@ import { X, Search, Plus, Trash2, UserCheck, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Order, OrderItem, OrderStatus, PaymentMethod, PaymentStatus } from '@/types/orders'
 
 interface OrderDialogProps {
@@ -397,33 +404,45 @@ export function OrderDialog({ open, order, onClose, onSaved }: OrderDialogProps)
             {/* Order Status & Payment Method */}
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="text-xs font-medium text-foreground">Order Status</label>
-                <select
+                <label className="text-xs font-medium text-foreground block mb-1">Order Status</label>
+                <Select
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as OrderStatus)}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  onValueChange={(val) => {
+                    if (val) setStatus(val as OrderStatus);
+                  }}
                 >
-                  <option value="new">New</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="processing">Processing</option>
-                  <option value="shipped">Shipped</option>
-                  <option value="delivered">Delivered</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                  <SelectTrigger className="w-full h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[140px]">
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground">Payment Status</label>
-                <select
+                <label className="text-xs font-medium text-foreground block mb-1">Payment Status</label>
+                <Select
                   value={paymentStatus}
-                  onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus)}
-                  className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  onValueChange={(val) => {
+                    if (val) setPaymentStatus(val as PaymentStatus);
+                  }}
                 >
-                  <option value="unpaid">Unpaid</option>
-                  <option value="payment_submitted">Submitted (TrxID)</option>
-                  <option value="partial">Partial</option>
-                  <option value="paid">Paid</option>
-                </select>
+                  <SelectTrigger className="w-full h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+                    <SelectValue placeholder="Payment Status" />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[160px]">
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                    <SelectItem value="payment_submitted">Submitted (TrxID)</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

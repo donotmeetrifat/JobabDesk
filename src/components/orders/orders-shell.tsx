@@ -5,6 +5,13 @@ import { Plus, Search, RefreshCw, Trash2, X, ShoppingBag, Clock, CheckCircle, Ba
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { OrderTable } from './order-table'
 
 const OrderDialog = dynamic(() => import('./order-dialog').then((mod) => mod.OrderDialog), { ssr: false })
@@ -356,30 +363,42 @@ export function OrdersShell() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
+          <Select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            onValueChange={(val) => {
+              if (val) setStatusFilter(val)
+            }}
           >
-            <option value="all">All Statuses</option>
-            <option value="new">New</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="processing">Processing</option>
-            <option value="shipped">Shipped</option>
-            <option value="delivered">Delivered</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+            <SelectTrigger className="w-[145px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[155px]">
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="new">New</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="processing">Processing</SelectItem>
+              <SelectItem value="shipped">Shipped</SelectItem>
+              <SelectItem value="delivered">Delivered</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
 
-          <select
+          <Select
             value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            onValueChange={(val) => {
+              if (val) setPaymentFilter(val)
+            }}
           >
-            <option value="all">All Payment Statuses</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="partial">Partial</option>
-            <option value="paid">Paid</option>
-          </select>
+            <SelectTrigger className="w-[175px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+              <SelectValue placeholder="All Payment Statuses" />
+            </SelectTrigger>
+            <SelectContent align="start" className="min-w-[185px]">
+              <SelectItem value="all">All Payment Statuses</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+              <SelectItem value="partial">Partial</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
