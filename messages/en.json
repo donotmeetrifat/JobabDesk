@@ -1326,20 +1326,6 @@
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
     "sectionsNav": "Settings sections",
-    "groups": {
-      "account": "Account",
-      "workspace": "Workspace"
-    },
-    "sections": {
-      "overview": "Overview",
-      "profile": "Your profile",
-      "appearance": "Appearance",
-      "payment": "Payment methods",
-      "courier": "Courier & Delivery",
-      "deals": "Deals & currency",
-      "security": "Security & Access",
-      "members": "Team members"
-    },
     "overview": {
       "notSetup": "Not set up yet",
       "connected": "Connected",
@@ -1688,6 +1674,8 @@
       "profile": "Your profile",
       "security": "Login & security",
       "appearance": "Appearance",
+      "payment": "Payment",
+      "courier": "Courier",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
       "quick-replies": "Quick replies",
