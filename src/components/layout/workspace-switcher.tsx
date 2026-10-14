@@ -8,7 +8,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -23,19 +22,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Building2,
   Check,
   ChevronsUpDown,
   Crown,
   Loader2,
   Plus,
+  Search,
   Settings,
-  Shield,
-  ShoppingBag,
   Sparkles,
   Store,
-  User,
-  UserCog,
 } from "lucide-react";
 
 const PALETTES = [
@@ -82,6 +77,8 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
   } = useAuth();
 
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+  const [switchingToStore, setSwitchingToStore] = useState<WorkspaceItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newStoreName, setNewStoreName] = useState("");
   const [newStoreTagline, setNewStoreTagline] = useState("");
@@ -111,14 +108,42 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
     return [];
   }, [workspaces, accountId, activeName, accountRole]);
 
+  // Filter stores by instant search
+  const filteredWorkspaces = useMemo(() => {
+    if (!searchQuery.trim()) return displayWorkspaces;
+    const q = searchQuery.toLowerCase().trim();
+    return displayWorkspaces.filter(
+      (ws) =>
+        ws.name.toLowerCase().includes(q) ||
+        (ws.businessTagline && ws.businessTagline.toLowerCase().includes(q))
+    );
+  }, [displayWorkspaces, searchQuery]);
+
+  // Smooth native-app switch transition with session flush
   const handleSwitch = async (targetId: string) => {
     if (targetId === accountId || switchingId) return;
+    const targetWs = displayWorkspaces.find((w) => w.id === targetId) || null;
     setSwitchingId(targetId);
+    setSwitchingToStore(targetWs);
+
     try {
+      // Flush draft session keys
+      try {
+        sessionStorage.removeItem("active_chat_draft");
+        sessionStorage.removeItem("selected_conversation_id");
+      } catch {}
+
       await switchWorkspace(targetId);
       onSelect?.();
-    } finally {
+
+      // Smooth transition wait before reload
+      setTimeout(() => {
+        window.location.reload();
+      }, 350);
+    } catch (err) {
+      console.error("Failed to switch workspace:", err);
       setSwitchingId(null);
+      setSwitchingToStore(null);
     }
   };
 
@@ -138,6 +163,10 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
         setNewStoreName("");
         setNewStoreTagline("");
         onSelect?.();
+        // Reload to sync new tenant context
+        setTimeout(() => {
+          window.location.reload();
+        }, 350);
       } catch (err: any) {
         setCreateError(err.message || "Failed to create store");
       }
@@ -190,7 +219,7 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
           <DropdownMenuContent
             align="start"
             sideOffset={6}
-            className="w-64 p-1.5 shadow-xl ring-1 ring-border bg-popover text-popover-foreground rounded-xl"
+            className="w-68 p-1.5 shadow-xl ring-1 ring-border bg-popover text-popover-foreground rounded-xl"
           >
             <div className="flex items-center justify-between px-2.5 py-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -201,9 +230,26 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
               </span>
             </div>
 
+            {/* Instant Search / Filter (when 2+ stores exist) */}
+            {displayWorkspaces.length >= 2 && (
+              <div className="px-1.5 py-1">
+                <div className="relative flex items-center">
+                  <Search className="absolute left-2.5 size-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search stores..."
+                    className="h-7 pl-8 pr-2 text-xs bg-muted/40 border-border/60 focus-visible:ring-1 focus-visible:ring-primary/40 rounded-lg placeholder:text-muted-foreground/70"
+                    onKeyDown={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Store List */}
             <div className="max-h-60 overflow-y-auto py-1">
-              {displayWorkspaces.map((ws) => {
+              {filteredWorkspaces.map((ws) => {
                 const isActive = ws.id === accountId;
                 const isTargetSwitching = switchingId === ws.id;
                 const palette = getPalette(ws.id || ws.name);
@@ -258,6 +304,12 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
                 );
               })}
 
+              {filteredWorkspaces.length === 0 && displayWorkspaces.length > 0 && (
+                <div className="py-4 text-center text-xs text-muted-foreground">
+                  No matching stores found
+                </div>
+              )}
+
               {workspacesLoading && displayWorkspaces.length === 0 && (
                 <div className="flex items-center justify-center py-4 text-xs text-muted-foreground gap-2">
                   <Loader2 className="size-3.5 animate-spin" />
@@ -268,17 +320,19 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
 
             <DropdownMenuSeparator className="my-1.5 bg-border/60" />
 
-            {/* Create New Store Action */}
-            <DropdownMenuItem
-              onClick={() => setCreateOpen(true)}
-              className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted/70 focus:bg-muted/70 cursor-pointer"
-            >
-              <div className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40">
-                <Plus className="size-3.5 text-foreground" />
-              </div>
-              <span className="flex-1">Create New Store</span>
-              <Sparkles className="size-3 text-amber-500" />
-            </DropdownMenuItem>
+            {/* Create New Store Action — Gated to Owner & Admin */}
+            {(accountRole === "owner" || accountRole === "admin") && (
+              <DropdownMenuItem
+                onClick={() => setCreateOpen(true)}
+                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted/70 focus:bg-muted/70 cursor-pointer"
+              >
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40">
+                  <Plus className="size-3.5 text-foreground" />
+                </div>
+                <span className="flex-1">Create New Store</span>
+                <Sparkles className="size-3 text-amber-500" />
+              </DropdownMenuItem>
+            )}
 
             {/* Store Settings Link */}
             <DropdownMenuItem
@@ -298,6 +352,26 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Frosted Glass Native-App Switch Transition Overlay */}
+      {switchingToStore && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div
+            className={cn(
+              "flex size-14 items-center justify-center rounded-2xl font-bold text-lg shadow-lg mb-3 animate-pulse bg-gradient-to-br",
+              getPalette(switchingToStore.id || switchingToStore.name)
+            )}
+          >
+            {getInitials(switchingToStore.name)}
+          </div>
+          <p className="text-sm font-semibold text-foreground">
+            Switching to {switchingToStore.name}...
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Syncing store workspace and isolated data
+          </p>
+        </div>
+      )}
 
       {/* Create New Store Workspace Modal */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

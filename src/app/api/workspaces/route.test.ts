@@ -109,10 +109,58 @@ describe("/api/workspaces", () => {
       expect(json.error).toContain("at least 2 characters");
     });
 
-    it("successfully creates a workspace via RPC", async () => {
+    it("rejects store creation when user role is agent with 403 Forbidden", async () => {
+      mocks.getUser.mockResolvedValue({
+        data: { user: { id: "user-agent" } },
+        error: null,
+      });
+
+      mocks.from.mockImplementation((table: string) => {
+        if (table === "profiles") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { account_id: "acc-1", account_role: "agent" },
+                }),
+              })),
+            })),
+          };
+        }
+        return { select: vi.fn() };
+      });
+
+      const req = new Request("http://localhost/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Rogue Store" }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.error).toContain("Only store owners and admins can create new workspaces");
+    });
+
+    it("successfully creates a workspace via RPC for owner", async () => {
       mocks.getUser.mockResolvedValue({
         data: { user: { id: "user-1" } },
         error: null,
+      });
+
+      mocks.from.mockImplementation((table: string) => {
+        if (table === "profiles") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { account_id: "acc-1", account_role: "owner" },
+                }),
+              })),
+            })),
+          };
+        }
+        return { select: vi.fn() };
       });
 
       mocks.rpc.mockResolvedValue({

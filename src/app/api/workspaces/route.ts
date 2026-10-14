@@ -192,6 +192,22 @@ export async function POST(request: Request) {
       );
     }
 
+    // Role-gate check: Only owners and admins can create new store workspaces
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("account_role, account_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const callerRole = profile?.account_role as AccountRole | undefined;
+
+    if (callerRole && callerRole !== "owner" && callerRole !== "admin") {
+      return NextResponse.json(
+        { error: "Forbidden: Only store owners and admins can create new workspaces" },
+        { status: 403 }
+      );
+    }
+
     // 1. Attempt using RPC
     if (typeof supabase.rpc === "function") {
       try {

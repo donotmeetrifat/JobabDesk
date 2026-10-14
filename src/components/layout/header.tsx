@@ -49,7 +49,7 @@ import { useTranslations } from "next-intl";
 export function Header({ onOpenSidebar }: HeaderProps) {
   const t = useTranslations("Header");
   const pathname = usePathname();
-  const { profile, signOut } = useAuth();
+  const { profile, account, accountRole, signOut } = useAuth();
   const titleKey = getPageTitleKey(pathname);
 
   const initial =
@@ -59,7 +59,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-4 lg:px-6 pt-safe">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button
           type="button"
@@ -72,6 +72,29 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
           {t(titleKey as string)}
         </h1>
+
+        {/* Active Store Indicator Badge */}
+        {account?.name && (
+          <>
+            {/* Desktop / Tablet */}
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground transition-all">
+              <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="truncate max-w-[140px] font-semibold">{account.name}</span>
+              {accountRole === "owner" && (
+                <span className="text-[10px] text-amber-500" title="Store Owner">👑</span>
+              )}
+            </div>
+
+            {/* Mobile */}
+            <div className="flex sm:hidden items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-foreground">
+              <div className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="truncate max-w-[80px] font-medium">{account.name}</span>
+              {accountRole === "owner" && (
+                <span className="text-[9px] text-amber-500">👑</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2">
