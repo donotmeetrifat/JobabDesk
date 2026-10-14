@@ -18,7 +18,7 @@ export default function PayPortalPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex items-center justify-center">
+        <div className="min-h-[100dvh] bg-[#faf8ff] text-slate-800 flex items-center justify-center pt-safe pb-safe">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
         </div>
       }
@@ -118,7 +118,7 @@ function PayPortalContent() {
 
   if (autoChecking) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex flex-col items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-[#faf8ff] text-slate-800 flex flex-col items-center justify-center p-4 pt-safe pb-safe">
         <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
         <p className="text-slate-500 font-medium text-sm">Opening secure payment portal...</p>
       </div>
@@ -127,7 +127,7 @@ function PayPortalContent() {
 
   return (
     <div
-      className="min-h-screen text-slate-800 antialiased font-sans flex flex-col justify-between py-8 px-4 sm:px-6 lg:px-8"
+      className="min-h-[100dvh] text-slate-800 antialiased font-sans flex flex-col justify-between pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] px-4 sm:px-6 lg:px-8 overflow-x-hidden"
       style={{
         backgroundColor: '#faf8ff',
         backgroundImage:

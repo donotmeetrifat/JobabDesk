@@ -1147,7 +1147,7 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden sm:-m-6">
       {/* Channels Connection Bar: Messenger & WhatsApp side by side */}
       <div className="flex flex-wrap shrink-0 items-center justify-between border-b border-border bg-card/80 backdrop-blur-xs px-4 py-2 gap-3 text-xs">
         {/* Messenger Status */}

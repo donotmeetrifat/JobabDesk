@@ -103,7 +103,7 @@ export function OrderTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card shadow-xs">
+    <div className="overflow-x-auto rounded-xl border bg-card shadow-xs touch-scroll">
       <table className="w-full text-left text-xs">
         <thead className="bg-muted/50 border-b text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
           <tr>

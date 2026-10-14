@@ -362,14 +362,14 @@ export function OrdersShell() {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
           <Select
             value={statusFilter}
             onValueChange={(val) => {
               if (val) setStatusFilter(val)
             }}
           >
-            <SelectTrigger className="w-[145px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+            <SelectTrigger className="flex-1 sm:w-[145px] sm:flex-none h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent align="start" className="min-w-[155px]">
@@ -389,7 +389,7 @@ export function OrdersShell() {
               if (val) setPaymentFilter(val)
             }}
           >
-            <SelectTrigger className="w-[175px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+            <SelectTrigger className="flex-1 sm:w-[175px] sm:flex-none h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
               <SelectValue placeholder="All Payment Statuses" />
             </SelectTrigger>
             <SelectContent align="start" className="min-w-[185px]">

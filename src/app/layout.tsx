@@ -54,8 +54,16 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
-  colorScheme: "dark light",
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: 'cover', // Extends background into iPhone notch & home indicator
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#090d16' },
+  ],
+  colorScheme: 'dark light',
 };
 
 // Inline boot script — runs before React hydrates so the user's
@@ -122,7 +130,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>
-      <body className={`min-h-full bg-background text-foreground ${locale === 'bn' ? 'font-bengali' : 'font-sans'}`}>
+      <body className={`min-h-[100dvh] overflow-x-hidden bg-background text-foreground ${locale === 'bn' ? 'font-bengali' : 'font-sans'}`}>
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
             {children}

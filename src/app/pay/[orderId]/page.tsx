@@ -278,7 +278,7 @@ export default function PublicPaymentPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex flex-col items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-[#faf8ff] text-slate-800 flex flex-col items-center justify-center p-4 pt-safe pb-safe">
         <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
         <p className="text-slate-500 font-medium text-sm">Loading secure payment portal...</p>
       </div>
@@ -287,7 +287,7 @@ export default function PublicPaymentPage({
 
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] text-slate-800 flex items-center justify-center p-4">
+      <div className="min-h-[100dvh] bg-[#faf8ff] text-slate-800 flex items-center justify-center p-4 pt-safe pb-safe">
         <div className="max-w-md w-full bg-white border border-slate-200/90 rounded-2xl p-6 text-center shadow-xl space-y-4">
           <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
           <div>
@@ -367,7 +367,7 @@ export default function PublicPaymentPage({
 
   return (
     <div
-      className="min-h-screen text-slate-800 antialiased font-sans flex flex-col justify-between py-6 px-4 sm:px-6 lg:px-8"
+      className="min-h-[100dvh] text-slate-800 antialiased font-sans flex flex-col justify-between pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] px-4 sm:px-6 lg:px-8 overflow-x-hidden"
       style={{
         backgroundColor: '#faf8ff',
         backgroundImage:

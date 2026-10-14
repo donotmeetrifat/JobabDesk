@@ -391,7 +391,7 @@ export default function BroadcastsPage() {
               if (val) setStatusFilter(val);
             }}
           >
-            <SelectTrigger className="w-[145px] h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
+            <SelectTrigger className="flex-1 sm:w-[145px] sm:flex-none h-9 rounded-xl border border-border/80 bg-card/70 text-xs font-medium shadow-2xs hover:bg-card hover:border-primary/40 focus:ring-2 focus:ring-primary/20 transition-all">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent align="start" className="min-w-[155px]">
