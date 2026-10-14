@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useAuth, type WorkspaceItem } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -92,6 +92,25 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
   const activeName = account?.name || "My Store";
   const activePalette = getPalette(accountId || activeName);
 
+  // Guaranteed fallback: ensures the current active store is never missing even during loading
+  const displayWorkspaces: WorkspaceItem[] = useMemo(() => {
+    if (workspaces.length > 0) return workspaces;
+    if (accountId) {
+      return [
+        {
+          id: accountId,
+          name: activeName,
+          businessTagline: null,
+          logoUrl: null,
+          role: accountRole || "owner",
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+    return [];
+  }, [workspaces, accountId, activeName, accountRole]);
+
   const handleSwitch = async (targetId: string) => {
     if (targetId === accountId || switchingId) return;
     setSwitchingId(targetId);
@@ -158,8 +177,8 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
                 )}
               </div>
               <p className="truncate text-[11px] text-muted-foreground">
-                {workspaces.length > 1
-                  ? `${workspaces.length} stores • Switch`
+                {displayWorkspaces.length > 1
+                  ? `${displayWorkspaces.length} stores • Switch`
                   : "Active Store"}
               </p>
             </div>
@@ -178,13 +197,13 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
                 Workspaces & Stores
               </span>
               <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {workspaces.length} {workspaces.length === 1 ? "store" : "stores"}
+                {displayWorkspaces.length} {displayWorkspaces.length === 1 ? "store" : "stores"}
               </span>
             </div>
 
             {/* Store List */}
             <div className="max-h-60 overflow-y-auto py-1">
-              {workspaces.map((ws) => {
+              {displayWorkspaces.map((ws) => {
                 const isActive = ws.id === accountId;
                 const isTargetSwitching = switchingId === ws.id;
                 const palette = getPalette(ws.id || ws.name);
@@ -239,7 +258,7 @@ export function WorkspaceSwitcher({ className, onSelect }: WorkspaceSwitcherProp
                 );
               })}
 
-              {workspacesLoading && workspaces.length === 0 && (
+              {workspacesLoading && displayWorkspaces.length === 0 && (
                 <div className="flex items-center justify-center py-4 text-xs text-muted-foreground gap-2">
                   <Loader2 className="size-3.5 animate-spin" />
                   Loading stores...

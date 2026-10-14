@@ -15,8 +15,7 @@ export interface WorkspaceItem {
 
 /**
  * GET /api/workspaces
- * Returns all stores / workspaces the authenticated user owns or is a member of,
- * along with the currently active workspace ID.
+ * Returns all stores / workspaces the authenticated user owns or is a member of.
  */
 export async function GET() {
   try {
@@ -30,7 +29,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // First attempt: Call the migration RPC `get_user_workspaces`
+    // 1. First attempt: Call migration RPC `get_user_workspaces`
     if (typeof supabase.rpc === "function") {
       try {
         const { data: rpcWorkspaces, error: rpcErr } = await supabase.rpc(
@@ -41,11 +40,11 @@ export async function GET() {
           const workspaces: WorkspaceItem[] = rpcWorkspaces.map((row: any) => ({
             id: row.account_id,
             name: row.account_name,
-            businessTagline: row.business_tagline ?? null,
-            logoUrl: row.logo_url ?? null,
-            role: row.role as AccountRole,
+            businessTagline: row.business_tagline || null,
+            logoUrl: row.logo_url || null,
+            role: (row.role as AccountRole) || "owner",
             isActive: Boolean(row.is_active),
-            createdAt: row.created_at,
+            createdAt: row.created_at || new Date().toISOString(),
           }));
 
           const activeAccount = workspaces.find((w) => w.isActive);
@@ -55,11 +54,11 @@ export async function GET() {
           });
         }
       } catch (err) {
-        console.warn("[/api/workspaces] RPC get_user_workspaces failed, falling back:", err);
+        console.warn("[/api/workspaces] RPC get_user_workspaces failed, using fallback:", err);
       }
     }
 
-    // Direct / Service Role Fallback for resilient multi-workspace lookup
+    // 2. Resilient Direct / Service Role Fallback
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mvkcheckaxfimlzjqvyz.supabase.co";
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const { createClient: createSupabaseJsClient } = await import("@supabase/supabase-js");
@@ -75,63 +74,60 @@ export async function GET() {
       .maybeSingle();
 
     const activeAccountId = profile?.account_id ?? null;
-
-    // 1. Fetch accounts owned by user
-    const { data: ownedAccounts } = await dbClient
-      .from("accounts")
-      .select("id, name, business_tagline, logo_url, created_at")
-      .eq("owner_user_id", user.id);
-
-    // 2. Fetch accounts where user is a member
-    const { data: memberRows } = await dbClient
-      .from("account_members")
-      .select("account_id, role, created_at, accounts(id, name, business_tagline, logo_url, created_at)")
-      .eq("user_id", user.id);
-
     const workspacesMap = new Map<string, WorkspaceItem>();
 
-    // Add owned accounts
-    if (ownedAccounts) {
+    // A. Fetch accounts owned by user (safe query with fallback)
+    const { data: ownedAccounts } = await dbClient
+      .from("accounts")
+      .select("id, name, created_at")
+      .eq("owner_user_id", user.id);
+
+    if (ownedAccounts && Array.isArray(ownedAccounts)) {
       for (const acc of ownedAccounts) {
         workspacesMap.set(acc.id, {
           id: acc.id,
           name: acc.name,
-          businessTagline: acc.business_tagline ?? null,
-          logoUrl: acc.logo_url ?? null,
+          businessTagline: null,
+          logoUrl: null,
           role: "owner",
           isActive: acc.id === activeAccountId,
-          createdAt: acc.created_at,
+          createdAt: acc.created_at || new Date().toISOString(),
         });
       }
     }
 
-    // Add member accounts
-    if (memberRows) {
-      for (const row of memberRows) {
-        const acc = row.accounts as any;
-        if (acc?.id) {
-          const existing = workspacesMap.get(acc.id);
-          // If already in map as owner, keep owner role; otherwise set member role
-          if (!existing) {
+    // B. Fetch accounts where user is an account_member
+    try {
+      const { data: memberRows } = await dbClient
+        .from("account_members")
+        .select("account_id, role, created_at, accounts(id, name, created_at)")
+        .eq("user_id", user.id);
+
+      if (memberRows && Array.isArray(memberRows)) {
+        for (const row of memberRows) {
+          const acc = row.accounts as any;
+          if (acc?.id && !workspacesMap.has(acc.id)) {
             workspacesMap.set(acc.id, {
               id: acc.id,
               name: acc.name,
-              businessTagline: acc.business_tagline ?? null,
-              logoUrl: acc.logo_url ?? null,
+              businessTagline: null,
+              logoUrl: null,
               role: (row.role as AccountRole) || "agent",
               isActive: acc.id === activeAccountId,
-              createdAt: acc.created_at || row.created_at,
+              createdAt: acc.created_at || row.created_at || new Date().toISOString(),
             });
           }
         }
       }
+    } catch (e) {
+      // Ignore if account_members table does not exist yet
     }
 
-    // If still empty (e.g. legacy solo account without owner_user_id populated), check current profile's account
-    if (workspacesMap.size === 0 && activeAccountId) {
+    // C. Guarantee the user's currently active store from profiles is included
+    if (activeAccountId && !workspacesMap.has(activeAccountId)) {
       const { data: singleAcc } = await dbClient
         .from("accounts")
-        .select("id, name, business_tagline, logo_url, created_at")
+        .select("id, name, created_at")
         .eq("id", activeAccountId)
         .maybeSingle();
 
@@ -139,17 +135,16 @@ export async function GET() {
         workspacesMap.set(singleAcc.id, {
           id: singleAcc.id,
           name: singleAcc.name,
-          businessTagline: singleAcc.business_tagline ?? null,
-          logoUrl: singleAcc.logo_url ?? null,
+          businessTagline: null,
+          logoUrl: null,
           role: (profile?.account_role as AccountRole) || "owner",
           isActive: true,
-          createdAt: singleAcc.created_at,
+          createdAt: singleAcc.created_at || new Date().toISOString(),
         });
       }
     }
 
     const workspaces = Array.from(workspacesMap.values()).sort((a, b) => {
-      // Current active workspace first, then chronological
       if (a.isActive) return -1;
       if (b.isActive) return 1;
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -167,8 +162,7 @@ export async function GET() {
 
 /**
  * POST /api/workspaces
- * Creates a brand new workspace / store under the authenticated owner's account
- * and automatically switches active context to it.
+ * Creates a brand new store workspace and switches to it.
  */
 export async function POST(request: Request) {
   try {
@@ -182,7 +176,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Rate limit store creation to 10 per hour per user
     const limit = checkRateLimit(`workspaces:create:${user.id}`, RATE_LIMITS.adminAction);
     if (!limit.success) {
       return rateLimitResponse(limit);
@@ -199,14 +192,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (storeName.length > 80) {
-      return NextResponse.json(
-        { error: "Store name must be 80 characters or fewer" },
-        { status: 400 }
-      );
-    }
-
-    // 1. Attempt using RPC `create_new_workspace`
+    // 1. Attempt using RPC
     if (typeof supabase.rpc === "function") {
       try {
         const { data: rpcResult, error: rpcErr } = await supabase.rpc(
@@ -230,11 +216,11 @@ export async function POST(request: Request) {
           });
         }
       } catch (err) {
-        console.warn("[/api/workspaces] RPC create_new_workspace failed, using atomic fallback:", err);
+        console.warn("[/api/workspaces] RPC create_new_workspace failed, using fallback:", err);
       }
     }
 
-    // Fallback: Atomic execution via Supabase client / service role
+    // 2. Direct Fallback
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://mvkcheckaxfimlzjqvyz.supabase.co";
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const { createClient: createSupabaseJsClient } = await import("@supabase/supabase-js");
@@ -242,7 +228,6 @@ export async function POST(request: Request) {
       ? createSupabaseJsClient(url, serviceKey.trim(), { auth: { persistSession: false } })
       : supabase;
 
-    // Insert new account
     const { data: newAccount, error: accErr } = await admin
       .from("accounts")
       .insert({
@@ -250,7 +235,7 @@ export async function POST(request: Request) {
         business_tagline: tagline,
         owner_user_id: user.id,
       })
-      .select("id, name, business_tagline, created_at")
+      .select("id, name, created_at")
       .single();
 
     if (accErr || !newAccount) {
@@ -261,7 +246,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Insert owner membership in account_members (if table exists)
+    // Insert membership
     try {
       await admin.from("account_members").upsert(
         {
@@ -271,12 +256,10 @@ export async function POST(request: Request) {
         },
         { onConflict: "account_id,user_id" }
       );
-    } catch (e) {
-      console.warn("[/api/workspaces] account_members upsert warning:", e);
-    }
+    } catch {}
 
-    // Atomically update user's profile to switch into the new workspace
-    const { error: profErr } = await admin
+    // Switch caller's profile
+    await admin
       .from("profiles")
       .update({
         account_id: newAccount.id,
@@ -284,16 +267,12 @@ export async function POST(request: Request) {
       })
       .eq("user_id", user.id);
 
-    if (profErr) {
-      console.error("[/api/workspaces] Profile active workspace update error:", profErr);
-    }
-
     return NextResponse.json({
       success: true,
       workspace: {
         id: newAccount.id,
         name: newAccount.name,
-        businessTagline: newAccount.business_tagline ?? null,
+        businessTagline: tagline,
         role: "owner" as AccountRole,
         isActive: true,
         createdAt: newAccount.created_at,

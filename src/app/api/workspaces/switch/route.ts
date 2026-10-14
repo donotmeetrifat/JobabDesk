@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     // Check if user is owner of target account
     const { data: accountRow } = await admin
       .from("accounts")
-      .select("id, name, logo_url, owner_user_id")
+      .select("id, name, owner_user_id")
       .eq("id", targetAccountId)
       .maybeSingle();
 
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       account_id: targetAccountId,
       account_name: accountRow.name,
       account_role: targetRole,
-      logo_url: accountRow.logo_url ?? null,
+      logo_url: (accountRow as any)?.logo_url ?? null,
     });
   } catch (err) {
     console.error("[/api/workspaces/switch] error:", err);
